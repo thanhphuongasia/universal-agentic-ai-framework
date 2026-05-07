@@ -1,0 +1,112 @@
+"""OpenTelemetry-backed tracer with correlation-ID propagation.
+
+Design choices:
+- Each Tracer instance owns its own TracerProvider (makes testing hermetic).
+- correlation_id is stored in a contextvars.ContextVar so it propagates
+  across anyio task-group tasks without manual threading.
+- Sync OTel span is wrapped in asynccontextmanager — perfectly safe because
+  OTel spans are not blocking I/O, just dict writes.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any
+
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export import SpanExporter
+
+# Module-level context var shared across all Tracer instances in a process.
+_correlation_id_var: ContextVar[str | None] = ContextVar("uaaf_correlation_id", default=None)
+
+
+class Tracer:
+    """Async-friendly OTel tracer with built-in correlation-ID management."""
+
+    def __init__(
+        self,
+        service_name: str = "uaaf",
+        exporter: SpanExporter | None = None,
+    ) -> None:
+        resource = Resource.create({"service.name": service_name})
+        self._provider = TracerProvider(resource=resource)
+        self._provider.add_span_processor(
+            SimpleSpanProcessor(exporter or ConsoleSpanExporter())
+        )
+        self._otel = self._provider.get_tracer(service_name)
+
+    @asynccontextmanager
+    async def span(
+        self,
+        name: str,
+        task_id: str | None = None,
+        correlation_id: str | None = None,
+        **attrs: Any,
+    ) -> AsyncGenerator[str, None]:
+        """Async context manager that creates an OTel span and propagates correlation_id.
+
+        Yields the active correlation_id so callers can log it without re-fetching.
+        """
+        corr_id = correlation_id or get_current_correlation_id() or str(uuid.uuid4())
+        token = _correlation_id_var.set(corr_id)
+
+        span_attrs: dict[str, Any] = {"correlation_id": corr_id}
+        if task_id is not None:
+            span_attrs["task_id"] = task_id
+        span_attrs.update(attrs)
+
+        with self._otel.start_as_current_span(name, attributes=span_attrs):
+            try:
+                yield corr_id
+            finally:
+                _correlation_id_var.reset(token)
+
+    def shutdown(self) -> None:
+        """Flush and shut down the tracer provider (call on process exit)."""
+        self._provider.shutdown()
+
+
+def get_current_correlation_id() -> str | None:
+    """Return the correlation-ID active in the current async task, or None."""
+    return _correlation_id_var.get()
+
+
+def setup_tracing(
+    target: str = "console",
+    service_name: str = "uaaf",
+) -> None:
+    """Configure the *global* OTel tracer provider.
+
+    target: ``"console"`` (default) or ``"otlp://host:port"``
+
+    This is for process-wide configuration.  For isolated per-instance
+    configuration pass a custom ``exporter`` to ``Tracer()``.
+    """
+    if target == "console":
+        exporter: SpanExporter = ConsoleSpanExporter()
+    elif target.startswith("otlp://"):
+        try:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                OTLPSpanExporter,
+            )
+
+            exporter = OTLPSpanExporter(endpoint=target.removeprefix("otlp://"))
+        except ImportError as exc:
+            raise ImportError(
+                "Install opentelemetry-exporter-otlp-proto-grpc for OTLP export."
+            ) from exc
+    else:
+        raise ValueError(f"Unknown tracing target: {target!r}")
+
+    resource = Resource.create({"service.name": service_name})
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    otel_trace.set_tracer_provider(provider)

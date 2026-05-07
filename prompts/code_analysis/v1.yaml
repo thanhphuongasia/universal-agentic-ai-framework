@@ -1,0 +1,116 @@
+version: "1.0"
+description: "Code analysis — class complexity & refactor detection"
+model: "gpt-4o-mini"
+temperature: 0.0
+max_tokens: 512
+
+# ── Prompt templates ────────────────────────────────────────────────────────
+# Variables: {context} = class info text, {class_name} = class being analysed
+# For summarize: {total_classes}, {high_count}, {high}, {medium}, {low},
+#                {doc_pct}, {async_count}
+
+prompts:
+  analyze_class:
+    system: |
+      You are a senior software engineer specializing in Python code quality.
+      Analyze the class and return ONLY valid JSON — no prose, no markdown fences.
+
+      Required JSON schema:
+      {{
+        "class": "ClassName",
+        "module": "module_name",
+        "complexity": "LOW|MEDIUM|HIGH",
+        "complexity_score": 42,
+        "lines": 80,
+        "method_count": 6,
+        "async_method_count": 3,
+        "long_methods": ["method_name"],
+        "public_api_size": 4,
+        "has_docstring": true,
+        "issues": ["description of issue"],
+        "refactor_priority": "HIGH|MEDIUM|LOW",
+        "suggestion": "One concrete refactoring action."
+      }}
+
+      Rules:
+      - complexity HIGH if complexity_score >= 60, MEDIUM if >= 25, else LOW
+      - refactor_priority HIGH if 2+ issues, MEDIUM if 1 issue, LOW if clean
+      - long_methods: list method names with > 25 lines
+      - issues: be specific (e.g. "Missing docstring on 3 public methods")
+
+      Class data:
+      ---
+      {context}
+      ---
+    user: "Analyze class: {class_name}"
+
+  summarize_codebase:
+    system: |
+      You are a tech lead reviewing automated code analysis results.
+      Write a concise executive summary — 4 bullet points max, then 3 action items.
+      Be specific about class names and modules. Under 200 words total.
+    user: |
+      Analysis complete:
+      - {total_classes} classes analyzed
+      - {high_count} flagged HIGH priority for refactoring
+      - Complexity: HIGH={high}, MEDIUM={medium}, LOW={low}
+      - Docstring coverage: {doc_pct}%
+      - Total async methods: {async_count}
+
+      Provide executive summary and top 3 action items.
+
+# ── Tool definitions ─────────────────────────────────────────────────────────
+# Schema here → handler in examples/code_analysis/tools.py
+
+tools:
+  - name: get_class_details
+    description: >
+      Get the full extracted metadata for a specific Python class —
+      file path, line range, method list, complexity score, docstring.
+    parameters:
+      type: object
+      properties:
+        class_name:
+          type: string
+          description: "Exact class name (case-sensitive)"
+      required:
+        - class_name
+
+  - name: find_refactor_candidates
+    description: >
+      Find classes that meet refactoring criteria.
+      Returns list of {class, module, complexity_score, issues, refactor_priority}.
+    parameters:
+      type: object
+      properties:
+        min_complexity_score:
+          type: integer
+          description: "Only classes with complexity_score >= this. Default: 40"
+          default: 40
+        missing_docstring:
+          type: boolean
+          description: "If true, only return classes with no class-level docstring"
+          default: false
+        min_line_count:
+          type: integer
+          description: "Only classes with >= this many lines. Default: 0"
+          default: 0
+        priority:
+          type: string
+          enum: [HIGH, MEDIUM, LOW, all]
+          description: "Filter by refactor_priority. Default: all"
+          default: "all"
+      required: []
+
+  - name: get_module_summary
+    description: >
+      Summarize all classes belonging to a specific module file (e.g. 'router', 'agent').
+      Returns per-module: class count, total lines, avg complexity, async method count.
+    parameters:
+      type: object
+      properties:
+        module_name:
+          type: string
+          description: "Module stem name, e.g. 'router', 'agent', 'backbone'"
+      required:
+        - module_name

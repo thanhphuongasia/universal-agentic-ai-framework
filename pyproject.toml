@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "uaaf"
+version = "0.1.0a1"
+description = "Universal Agentic AI Framework — pluggable foundation for AI agent products"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.0",
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.40"]
+anthropic = ["anthropic>=0.40"]
+dev = [
+    "pytest>=7.0",
+    "anyio[trio]>=4.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.0",
+    "ruff>=0.6.0",
+    "mypy>=1.0",
+    "build>=1.0",
+    "openai>=1.40",
+    "anthropic>=0.40",
+    "pytest-mock>=3.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["uaaf"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "ANN"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["uaaf"]
+omit = ["uaaf/_testing/*"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true

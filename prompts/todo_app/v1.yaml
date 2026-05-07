@@ -1,0 +1,108 @@
+version: "1.0"
+description: "Todo app — productivity analysis agent"
+model: "gpt-4o-mini"
+temperature: 0.1
+max_tokens: 1024
+
+# ── Prompt templates ────────────────────────────────────────────────────────
+# Variables injected at runtime via PromptRegistry.build_request(**variables)
+# Available: {context} = assembled memory text, {query} = user question
+
+prompts:
+  analyze:
+    system: |
+      You are a productivity analyst specializing in task and goal management.
+      Analyze the portfolio data and provide concrete, actionable insights.
+      Focus on: completion rates, effort estimation accuracy, priority alignment, blockers.
+
+      === PORTFOLIO DATA ===
+      {context}
+      === END DATA ===
+    user: "{query}"
+
+  priority_breakdown:
+    system: |
+      You are a data analyst. Return ONLY valid JSON, no prose, no markdown fences.
+      Required schema:
+      {{
+        "by_priority": {{"critical": 0, "high": 0, "medium": 0, "low": 0}},
+        "effort_by_goal": {{"g1": 0.0, "g2": 0.0}},
+        "completion_rate_by_goal": {{"g1": 0.0, "g2": 0.0}}
+      }}
+
+      === PORTFOLIO DATA ===
+      {context}
+      === END DATA ===
+    user: "{query}"
+
+  next_sprint:
+    system: |
+      You are an engineering manager planning the next sprint.
+      Given the current goal and task portfolio, recommend what to focus on.
+      Format your response as a numbered list with rationale for each item.
+      Keep it under 200 words.
+
+      === PORTFOLIO DATA ===
+      {context}
+      === END DATA ===
+    user: "{query}"
+
+# ── Tool definitions ─────────────────────────────────────────────────────────
+# Schema lives here (what the LLM sees).
+# Handler (Python callable) lives in examples/todo_app/tools.py.
+
+tools:
+  - name: get_task_stats
+    description: >
+      Get task count and completion statistics for a goal.
+      Returns total, completed, in_progress, pending, cancelled counts
+      plus completion_rate percentage.
+    parameters:
+      type: object
+      properties:
+        goal_id:
+          type: string
+          description: "Goal ID (g1 / g2 / g3) or 'all' for all goals"
+        status_filter:
+          type: string
+          enum: [completed, in_progress, pending, cancelled, all]
+          description: "Filter tasks by status. Default: all"
+          default: "all"
+      required:
+        - goal_id
+
+  - name: get_effort_analysis
+    description: >
+      Get effort estimation accuracy for completed tasks.
+      Returns estimated_hours, actual_hours, ratio (actual/estimated) per task.
+      Ratio > 1.0 means task ran over estimate.
+    parameters:
+      type: object
+      properties:
+        goal_id:
+          type: string
+          description: "Goal ID or 'all'"
+        min_ratio:
+          type: number
+          description: >
+            Only return tasks with effort_ratio >= this value.
+            Use 1.2 to find over-estimates, 0.0 for all completed tasks.
+          default: 0.0
+      required:
+        - goal_id
+
+  - name: get_next_priorities
+    description: >
+      Get prioritized list of pending or in-progress tasks to tackle next.
+      Sorted by: goal priority DESC, then task priority DESC.
+    parameters:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: "Max tasks to return. Default: 5"
+          default: 5
+        goal_filter:
+          type: string
+          description: "Restrict to a specific goal ID, or omit for all goals"
+      required: []
