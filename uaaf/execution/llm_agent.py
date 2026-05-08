@@ -1,13 +1,13 @@
-"""LLMAgent — BaseAgent subclass providing react_loop() for tool-calling agents.
+"""LLMAgent — BaseAgent subclass providing _react_loop() for tool-calling agents.
 
 Subclasses implement ``_execute()`` with domain logic only:
   - Build CompletionRequest
-  - Call ``react_loop(request)``
+  - Call ``_react_loop(request)``
   - Return AgentResult
 
 cross-cutting (trace/rate-limit/budget/audit) is handled by BaseAgent.execute().
 
-# Streaming: out of scope — react_loop returns full string. Track as future Phase.
+# Streaming: out of scope — _react_loop returns full string. Track as future Phase.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ _DEFAULT_CONTEXT_WINDOW = 128_000
 
 @runtime_checkable
 class ReActCallbacks(Protocol):
-    """Hooks fired during react_loop() — decouple display from LLM logic.
+    """Hooks fired during _react_loop() — decouple display from LLM logic.
 
     Default: SilentCallbacks (no-op). CLI tools use PrintCallbacks.
     Production code can inject structlog / file writers without changing agent logic.
@@ -83,7 +83,7 @@ class PrintCallbacks:
 
 @dataclass
 class BudgetSummary:
-    """Token budget snapshot after a react_loop() call."""
+    """Token budget snapshot after a _react_loop() call."""
 
     input_tokens: int
     output_tokens: int
@@ -118,7 +118,7 @@ class ModelPolicy:
 class LLMAgent(BaseAgent):
     """Abstract agent with a built-in ReAct tool-calling loop.
 
-    Subclasses must implement ``_execute()``.  Use ``react_loop()`` inside
+    Subclasses must implement ``_execute()``.  Use ``_react_loop()`` inside
     ``_execute()`` to get Thought→Action→Observation iteration for free.
     """
 
@@ -164,7 +164,7 @@ class LLMAgent(BaseAgent):
             pct_used=total / window * 100,
         )
 
-    async def react_loop(
+    async def _react_loop(
         self,
         request: CompletionRequest,
         max_rounds: int = 3,

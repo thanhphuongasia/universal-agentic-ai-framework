@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.1.0b6"
+__version__ = "0.1.0b7"
 
 # Execution tier — most commonly needed in every agent implementation
 from uaaf.execution.agent import AgentResult, BaseAgent, Task
@@ -27,6 +27,13 @@ from uaaf.observability.tracer import Tracer, get_current_correlation_id
 
 # Runtime — needed in every execute() signature
 from uaaf.runtime.context import ContextScope, ExecutionContext
+
+# Workflow engine
+from uaaf.workflow.checkpoint import Checkpoint, ICheckpointStore
+from uaaf.workflow.engine import IWorkflowEngine, WorkflowEngine, WorkflowResult, WorkflowStatus
+from uaaf.workflow.state_machine import IState, StateMachine, StateTransition, Workflow
+from uaaf.workflow.stores.file import FileCheckpointStore
+from uaaf.workflow.stores.in_memory import InMemoryCheckpointStore
 
 __all__ = [
     "__version__",
@@ -54,4 +61,17 @@ __all__ = [
     # Runtime
     "ContextScope",
     "ExecutionContext",
+    # Workflow
+    "Checkpoint",
+    "ICheckpointStore",
+    "IWorkflowEngine",
+    "IState",
+    "StateMachine",
+    "StateTransition",
+    "Workflow",
+    "WorkflowEngine",
+    "WorkflowResult",
+    "WorkflowStatus",
+    "FileCheckpointStore",
+    "InMemoryCheckpointStore",
 ]

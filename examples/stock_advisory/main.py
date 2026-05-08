@@ -57,13 +57,12 @@ from examples.stock_advisory.verifiers import (
     build_ticker_mention_verifier,
     build_trade_schema_verifier,
 )
-from uaaf.execution.llm_agent import PrintCallbacks
 from uaaf.execution.agent import Task as AgentTask
+from uaaf.execution.llm_agent import PrintCallbacks
 from uaaf.observability.audit import AuditLogger
 from uaaf.observability.cost import CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
 from uaaf.runtime.context import ContextScope, ExecutionContext
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -182,7 +181,7 @@ async def case2_react_loop() -> None:
     """
     sep("Case 2 — ReAct Loop (Thought→Action→Observation)")
     print("""
-  Pattern: LLMAgent.react_loop() — tools called iteratively
+  Pattern: LLMAgent._react_loop() — tools called iteratively
   Tools: get_quote, get_signals, portfolio_summary
   PrintCallbacks shows each Thought/Action/Observation step live.
   Agent stops when it has enough info to answer (or max_rounds exceeded).
@@ -456,7 +455,7 @@ async def case5_compliance_audit() -> None:
         "function": {"name": "place_order_dry_run", "arguments": {"ticker": "NVDA", "action": "BUY", "shares": 10}},
     })
     dry_run_data = json.loads(dry_run_result)
-    print(f"  Order result:")
+    print("  Order result:")
     print(f"    status          : {dry_run_data['status']}")
     print(f"    ticker          : {dry_run_data['ticker']}")
     print(f"    action/shares   : {dry_run_data['action']} {dry_run_data['shares']} shares")
@@ -468,8 +467,8 @@ async def case5_compliance_audit() -> None:
     print(f"  Total cost this session: ${result.cost.usd:.6f}")
     print(f"  Tokens: {result.cost.input_tokens} in + {result.cost.output_tokens} out")
     print(f"  Model: {result.cost.model} (provider: {result.cost.provider})")
-    print(f"\n  All costs tracked automatically by BaseAgent.execute() → CostTracker.record()")
-    print(f"  Audit events logged automatically by BaseAgent.execute() → AuditLogger.log_*")
+    print("\n  All costs tracked automatically by BaseAgent.execute() → CostTracker.record()")
+    print("  Audit events logged automatically by BaseAgent.execute() → AuditLogger.log_*")
 
 
 # ── Main dispatcher ────────────────────────────────────────────────────────
@@ -506,12 +505,12 @@ async def main(run_case: int | None = None) -> None:
 
     sep("Done")
     print(f"  Ran {len(cases_to_run)} case(s).")
-    print(f"  Source: examples/stock_advisory/")
-    print(f"    models.py   — domain models (Stock, Signal, Portfolio, Position)")
-    print(f"    tools.py    — tool handlers (get_quote, get_signals, portfolio_summary, check_risk, place_order_dry_run)")
-    print(f"    verifiers.py — verifier factories (SchemaVerifier, GroundTruthVerifier, VerifierPipeline)")
-    print(f"    agent.py    — StockAdvisoryAgent (extends LLMAgent)")
-    print(f"    main.py     — this file: 5 self-contained learning cases\n")
+    print("  Source: examples/stock_advisory/")
+    print("    models.py   — domain models (Stock, Signal, Portfolio, Position)")
+    print("    tools.py    — tool handlers (get_quote, get_signals, portfolio_summary, check_risk, place_order_dry_run)")
+    print("    verifiers.py — verifier factories (SchemaVerifier, GroundTruthVerifier, VerifierPipeline)")
+    print("    agent.py    — StockAdvisoryAgent (extends LLMAgent)")
+    print("    main.py     — this file: 5 self-contained learning cases\n")
 
 
 if __name__ == "__main__":

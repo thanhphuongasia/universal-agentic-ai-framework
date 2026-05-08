@@ -38,7 +38,6 @@ from uaaf.cognitive.verifiers import (
     VerifierPipeline,
 )
 
-
 # ── Case A: Schema validation ──────────────────────────────────────────────
 
 def build_trade_schema_verifier() -> SchemaVerifier:

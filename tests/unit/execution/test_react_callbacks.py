@@ -87,7 +87,7 @@ async def test_react_loop_silent_callbacks_no_stdout() -> None:
     captured = io.StringIO()
     sys.stdout = captured
     try:
-        await agent.react_loop(_make_request(), callbacks=SilentCallbacks())
+        await agent._react_loop(_make_request(), callbacks=SilentCallbacks())
     finally:
         sys.stdout = sys.__stdout__
     assert captured.getvalue() == ""
@@ -101,7 +101,7 @@ async def test_react_loop_default_callbacks_is_silent() -> None:
     captured = io.StringIO()
     sys.stdout = captured
     try:
-        await agent.react_loop(_make_request())  # no callbacks arg
+        await agent._react_loop(_make_request())  # no callbacks arg
     finally:
         sys.stdout = sys.__stdout__
     assert captured.getvalue() == ""
@@ -115,7 +115,7 @@ async def test_react_loop_default_callbacks_is_silent() -> None:
 async def test_react_loop_print_callbacks_final_answer_output(capsys: Any) -> None:
     fake = FakeLLMProvider(responses=[_resp("Final answer here.")])
     agent = _make_agent(fake)
-    await agent.react_loop(_make_request(), callbacks=PrintCallbacks())
+    await agent._react_loop(_make_request(), callbacks=PrintCallbacks())
     out = capsys.readouterr().out
     assert "Final answer here." in out or "✅" in out
 
@@ -136,7 +136,7 @@ async def test_react_loop_print_callbacks_tool_round_output(capsys: Any) -> None
         _resp("done after tool"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    await agent.react_loop(_make_request(), callbacks=PrintCallbacks())
+    await agent._react_loop(_make_request(), callbacks=PrintCallbacks())
     out = capsys.readouterr().out
     # Should have thought + action + observation markers
     assert "ping" in out
@@ -179,7 +179,7 @@ async def test_react_loop_custom_callbacks_hooks_called() -> None:
         _resp("my final"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    await agent.react_loop(_make_request(), callbacks=TrackingCallbacks())
+    await agent._react_loop(_make_request(), callbacks=TrackingCallbacks())
 
     assert any("action:noop" == e for e in events)
     assert any(e.startswith("final:") for e in events)

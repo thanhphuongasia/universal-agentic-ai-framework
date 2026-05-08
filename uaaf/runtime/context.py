@@ -25,10 +25,15 @@ class ContextScope:
         return ":".join(parts)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExecutionContext:
-    """Bundle of identity + budget passed to every agent execute call."""
+    """Immutable bundle of identity + budget passed to every agent execute call.
+
+    Use dataclasses.replace(ctx, field=value) to create modified copies.
+    strategy_id is populated by RequestHandler before dispatching to a strategy.
+    """
 
     scope: ContextScope
     correlation_id: str
     budget_remaining_usd: float | None = None
+    strategy_id: str | None = None

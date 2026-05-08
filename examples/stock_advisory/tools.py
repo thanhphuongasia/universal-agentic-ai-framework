@@ -15,14 +15,12 @@ with 7-year compliance retention. This example shows the dry-run pattern.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from examples.stock_advisory.models import (
     MARKET_DATA,
     SIGNALS_DATA,
     Portfolio,
-    Ticker,
 )
 from uaaf.execution import ToolRegistry
 

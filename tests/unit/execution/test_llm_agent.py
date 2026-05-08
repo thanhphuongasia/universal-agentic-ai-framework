@@ -79,7 +79,7 @@ class MinimalLLMAgent(LLMAgent):
 
     async def _execute(self, task: Task, context: ExecutionContext) -> AgentResult:
         request = _make_request(str(task.payload.get("query", "")))
-        text, usage = await self.react_loop(request)
+        text, usage = await self._react_loop(request)
         return AgentResult(
             task_id=task.task_id,
             output=text,
@@ -95,7 +95,7 @@ class MinimalLLMAgent(LLMAgent):
 async def test_react_loop_no_tools_returns_immediately() -> None:
     fake = FakeLLMProvider(responses=[_resp("Final answer.")])
     agent = _make_agent(fake)
-    text, usage = await agent.react_loop(_make_request())
+    text, usage = await agent._react_loop(_make_request())
     assert text == "Final answer."
     assert fake.call_count == 1
 
@@ -104,7 +104,7 @@ async def test_react_loop_no_tools_returns_immediately() -> None:
 async def test_react_loop_accumulates_token_usage() -> None:
     fake = FakeLLMProvider(responses=[_resp("Done.")])
     agent = _make_agent(fake)
-    _, usage = await agent.react_loop(_make_request())
+    _, usage = await agent._react_loop(_make_request())
     assert usage.input_tokens == 10
     assert usage.output_tokens == 5
 
@@ -125,7 +125,7 @@ async def test_react_loop_executes_tool_and_continues() -> None:
         _resp("Final after tool."),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    text, usage = await agent.react_loop(_make_request())
+    text, usage = await agent._react_loop(_make_request())
     assert text == "Final after tool."
     assert fake.call_count == 2
 
@@ -143,7 +143,7 @@ async def test_react_loop_appends_tool_messages_correctly() -> None:
         _resp("done"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    await agent.react_loop(_make_request())
+    await agent._react_loop(_make_request())
 
     second_request = fake.last_request
     assert second_request is not None
@@ -166,7 +166,7 @@ async def test_react_loop_accumulates_tokens_across_rounds() -> None:
         _resp("final"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    _, usage = await agent.react_loop(_make_request())
+    _, usage = await agent._react_loop(_make_request())
     assert usage.input_tokens == 20   # 10 + 10
     assert usage.output_tokens == 10  # 5 + 5
 
@@ -188,7 +188,7 @@ async def test_react_loop_empty_tool_calls_mid_round_terminates_cleanly() -> Non
         _resp("should not be called"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    text, _ = await agent.react_loop(_make_request())
+    text, _ = await agent._react_loop(_make_request())
     assert text == "changed mind"
     assert fake.call_count == 2  # did not proceed to round 3
 
@@ -211,7 +211,7 @@ async def test_react_loop_max_rounds_triggers_synthesis() -> None:
         _resp("synthesized"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    text, _ = await agent.react_loop(_make_request(), max_rounds=2)
+    text, _ = await agent._react_loop(_make_request(), max_rounds=2)
     assert text == "synthesized"
     assert fake.call_count == 3
 
@@ -228,7 +228,7 @@ async def test_react_loop_synthesis_request_has_no_tools() -> None:
         _resp("synthesis result"),
     ])
     agent = _make_agent(fake, tool_registry=reg)
-    await agent.react_loop(_make_request(), max_rounds=1)
+    await agent._react_loop(_make_request(), max_rounds=1)
 
     # Synthesis request must not include tools (to avoid infinite loop)
     synth_req = fake.last_request
@@ -264,4 +264,4 @@ async def test_react_loop_domain_enforced_by_registry() -> None:
 
     # Wrong domain raises PermissionError
     with pytest.raises(PermissionError):
-        await agent.react_loop(_make_request(), domain="stock")
+        await agent._react_loop(_make_request(), domain="stock")

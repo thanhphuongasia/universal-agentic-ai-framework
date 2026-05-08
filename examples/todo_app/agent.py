@@ -125,7 +125,7 @@ class TodoAnalysisAgent(LLMAgent):
         )
 
         # 4. ReAct loop via framework (callbacks injected at construction)
-        response, usage = await self.react_loop(request, max_rounds=3, domain="todo")
+        response, usage = await self._react_loop(request, max_rounds=3, domain="todo")
 
         # 5. Token budget display
         summary = self.budget_summary(usage, model)

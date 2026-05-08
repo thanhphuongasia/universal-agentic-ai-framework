@@ -213,3 +213,66 @@ async def test_span_has_correct_correlation_id() -> None:
     )
     await agent.execute(Task(task_id="t", payload={}), ctx)
     assert captured[0] == "my-corr-id"
+
+
+# ---------------------------------------------------------------------------
+# enforce_cognitive_routing — P7-T10
+# ---------------------------------------------------------------------------
+
+import dataclasses  # noqa: E402
+
+
+class TestEnforceCognitiveRouting:
+    @pytest.mark.asyncio
+    async def test_enforce_false_allows_direct_call(self):
+        """Default (False): execute() without strategy_id proceeds normally."""
+        agent = _make_agent()
+        ctx = _make_context()
+        assert ctx.strategy_id is None
+        result = await agent.execute(Task(task_id="t", payload={}), ctx)
+        assert result is not None  # proceeds normally — no RuntimeError
+
+    @pytest.mark.asyncio
+    async def test_enforce_true_raises_without_strategy_id(self):
+        """enforce=True: execute() without strategy_id raises RuntimeError."""
+
+        @dataclass
+        class StrictAgent(BaseAgent):
+            enforce_cognitive_routing: bool = True
+
+            async def _execute(self, task: Task, context: ExecutionContext) -> AgentResult:
+                return AgentResult(task_id=task.task_id, output="ok", cost=Cost.zero())
+
+        agent = StrictAgent(
+            agent_id="strict",
+            cost_tracker=CostTracker(),
+            tracer=_make_tracer(),
+            audit_logger=AuditLogger(AuditConfig(backend="console")),
+            rate_limiter=RateLimiter(RatePolicy(rps=1000, burst=100)),
+        )
+        ctx = _make_context()
+        assert ctx.strategy_id is None
+        with pytest.raises(RuntimeError, match="cognitive routing"):
+            await agent.execute(Task(task_id="t", payload={}), ctx)
+
+    @pytest.mark.asyncio
+    async def test_enforce_true_allows_call_with_strategy_id(self):
+        """enforce=True: execute() with strategy_id set proceeds normally."""
+
+        @dataclass
+        class StrictAgent(BaseAgent):
+            enforce_cognitive_routing: bool = True
+
+            async def _execute(self, task: Task, context: ExecutionContext) -> AgentResult:
+                return AgentResult(task_id=task.task_id, output="routed", cost=Cost.zero())
+
+        agent = StrictAgent(
+            agent_id="strict",
+            cost_tracker=CostTracker(),
+            tracer=_make_tracer(),
+            audit_logger=AuditLogger(AuditConfig(backend="console")),
+            rate_limiter=RateLimiter(RatePolicy(rps=1000, burst=100)),
+        )
+        ctx = dataclasses.replace(_make_context(), strategy_id="direct")
+        result = await agent.execute(Task(task_id="t", payload={}), ctx)
+        assert result.output == "routed"

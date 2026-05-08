@@ -20,7 +20,6 @@ from pathlib import Path
 from examples.stock_advisory.models import Portfolio
 from uaaf.execution.agent import AgentResult, Task
 from uaaf.execution.llm_agent import LLMAgent
-from uaaf.execution.tool_registry import ToolRegistry
 from uaaf.intent.models import ModelTier
 from uaaf.knowledge.context_assembler import ContextAssembler
 from uaaf.knowledge.memory.backbone import MemoryBackbone
@@ -152,7 +151,7 @@ class StockAdvisoryAgent(LLMAgent):
         )
 
         # 4. ReAct loop — tools called iteratively until LLM has enough info
-        response, usage = await self.react_loop(request, max_rounds=4, domain="stock_advisory")
+        response, usage = await self._react_loop(request, max_rounds=4, domain="stock_advisory")
 
         # 5. Optional: run verifier on the final response
         if verifier is not None:

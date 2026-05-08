@@ -77,6 +77,7 @@ class BaseAgent(ABC):
     tracer: Tracer
     audit_logger: AuditLogger
     rate_limiter: RateLimiter
+    enforce_cognitive_routing: bool = False
 
     @abstractmethod
     async def _execute(self, task: Task, context: ExecutionContext) -> AgentResult:
@@ -87,6 +88,13 @@ class BaseAgent(ABC):
 
         Executes the full cross-cutting pipeline around ``_execute()``.
         """
+        if self.enforce_cognitive_routing and context.strategy_id is None:
+            raise RuntimeError(
+                f"Agent {self.agent_id!r} called without cognitive routing "
+                "(context.strategy_id is None). "
+                "Use RequestHandler.handle() or set enforce_cognitive_routing=False "
+                "for direct-call patterns (tests, examples)."
+            )
         scope_key = context.scope.scope_key
         corr_id = context.correlation_id
 

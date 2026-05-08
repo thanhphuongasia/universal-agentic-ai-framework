@@ -5,6 +5,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0b7] - 2026-05-08
+
+### Added (Phase 7 — Workflow Engine + State Machine + Checkpoint)
+
+- `uaaf/workflow/` module: `ICheckpointStore`, `Checkpoint`, `InMemoryCheckpointStore`, `FileCheckpointStore`
+- `IState` Protocol + `StateTransition` + `Workflow` dataclass + `StateMachine`
+- `IWorkflowEngine` Protocol + `WorkflowEngine` with `run()` + `resume()` (SIGKILL-safe recovery)
+- Tiered error handling in engine: RetryableError (exponential backoff retry), DegradedError (log + fail gracefully), FatalError (immediate stop) — engine always returns `WorkflowResult`, never raises
+- `FileCheckpointStore`: atomic JSON writes via tmpfile → `os.replace`; raises `FatalError` on non-serializable output
+- `FakeCheckpointStore` + `FakeWorkflowEngine` in `uaaf/_testing/fakes.py` for product-side tests
+- Parametric contract tests for `ICheckpointStore` impls (InMemory + File) + `IWorkflowEngine`
+- Integration smoke: full PARSE → ENRICH → DERIVE pipeline + SIGKILL crash simulation via `FileCheckpointStore`
+- Public API exports from `uaaf`: `WorkflowEngine`, `Workflow`, `IState`, `ICheckpointStore`, `FileCheckpointStore`, `InMemoryCheckpointStore`, `WorkflowResult`, `WorkflowStatus`, `StateTransition`, `StateMachine`, `Checkpoint`
+
+### Changed
+
+- `uaaf.__version__` bumped `0.1.0b6` → `0.1.0b7`
+
 ## [0.1.0b6] - 2026-05-08
 
 ### Added (Phase 6 — Multi-Agent Orchestration)
