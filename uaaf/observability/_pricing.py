@@ -48,9 +48,16 @@ def _load_yaml(path: Path) -> Any:
 
 
 def _resolve_pricing_file() -> Path:
+    # 1. Explicit override via env var
     env = os.getenv("UAAF_PRICING_FILE")
     if env:
         return Path(env)
+    # 2. Project root (same level as prompts/) — works when running from source
+    project_root = Path(__file__).parent.parent.parent
+    project_file = project_root / "pricing.yaml"
+    if project_file.exists():
+        return project_file
+    # 3. Bundled inside package — fallback for pip-installed environments
     return Path(__file__).parent / "pricing.yaml"
 
 

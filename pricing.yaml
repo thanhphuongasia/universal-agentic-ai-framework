@@ -1,0 +1,33 @@
+# UAAF Pricing Configuration
+#
+# Update this file when providers change prices — no code redeploy needed.
+# Override location via env var: UAAF_PRICING_FILE=/path/to/custom/pricing.yaml
+#
+# pricing:    input_usd_per_1m, output_usd_per_1m
+# context_window: max context tokens per model
+
+pricing:
+  # OpenAI
+  gpt-4o:                  [2.50,  10.00]
+  gpt-4o-mini:             [0.15,   0.60]
+  gpt-4-turbo:            [10.00,  30.00]
+  gpt-3.5-turbo:           [0.50,   1.50]
+  text-embedding-3-small:  [0.02,   0.00]
+  text-embedding-3-large:  [0.13,   0.00]
+  # Anthropic
+  claude-opus-4-7:        [15.00,  75.00]
+  claude-sonnet-4-6:       [3.00,  15.00]
+  claude-haiku-4-5:        [0.80,   4.00]
+  # Generic fallback (used by FakeLLMProvider)
+  fake:                    [0.00,   0.00]
+
+context_window:
+  # OpenAI
+  gpt-4o:          128000
+  gpt-4o-mini:     128000
+  gpt-4-turbo:     128000
+  gpt-3.5-turbo:    16385
+  # Anthropic
+  claude-opus-4-7:   200000
+  claude-sonnet-4-6: 200000
+  claude-haiku-4-5:  200000

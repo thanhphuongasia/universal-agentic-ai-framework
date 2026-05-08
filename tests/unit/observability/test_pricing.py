@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Default tables (loaded from bundled pricing.yaml)
@@ -61,7 +59,7 @@ def test_calculate_usd_fake_provider_zero() -> None:
 
 def test_reload_pricing_from_custom_yaml(tmp_path: Path) -> None:
     """reload_pricing() picks up a custom YAML file."""
-    from uaaf.observability._pricing import reload_pricing, PRICING as orig
+    from uaaf.observability._pricing import reload_pricing
 
     custom = tmp_path / "custom_pricing.yaml"
     custom.write_text(yaml.dump({
@@ -108,9 +106,34 @@ def test_env_var_overrides_pricing_file(tmp_path: Path, monkeypatch: pytest.Monk
     assert resolved == custom
 
 
-def test_default_pricing_file_is_bundled() -> None:
-    """Default pricing file is co-located with _pricing.py."""
+def test_default_pricing_file_resolves_to_existing_yaml() -> None:
+    """_resolve_pricing_file() finds pricing.yaml at project root or bundled fallback."""
     from uaaf.observability._pricing import _resolve_pricing_file
     path = _resolve_pricing_file()
-    assert path.exists(), f"bundled pricing.yaml not found at {path}"
+    assert path.exists(), f"pricing.yaml not found at {path}"
     assert path.name == "pricing.yaml"
+
+
+def test_project_root_pricing_yaml_takes_precedence_over_bundled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Project-root pricing.yaml is preferred over bundled package copy."""
+    import uaaf.observability._pricing as mod
+
+    # Patch __file__ so project_root calculation points to tmp_path
+    custom = tmp_path / "pricing.yaml"
+    custom.write_text(yaml.dump({"pricing": {"custom-model": [1.0, 2.0]}, "context_window": {}}))
+
+    # Simulate: project_root = tmp_path (by putting __file__ 3 levels deep)
+    fake_file = tmp_path / "uaaf" / "observability" / "_pricing.py"
+    fake_file.parent.mkdir(parents=True)
+    fake_file.touch()
+
+    original = mod.__file__
+    monkeypatch.setattr(mod, "__file__", str(fake_file))
+    try:
+        from uaaf.observability._pricing import _resolve_pricing_file
+        resolved = _resolve_pricing_file()
+        assert resolved == custom
+    finally:
+        monkeypatch.setattr(mod, "__file__", original)
