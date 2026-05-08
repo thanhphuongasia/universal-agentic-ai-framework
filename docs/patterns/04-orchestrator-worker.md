@@ -57,31 +57,92 @@ intent.complexity == ComplexityLevel.HIGH  AND  len(intent.entities) > 1
 Đây chính là use case của `examples/code_analysis/`: orchestrate phân tích song song cho
 từng Python class, mỗi class là một entity trong intent.
 
+**Cơ chế truyền prompt:** `EntitySubtaskBuilder` tạo task với `payload["entity_key"]` và
+`payload["entity_value"]`. Worker đọc hai trường này để xây prompt, gọi LLM, trả JSON report.
+`ParallelFanoutStrategy` tổng hợp các JSON đó thành một output duy nhất.
+
 ```python
+import json
+import os
 import anyio
+from dataclasses import dataclass, field
+
 from uaaf import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
     StructuredIntent, ComplexityLevel,
 )
-from uaaf.cognitive.strategies.parallel import (
-    ParallelFanoutStrategy,
-    ISubtaskBuilder,
-)
+from uaaf.cognitive.strategies.parallel import ParallelFanoutStrategy, ISubtaskBuilder
 from uaaf.cognitive.verifier import VerificationResult
+from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
+
+
+_SYSTEM_PROMPT = """\
+Phân tích Python class dưới đây. Trả về JSON với các trường:
+  class (str), module (str), complexity (LOW|MEDIUM|HIGH),
+  method_count (int), has_docstring (bool), issues (list[str]),
+  refactor_priority (LOW|MEDIUM|HIGH)
+Chỉ trả JSON, không thêm text khác."""
+
+
+def build_provider() -> ILLMProvider:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        from uaaf.providers.adapters.openai import OpenAIProvider
+        return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
+    from uaaf._testing.fakes import FakeLLMProvider
+    from uaaf.providers.llm import Response, TokenUsage
+    def _fake(name: str, module: str) -> Response:
+        return Response(
+            json.dumps({"class": name, "module": module, "complexity": "MEDIUM",
+                        "method_count": 8, "has_docstring": True,
+                        "issues": [], "refactor_priority": "LOW"}),
+            "fake", TokenUsage(80, 60),
+        )
+    # FakeLLMProvider trả responses theo thứ tự — đủ cho 5 entity
+    return FakeLLMProvider(responses=[  # type: ignore[return-value]
+        _fake("AgentPool", "uaaf/execution/pool.py"),
+        _fake("BaseAgent", "uaaf/execution/agent.py"),
+        _fake("ReActStrategy", "uaaf/cognitive/strategies/react.py"),
+        _fake("EvaluatorOptimizerStrategy", "uaaf/cognitive/strategies/evaluator_optimizer.py"),
+        _fake("ModelRouter", "uaaf/providers/router.py"),
+    ])
 
 
 # --- Worker: phân tích 1 Python class ---
+@dataclass
 class ClassAnalysisWorker(BaseAgent):
+    llm: ILLMProvider = field(default_factory=build_provider)
+
     async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
         class_name  = task.payload["entity_key"]
         module_path = task.payload["entity_value"]
-        # Thực tế: đọc source, gọi LLM phân tích complexity/docstring/issues
-        report = (
-            f"Class {class_name} ({module_path}): "
-            f"complexity=MEDIUM, 8 methods, docstring coverage 62%"
+
+        # Thực tế: đọc source từ module_path rồi nhét vào prompt
+        source_hint = f"# class {class_name} in {module_path}"
+
+        request = CompletionRequest(
+            model="gpt-4o-mini",
+            messages=[
+                Message(role="system", content=_SYSTEM_PROMPT),
+                Message(role="user",   content=f"Class: {class_name}\nModule: {module_path}\n\n{source_hint}"),
+            ],
+            max_tokens=512,
+            temperature=0.0,
         )
-        return AgentResult(task_id=task.task_id, output=report, cost=Cost.zero())
+        response = await self.llm.complete(request)
+
+        return AgentResult(
+            task_id=task.task_id,
+            output=response.content,
+            cost=Cost(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                usd=round((response.usage.input_tokens + response.usage.output_tokens) * 1.5e-7, 8),
+                provider="openai",
+                model=response.model,
+            ),
+        )
 
 
 # --- Custom subtask builder: thêm metadata ---
@@ -121,32 +182,33 @@ async def main():
     from uaaf.observability.tracer import Tracer
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+    provider = build_provider()  # 1 provider dùng chung — stateless, thread-safe
+
     def make_worker(name: str) -> ClassAnalysisWorker:
         return ClassAnalysisWorker(
             agent_id=name,
+            llm=provider,
             cost_tracker=CostTracker(CostPolicy()),
             tracer=Tracer("demo", InMemorySpanExporter()),
             audit_logger=AuditLogger(),
-            rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=20)),
+            rate_limiter=RateLimiter(RatePolicy(rps=10.0, burst=20)),
         )
 
     pool = AgentPool(max_concurrency=4)
     for i in range(4):
         pool.register(make_worker(f"class-analyst-{i}"))
 
-    # Dùng custom builder để có thêm metadata
-    strategy = ParallelFanoutStrategy(subtask_builder=ClassSubtaskBuilder())
+    strategy = ParallelFanoutStrategy()  # dùng EntitySubtaskBuilder mặc định
 
-    # Entities = các class cần phân tích trong codebase UAAF
     intent = StructuredIntent(
         intent_type="code_analysis",
         action="Phân tích toàn bộ class trong codebase UAAF",
         entities={
-            "AgentPool":                "uaaf/execution/pool.py",
-            "BaseAgent":                "uaaf/execution/agent.py",
-            "ReActStrategy":            "uaaf/cognitive/strategies/react.py",
+            "AgentPool":                  "uaaf/execution/pool.py",
+            "BaseAgent":                  "uaaf/execution/agent.py",
+            "ReActStrategy":              "uaaf/cognitive/strategies/react.py",
             "EvaluatorOptimizerStrategy": "uaaf/cognitive/strategies/evaluator_optimizer.py",
-            "ModelRouter":              "uaaf/providers/router.py",
+            "ModelRouter":                "uaaf/providers/router.py",
         },
         complexity=ComplexityLevel.HIGH,
         confidence=0.95,
@@ -156,17 +218,17 @@ async def main():
         correlation_id="codebase-analysis-run-01",
     )
 
-    # applicable() kiểm tra: HIGH + 5 entities > 1 → True
-    assert strategy.applicable(intent, ctx)
-
     result = await strategy.execute(intent, ctx, pool, ReportVerifier())
     print(result.strategy_id)   # "parallel_fanout"
     print(result.confidence)    # 0.9 (nếu verify passed)
-    print(result.content[:200]) # combined report từ 5 worker
 
-    # estimate_cost trước khi chạy (hữu ích để pre-flight check)
-    estimate = strategy.estimate_cost(intent, ctx)
-    print(f"Dự kiến: {estimate.steps_est} bước, ~${estimate.usd_est:.4f}")
+    # combined = JSON của từng class, join bằng "\n\n"
+    for chunk in result.content.split("\n\n"):
+        try:
+            data = json.loads(chunk)
+            print(f"  {data['class']}: {data['complexity']}, priority={data['refactor_priority']}")
+        except json.JSONDecodeError:
+            pass
 
 
 anyio.run(main)

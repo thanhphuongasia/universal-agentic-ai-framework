@@ -37,71 +37,113 @@ fan_out([t0, t1, t2, t3], on_error="collect")
 Khi phân tích codebase, mỗi file là một task độc lập — không file nào cần kết quả của file khác.
 Fan_out giảm thời gian từ `O(n files × latency)` xuống `O(latency)` (với đủ concurrency).
 
+**Cơ chế truyền prompt:** `fan_out()` chỉ dispatch task — agent tự xây prompt từ `task.payload`.
+Không có strategy nào pre-build prompt cho Pattern 3; agent phải đọc payload và gọi LLM trực tiếp.
+
 ```python
+import json
+import os
 import anyio
+from dataclasses import dataclass, field
+
 from uaaf import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
 )
+from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
+_SYSTEM_PROMPT = """\
+Phân tích file Python sau. Trả về JSON với các trường:
+  file, classes (int), methods (int), docstring_coverage (float 0-1), complexity (LOW|MEDIUM|HIGH), issues (list[str])
+Chỉ trả JSON, không thêm text khác."""
+
+
+def build_provider() -> ILLMProvider:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        from uaaf.providers.adapters.openai import OpenAIProvider
+        return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
+    from uaaf._testing.fakes import FakeLLMProvider
+    from uaaf.providers.llm import Response, TokenUsage
+    fake_report = json.dumps({"file": "?", "classes": 3, "methods": 12,
+                              "docstring_coverage": 0.75, "complexity": "MEDIUM", "issues": []})
+    return FakeLLMProvider(default_content=fake_report)  # type: ignore[return-value]
+
+
+@dataclass
 class FileAnalysisAgent(BaseAgent):
-    """Phân tích 1 file Python: đếm class, method, docstring coverage."""
+    """Phân tích 1 file Python bằng LLM."""
+    llm: ILLMProvider = field(default_factory=build_provider)
 
     async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
         filepath = task.payload["filepath"]
-        # Thực tế: đọc file và gọi LLM phân tích
-        # Ở đây giả lập kết quả
-        report = {
-            "file": filepath,
-            "classes": 3,
-            "methods": 12,
-            "docstring_coverage": 0.75,
-            "complexity": "MEDIUM",
-        }
-        import json
+        source   = task.payload.get("source", f"# (source của {filepath})")
+
+        request = CompletionRequest(
+            model="gpt-4o-mini",
+            messages=[
+                Message(role="system", content=_SYSTEM_PROMPT),
+                Message(role="user",   content=f"File: {filepath}\n\n```python\n{source}\n```"),
+            ],
+            max_tokens=512,
+            temperature=0.0,   # JSON output cần deterministic
+        )
+        response = await self.llm.complete(request)
+
         return AgentResult(
             task_id=task.task_id,
-            output=json.dumps(report),
-            cost=Cost.zero(),
+            output=response.content,   # JSON string
+            cost=Cost(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                usd=round((response.usage.input_tokens + response.usage.output_tokens) * 1.5e-7, 8),
+                provider="openai",
+                model=response.model,
+            ),
         )
 
 
 async def main():
+    from pathlib import Path
     from uaaf.observability.audit import AuditLogger
     from uaaf.observability.cost import CostPolicy, CostTracker
     from uaaf.observability.rate_limit import RateLimiter, RatePolicy
     from uaaf.observability.tracer import Tracer
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+    provider = build_provider()  # dùng chung 1 provider (stateless HTTP calls)
+
     def make_agent(name: str) -> FileAnalysisAgent:
         return FileAnalysisAgent(
             agent_id=name,
+            llm=provider,
             cost_tracker=CostTracker(CostPolicy()),
             tracer=Tracer("demo", InMemorySpanExporter()),
             audit_logger=AuditLogger(),
-            rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=20)),
+            rate_limiter=RateLimiter(RatePolicy(rps=10.0, burst=20)),
         )
 
-    # 3 worker agents — fan_out phân phối round-robin
-    pool = AgentPool(max_concurrency=3)
+    pool = AgentPool(max_concurrency=3)  # 3 worker, phân phối round-robin
     pool.register(make_agent("analyzer-0"))
     pool.register(make_agent("analyzer-1"))
     pool.register(make_agent("analyzer-2"))
 
-    # 8 file cần phân tích — hoàn toàn độc lập nhau
+    # Đọc source thật và nhét vào payload để agent forward vào prompt
     files = [
         "uaaf/execution/agent.py",
         "uaaf/execution/pool.py",
-        "uaaf/providers/router.py",
-        "uaaf/providers/circuit_breaker.py",
         "uaaf/cognitive/strategies/react.py",
-        "uaaf/cognitive/strategies/parallel.py",
-        "uaaf/cognitive/verifiers/pipeline.py",
         "uaaf/observability/cost.py",
     ]
     tasks = [
-        Task(task_id=f"file-{i}", payload={"filepath": f})
+        Task(
+            task_id=f"file-{i}",
+            payload={
+                "filepath": f,
+                "source": Path(f).read_text() if Path(f).exists() else f"# {f} not found",
+            },
+        )
         for i, f in enumerate(files)
     ]
 
@@ -110,33 +152,22 @@ async def main():
         correlation_id="batch-file-scan",
     )
 
-    # --- collect mode: một file lỗi không dừng cả batch ---
     results = await pool.fan_out(tasks, ctx, on_error="collect")
 
-    import json
     successes = [r for r in results if r.success]
     failures  = [r for r in results if not r.success]
-
     print(f"Phân tích thành công: {len(successes)}/{len(tasks)} file")
+
     for r in successes:
-        data = json.loads(r.output)
-        print(f"  {data['file']}: {data['classes']} class, "
-              f"docstring {data['docstring_coverage']:.0%}")
+        try:
+            data = json.loads(r.output)
+            print(f"  {data['file']}: {data['classes']} class, "
+                  f"docstring {data['docstring_coverage']:.0%}, {data['complexity']}")
+        except json.JSONDecodeError:
+            print(f"  {r.task_id}: LLM trả non-JSON — {r.output[:60]}")
 
-    if failures:
-        for r in failures:
-            print(f"  FAIL {r.task_id}: {r.metadata.get('error', '?')}")
-
-    # --- fail_fast mode: dùng khi batch là atomic (tất cả phải thành công) ---
-    try:
-        results = await pool.fan_out(tasks, ctx, on_error="fail_fast")
-    except ExceptionGroup as eg:
-        print(f"Batch thất bại: {len(eg.exceptions)} lỗi")
-
-    # --- tag_filter: chỉ dùng agent chuyên biệt ---
-    pool.register(make_agent("async-specialist"), tags={"async"})
-    async_tasks = [Task(task_id="async-0", payload={"filepath": "uaaf/execution/pool.py"})]
-    results = await pool.fan_out(async_tasks, ctx, tag_filter="async", on_error="collect")
+    for r in failures:
+        print(f"  FAIL {r.task_id}: {r.metadata.get('error', '?')}")
 
 
 anyio.run(main)

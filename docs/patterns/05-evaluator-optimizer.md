@@ -35,8 +35,15 @@ Hết max_rounds → return best_output (confidence cao nhất đạt được)
 Flashcard tốt cần: câu hỏi rõ ràng, câu trả lời đủ ngắn gọn, có ví dụ minh hoạ, độ khó đúng level.
 Những tiêu chí này có thể kiểm tra tự động → Evaluator-Optimizer là lựa chọn đúng.
 
+**Cơ chế truyền prompt:** `EvaluatorOptimizerStrategy` tự ghép `intent.action + feedback` vào
+`task.payload["message"]` rồi gọi `agent_pool.dispatch(task)` mỗi vòng. Agent chỉ đọc
+`task.payload["message"]` và forward vào LLM — không cần biết vòng mấy hay feedback là gì.
+
 ```python
+import os
 import anyio
+from dataclasses import dataclass, field
+
 from uaaf import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
@@ -45,35 +52,69 @@ from uaaf import (
 from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
 from uaaf.cognitive.verifiers.pipeline import VerifierPipeline, PipelineMode
 from uaaf.cognitive.verifier import VerificationResult
+from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
-# --- Flashcard generator agent ---
+_SYSTEM_PROMPT = """\
+Tạo một flashcard học tập theo format sau (bắt buộc đủ 3 phần):
+  Q: <câu hỏi rõ ràng, cụ thể>
+  A: <câu trả lời ngắn gọn> + Ví dụ: <ví dụ minh hoạ cụ thể>
+  Difficulty: <beginner|intermediate|advanced>
+
+Nếu được cung cấp feedback, hãy sửa flashcard theo đúng feedback đó."""
+
+
+def build_provider() -> ILLMProvider:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        from uaaf.providers.adapters.openai import OpenAIProvider
+        return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
+    from uaaf._testing.fakes import FakeLLMProvider
+    from uaaf.providers.llm import Response, TokenUsage
+    # Vòng 1: thiếu ví dụ; Vòng 2: đủ sau khi nhận feedback
+    return FakeLLMProvider(responses=[  # type: ignore[return-value]
+        Response(
+            "Q: Supervised Learning là gì?\nA: Học máy dùng dữ liệu có nhãn.\nDifficulty: beginner",
+            "fake", TokenUsage(100, 40),
+        ),
+        Response(
+            "Q: Supervised Learning là gì?\nA: Học máy dùng dữ liệu có nhãn để dự đoán output mới.\n   Ví dụ: phân loại spam/not-spam từ 10k email đã gán nhãn.\nDifficulty: beginner",
+            "fake", TokenUsage(110, 60),
+        ),
+    ])
+
+
+# --- Agent động: đọc prompt từ strategy, gọi LLM ---
+@dataclass
 class FlashcardAgent(BaseAgent):
-    _attempt: int = 0
+    llm: ILLMProvider = field(default_factory=build_provider)
 
     async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
-        feedback = task.payload.get("message", "")
-        self._attempt += 1
+        # EvaluatorOptimizerStrategy đã ghép: "intent.action\nPrevious feedback: ..."
+        user_prompt = task.payload.get("message", "")
 
-        if self._attempt == 1:
-            # Lần đầu: thiếu ví dụ
-            card = (
-                "Q: Supervised Learning là gì?\n"
-                "A: Học máy dùng dữ liệu có nhãn để train model dự đoán.\n"
-                "Difficulty: beginner"
-            )
-        elif "thiếu ví dụ" in feedback:
-            # Vòng 2: thêm ví dụ theo feedback
-            card = (
-                "Q: Supervised Learning là gì?\n"
-                "A: Học máy dùng dữ liệu có nhãn để train model dự đoán output mới.\n"
-                "   Ví dụ: phân loại email spam/not-spam dựa trên 10,000 email đã gán nhãn.\n"
-                "Difficulty: beginner"
-            )
-        else:
-            card = task.payload.get("message", "Q: ?\nA: ?\nDifficulty: ?")
+        request = CompletionRequest(
+            model="gpt-4o-mini",
+            messages=[
+                Message(role="system", content=_SYSTEM_PROMPT),
+                Message(role="user",   content=user_prompt),
+            ],
+            max_tokens=300,
+            temperature=0.3,  # đủ creative nhưng vẫn follow format
+        )
+        response = await self.llm.complete(request)
 
-        return AgentResult(task_id=task.task_id, output=card, cost=Cost.zero())
+        return AgentResult(
+            task_id=task.task_id,
+            output=response.content,
+            cost=Cost(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                usd=round((response.usage.input_tokens + response.usage.output_tokens) * 1.5e-7, 8),
+                provider="openai",
+                model=response.model,
+            ),
+        )
 
 
 # --- Verifier 1: câu hỏi phải bắt đầu bằng "Q:" ---
@@ -124,31 +165,25 @@ async def main():
 
     agent = FlashcardAgent(
         agent_id="flashcard-gen",
+        llm=build_provider(),
         cost_tracker=CostTracker(CostPolicy()),
         tracer=Tracer("demo", InMemorySpanExporter()),
         audit_logger=AuditLogger(),
-        rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=10)),
+        rate_limiter=RateLimiter(RatePolicy(rps=10.0, burst=5)),
     )
     pool = AgentPool(max_concurrency=2)
     pool.register(agent)
 
-    # --- Pipeline mode: ALL_PASS — cả 3 tiêu chí phải đạt ---
     strict_verifier = VerifierPipeline(
         verifiers=[QuestionFormatVerifier(), ExampleVerifier(), DifficultyVerifier()],
         mode=PipelineMode.ALL_PASS,
-    )
-
-    # --- Pipeline mode: THRESHOLD — ít nhất 2/3 phải pass ---
-    lenient_verifier = VerifierPipeline(
-        verifiers=[QuestionFormatVerifier(), ExampleVerifier(), DifficultyVerifier()],
-        mode=PipelineMode.THRESHOLD,
-        threshold_count=2,
     )
 
     strategy = EvaluatorOptimizerStrategy(max_rounds=3)
 
     intent = StructuredIntent(
         intent_type="flashcard_generation",
+        # Strategy sẽ ghép string này + feedback vào task.payload["message"]
         action="Tạo flashcard về Supervised Learning cho người mới học ML",
         entities={"topic": "supervised_learning", "level": "beginner"},
         complexity=ComplexityLevel.HIGH,
@@ -159,15 +194,10 @@ async def main():
         correlation_id="flashcard-ml-beginner",
     )
 
-    # Dùng strict_verifier: cả 3 tiêu chí đều phải đạt
     result = await strategy.execute(intent, ctx, pool, strict_verifier)
     print(result.strategy_id)   # "evaluator_optimizer"
-    print(result.confidence)    # >= 0.85 sau vòng 2 (có ví dụ)
-    print(result.content)       # flashcard đã được refine
-
-    # Chi phí ước tính trước khi chạy
-    estimate = strategy.estimate_cost(intent, ctx)
-    print(f"Dự kiến: {estimate.steps_est} bước (max_rounds×2), ~${estimate.usd_est:.4f}")
+    print(result.confidence)    # >= 0.85 sau vòng 2 (LLM đã thêm ví dụ theo feedback)
+    print(result.content)       # flashcard đã được LLM refine dựa trên feedback verifier
 
 
 anyio.run(main)

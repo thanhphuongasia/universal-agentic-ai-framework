@@ -38,8 +38,15 @@ Nghiên cứu cổ phiếu điển hình gồm nhiều bước phụ thuộc nha
 **giá hiện tại → tin tức → phân tích sentiment → khuyến nghị**.
 Mỗi bước cần kết quả bước trước → ReAct là lựa chọn đúng.
 
+**Cơ chế truyền prompt:** `ReActStrategy` tự ghép `intent.action + chuỗi observations` vào
+`task.payload["message"]` rồi gọi `agent_pool.dispatch(task)` mỗi bước. Agent chỉ cần đọc
+`task.payload["message"]` và forward vào LLM. Agent không biết mình đang ở bước mấy.
+
 ```python
+import os
 import anyio
+from dataclasses import dataclass, field
+
 from uaaf import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
@@ -47,26 +54,66 @@ from uaaf import (
 )
 from uaaf.cognitive.strategies.react import ReActStrategy
 from uaaf.cognitive.verifier import VerificationResult
+from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
-# --- Stock research agent: mô phỏng multi-step LLM ---
+# --- Prompt cho LLM: dạy nó dùng ACTION:/DONE: ---
+_SYSTEM_PROMPT = """\
+Bạn là chuyên gia phân tích cổ phiếu. Trả lời theo một trong hai format:
+  ACTION: <bước cần thực hiện tiếp theo>
+  DONE: <khuyến nghị cuối cùng với lý do>
+
+Chỉ trả DONE khi đã có đủ thông tin để đưa ra khuyến nghị rõ ràng."""
+
+
+# --- Provider factory: OpenAI nếu có API key, Fake nếu không ---
+def build_provider() -> ILLMProvider:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        from uaaf.providers.adapters.openai import OpenAIProvider
+        return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
+    from uaaf._testing.fakes import FakeLLMProvider
+    from uaaf.providers.llm import Response, TokenUsage
+    # Demo mode: mô phỏng luồng ACTION → ACTION → DONE
+    return FakeLLMProvider(responses=[  # type: ignore[return-value]
+        Response("ACTION: Lấy giá AAPL hiện tại và volume 30 ngày", "fake", TokenUsage(80, 20)),
+        Response("ACTION: Tìm 5 bài báo về AAPL trong 7 ngày qua", "fake", TokenUsage(90, 25)),
+        Response("ACTION: Phân tích sentiment từ các bài báo trên", "fake", TokenUsage(100, 30)),
+        Response("DONE: Khuyến nghị MUA — giá $185 ở vùng hỗ trợ mạnh, sentiment tích cực 72%, volume tăng 15%", "fake", TokenUsage(120, 40)),
+    ])
+
+
+# --- Agent động: gọi LLM thật với prompt từ ReActStrategy ---
+@dataclass
 class StockResearchAgent(BaseAgent):
-    _steps: list[str]
-
-    def __post_init__(self) -> None:
-        # Mỗi phần tử là response cho từng bước ReAct
-        self._steps = [
-            "ACTION: Lấy giá AAPL hiện tại",
-            "ACTION: Tìm tin tức AAPL trong 7 ngày qua",
-            "ACTION: Phân tích sentiment từ 3 bài báo tìm được",
-            "DONE: Khuyến nghị MUA — giá $185 ở vùng hỗ trợ, sentiment tích cực 72%",
-        ]
-        self._call = 0
+    llm: ILLMProvider = field(default_factory=build_provider)
 
     async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
-        response = self._steps[min(self._call, len(self._steps) - 1)]
-        self._call += 1
-        return AgentResult(task_id=task.task_id, output=response, cost=Cost.zero())
+        # ReActStrategy đã ghép: intent.action + "\nObservations:\n" + chuỗi ACTION cũ
+        user_prompt = task.payload.get("message", "")
+
+        request = CompletionRequest(
+            model="gpt-4o-mini",
+            messages=[
+                Message(role="system", content=_SYSTEM_PROMPT),
+                Message(role="user",   content=user_prompt),
+            ],
+            max_tokens=256,
+            temperature=0.2,  # thấp để output có format nhất quán
+        )
+        response = await self.llm.complete(request)
+
+        return AgentResult(
+            task_id=task.task_id,
+            output=response.content,
+            cost=Cost(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                usd=round((response.usage.input_tokens + response.usage.output_tokens) * 1.5e-7, 8),
+                provider="openai",
+                model=response.model,
+            ),
+        )
 
 
 class PassVerifier:
@@ -84,10 +131,11 @@ async def main():
 
     agent = StockResearchAgent(
         agent_id="stock-researcher",
+        llm=build_provider(),               # OpenAI hoặc Fake tuỳ OPENAI_API_KEY
         cost_tracker=CostTracker(CostPolicy()),
         tracer=Tracer("demo", InMemorySpanExporter()),
         audit_logger=AuditLogger(),
-        rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=10)),
+        rate_limiter=RateLimiter(RatePolicy(rps=10.0, burst=5)),
     )
 
     pool = AgentPool(max_concurrency=2)
@@ -97,7 +145,7 @@ async def main():
 
     intent = StructuredIntent(
         intent_type="stock_analysis",
-        action="Nên mua cổ phiếu AAPL không?",
+        action="Nên mua cổ phiếu AAPL không? Phân tích giá, tin tức, và sentiment.",
         entities={"ticker": "AAPL", "currency": "USD"},
         complexity=ComplexityLevel.MEDIUM,
         confidence=0.9,
@@ -109,8 +157,8 @@ async def main():
 
     result = await strategy.execute(intent, ctx, pool, PassVerifier())
     print(result.strategy_id)  # "react"
-    print(result.content)      # "Khuyến nghị MUA — giá $185..."
-    print(result.reasoning)    # chuỗi ACTION steps đã tích lũy — dùng để audit
+    print(result.content)      # "DONE: Khuyến nghị MUA..."
+    print(result.reasoning)    # chuỗi ACTION steps — dùng để audit
 
 
 anyio.run(main)
