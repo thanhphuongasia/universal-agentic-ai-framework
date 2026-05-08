@@ -14,17 +14,22 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from examples._utils import silent_tracer
 from examples.todo_app.agent import TodoAnalysisAgent, build_provider
-from examples.todo_app.models import Status, build_mock_data
+from examples.todo_app.intent import TodoIntentAnalyzer
+from examples.todo_app.models import Goal, Status, Task, build_mock_data
+from examples.todo_app.strategies import TodoDirectStrategy
 from examples.todo_app.tools import build_todo_registry
+from uaaf._testing.fakes import FakeVerifier
 from uaaf.execution import PrintCallbacks
 from uaaf.execution.agent import Task as AgentTask
+from uaaf.execution.pool import AgentPool
+from uaaf.intent.selector import StrategySelector
 from uaaf.observability.audit import AuditLogger
 from uaaf.observability.cost import CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
 from uaaf.prompts.registry import PromptRegistry
 from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf.runtime.request_handler import RequestHandler
 
 
 def print_separator(title: str = "") -> None:
@@ -34,6 +39,110 @@ def print_separator(title: str = "") -> None:
         print(f"\n{'─' * pad} {title} {'─' * pad}")
     else:
         print(f"\n{'─' * width}")
+
+
+def _build_agent(
+    goals: list[Goal],
+    tasks: list[Task],
+    session_id: str,
+) -> TodoAnalysisAgent:
+    """Build a fresh TodoAnalysisAgent with ingested data — reusable for both paths."""
+    from examples._utils import silent_tracer
+
+    llm = build_provider()
+    tool_registry = build_todo_registry(goals, tasks)
+    agent = TodoAnalysisAgent(
+        agent_id="todo-analyst",
+        llm=llm,
+        tool_registry=tool_registry,
+        callbacks=PrintCallbacks(),
+        cost_tracker=CostTracker(CostPolicy(
+            per_user_per_day_usd=1.0,
+            per_domain_per_month_usd=20.0,
+            global_per_hour_usd=5.0,
+        )),
+        tracer=silent_tracer(),
+        audit_logger=AuditLogger(),
+        rate_limiter=RateLimiter(RatePolicy(rps=1.0, burst=10)),
+    )
+    return agent
+
+
+async def run_with_request_handler(
+    goals: list[Goal],
+    tasks: list[Task],
+    ctx: ExecutionContext,
+) -> None:
+    """Run the same 3 queries through RequestHandler — compare with direct agent.execute().
+
+    Wiring:
+      message
+        → TodoIntentAnalyzer.analyze()     [classify: type / complexity / prompt_name]
+        → StrategySelector.select()        [pick TodoDirectStrategy]
+        → ctx_routed = replace(ctx, strategy_id="direct")
+        → TodoDirectStrategy.execute()     [build Task payload, dispatch via pool]
+        → AgentPool.dispatch(task, ctx_routed)
+        → TodoAnalysisAgent.execute()      [cross-cutting + _react_loop]
+        → CognitiveResult
+    """
+    print_separator("RequestHandler — Wiring")
+    print("""
+  message
+    → TodoIntentAnalyzer     classify: intent_type / complexity / prompt_name
+    → StrategySelector       pick strategy based on intent
+    → ctx_routed             stamp strategy_id on immutable context copy
+    → TodoDirectStrategy     translate intent → Task payload
+    → AgentPool.dispatch     route to registered agent
+    → TodoAnalysisAgent      same cross-cutting pipeline as direct call
+    → CognitiveResult        content + strategy_id
+    """)
+
+    # Wire the RequestHandler
+    agent = _build_agent(goals, tasks, ctx.scope.session_id)
+    await agent.ingest_goals(goals, scope_key=ctx.scope.session_id)
+
+    pool = AgentPool()
+    pool.register(agent)
+
+    analyzer = TodoIntentAnalyzer()
+    handler = RequestHandler(
+        analyzer=analyzer,
+        selector=StrategySelector([TodoDirectStrategy()]),
+        pool=pool,
+        verifier=FakeVerifier(),
+    )
+
+    queries = [
+        "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers.",
+        "Give me a JSON breakdown of completed tasks by priority and effort per goal.",
+        "What should I focus on next sprint to maximize goal completion?",
+    ]
+
+    for query in queries:
+        # Show what the analyzer sees BEFORE dispatching
+        intent = await analyzer.analyze(query, ctx.scope.scope_key)
+        print_separator(f"Handler: {intent.intent_type.upper()}")
+        print(f"  Query      : {query}")
+        print(f"  ├ type     : {intent.intent_type}")
+        print(f"  ├ prompt   : {intent.entities['prompt_name']}  ← auto-selected by analyzer")
+        print(f"  ├ complexity: {intent.complexity.name}  (LOW→cheap, HIGH→standard model)")
+        print(f"  └ strategy : {intent.suggested_strategy}\n")
+
+        result = await handler.handle(query, ctx)
+
+        print(f"\n  strategy_id on context : '{result.strategy_id}'  ← routing proof")
+        print(f"  Output:\n  {result.content[:300]}")
+
+    print_separator("Direct vs RequestHandler — Key Differences")
+    print("""
+  direct agent.execute()          RequestHandler.handle()
+  ──────────────────────────────  ──────────────────────────────────────
+  caller picks prompt_name        analyzer auto-selects prompt_name
+  ctx.strategy_id = None          ctx.strategy_id = "direct"
+  no intent classification        StructuredIntent: type + complexity
+  no routing audit trail          strategy_id stamps every request
+  hard to swap strategy later     swap strategy in StrategySelector only
+    """)
 
 
 async def main() -> None:
@@ -55,27 +164,12 @@ async def main() -> None:
     for goal in goals:
         print(f"  {goal.summary()}")
 
-    # ── Wire agent ──────────────────────────────────────────────────────────
-    llm = build_provider()
-    tool_registry = build_todo_registry(goals, tasks)
-
-    agent = TodoAnalysisAgent(
-        agent_id="todo-analyst",
-        llm=llm,
-        tool_registry=tool_registry,
-        callbacks=PrintCallbacks(),
-        cost_tracker=CostTracker(CostPolicy(
-            per_user_per_day_usd=1.0,
-            per_domain_per_month_usd=20.0,
-            global_per_hour_usd=5.0,
-        )),
-        tracer=silent_tracer(),
-        audit_logger=AuditLogger(),
-        rate_limiter=RateLimiter(RatePolicy(rps=1.0, burst=10)),
-    )
-
     scope = ContextScope(user_id="demo-user", session_id="todo-session-1", domain="todo")
     ctx = ExecutionContext(scope=scope, correlation_id="demo-001")
+
+    # ── Wire agent ──────────────────────────────────────────────────────────
+    agent = _build_agent(goals, tasks, scope.session_id)
+    tool_registry = build_todo_registry(goals, tasks)
 
     # ── Ingest ─────────────────────────────────────────────────────────────
     print_separator("Ingestion → MemoryBackbone")
@@ -138,6 +232,9 @@ async def main() -> None:
     print_separator()
     print("  Prompt versioning: bump to v2.yaml to iterate prompts without code changes")
     print("  Tool calling:      LLM chooses tools from YAML schema, Python executes them\n")
+
+    # ── RequestHandler comparison ────────────────────────────────────────────
+    await run_with_request_handler(goals, tasks, ctx)
 
 
 if __name__ == "__main__":

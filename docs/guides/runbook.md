@@ -314,6 +314,142 @@ async def _execute(self, task, context):
 
 ---
 
+## 12. Wire RequestHandler cho conversational app
+
+Dùng khi: app nhận free-text từ user và cần **tự động chọn strategy** dựa trên intent, thay vì hard-code `agent.execute()`.
+
+### Kiến trúc
+
+```
+message
+  → IIntentAnalyzer.analyze()      classify: intent_type / complexity / prompt
+  → StrategySelector.select()      pick strategy dựa trên StructuredIntent
+  → ctx_routed                     stamp strategy_id (immutable copy)
+  → ICognitiveStrategy.execute()   translate intent → Task, dispatch qua pool
+  → AgentPool.dispatch()           route đến agent đã register
+  → CognitiveResult                content + strategy_id (routing proof)
+```
+
+### Bước 1 — Implement IIntentAnalyzer
+
+```python
+from dataclasses import dataclass
+from uaaf.intent.models import DIRECT, ComplexityLevel, ModelTier, StructuredIntent
+
+@dataclass
+class MyIntentAnalyzer:
+    async def analyze(self, message: str, scope_key: str, history=None) -> StructuredIntent:
+        msg = message.lower()
+        if "report" in msg or "breakdown" in msg:
+            return StructuredIntent(
+                intent_type="report",
+                action=message,
+                entities={"prompt_name": "report"},
+                complexity=ComplexityLevel.LOW,
+                confidence=0.9,
+                suggested_strategy=DIRECT,
+                suggested_model_tier=ModelTier.CHEAP,
+            )
+        # default
+        return StructuredIntent(
+            intent_type="query",
+            action=message,
+            entities={"prompt_name": "analyze"},
+            complexity=ComplexityLevel.MEDIUM,
+            confidence=0.8,
+            suggested_strategy=DIRECT,
+            suggested_model_tier=ModelTier.STANDARD,
+        )
+```
+
+### Bước 2 — Implement domain ICognitiveStrategy
+
+Domain strategy cần bridge `StructuredIntent` → `Task` payload hiểu được bởi agent.
+
+```python
+from uaaf.cognitive.strategy import IAgentPool, IVerifier
+from uaaf.execution.agent import Task
+from uaaf.execution.pool import AgentPool
+from uaaf.intent.models import DIRECT, CognitiveResult, CostEstimate, StructuredIntent
+from uaaf.runtime.context import ExecutionContext
+
+class MyDirectStrategy:
+    strategy_id = DIRECT
+
+    def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
+        return True  # handles all intents; add checks to restrict
+
+    def estimate_cost(self, intent, context) -> CostEstimate:
+        return CostEstimate(input_tokens_est=1000, output_tokens_est=200, usd_est=0.0001)
+
+    async def execute(self, intent, context, agent_pool: IAgentPool, verifier: IVerifier) -> CognitiveResult:
+        task = Task(
+            task_id=f"req-{context.correlation_id}",
+            payload={
+                "query": intent.action,
+                "prompt": intent.entities.get("prompt_name", "analyze"),
+            },
+        )
+        # Pass context so agent receives strategy_id (routing proof)
+        if isinstance(agent_pool, AgentPool):
+            result = await agent_pool.dispatch(task, context)
+        else:
+            result = await agent_pool.dispatch(task)
+        return CognitiveResult(content=str(result.output), confidence=0.9, strategy_id=DIRECT)
+```
+
+### Bước 3 — Wire RequestHandler
+
+```python
+from uaaf._testing.fakes import FakeVerifier   # hoặc domain verifier thật
+from uaaf.execution.pool import AgentPool
+from uaaf.intent.selector import StrategySelector
+from uaaf.runtime.request_handler import RequestHandler
+
+pool = AgentPool()
+pool.register(my_agent)   # agent đã build + ingest data
+
+handler = RequestHandler(
+    analyzer=MyIntentAnalyzer(),
+    selector=StrategySelector([MyDirectStrategy()]),
+    pool=pool,
+    verifier=FakeVerifier(),
+)
+```
+
+### Bước 4 — Handle request
+
+```python
+from uaaf.runtime.context import ContextScope, ExecutionContext
+
+ctx = ExecutionContext(
+    scope=ContextScope(user_id="u1", session_id="s1", domain="my-app"),
+    correlation_id="req-001",
+)
+
+result = await handler.handle("Give me a report of completed tasks", ctx)
+print(result.content)        # LLM output
+print(result.strategy_id)    # "direct" — routing proof
+```
+
+### So sánh với direct agent.execute()
+
+| | `agent.execute()` | `RequestHandler.handle()` |
+|---|---|---|
+| prompt_name | caller chọn thủ công | analyzer tự động chọn |
+| `ctx.strategy_id` | `None` | `"direct"` (routing proof) |
+| intent classification | không có | `StructuredIntent` với type + complexity |
+| swap strategy | sửa code caller | swap trong `StrategySelector` only |
+| audit trail | không có strategy context | strategy_id xuất hiện trong audit log |
+
+### Xem ví dụ thực tế
+
+```bash
+python -m examples.todo_app.main    # chạy cả direct + RequestHandler, có comparison table
+```
+
+---
+
 ## 11. Môi trường biến cần thiết
 
 | Variable | Required | Default | Mô tả |
