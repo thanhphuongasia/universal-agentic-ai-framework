@@ -2,28 +2,23 @@
 
 ## Pattern là gì?
 
-Orchestrator-Worker là pattern trong đó một thành phần trung tâm (orchestrator) phân rã một nhiệm
-vụ phức tạp thành các công việc nhỏ hơn, phân phối cho nhiều worker xử lý song song, rồi tổng hợp
-kết quả. UAAF triển khai pattern này qua `ParallelFanoutStrategy`:
+Orchestrator-Worker gồm một thành phần trung tâm (orchestrator) phân rã nhiệm vụ phức tạp
+thành subtask, phân phối cho nhiều worker xử lý song song, rồi tổng hợp kết quả.
 
-1. **Phân rã** (`ISubtaskBuilder.build_subtasks()`): mặc định là `EntitySubtaskBuilder`, tạo
-   một `Task` cho mỗi `entity` trong `intent.entities`.
-2. **Dispatch song song** (`AgentPool.fan_out(on_error="collect")`): worker thất bại không hủy
-   các worker khác — kết quả partial vẫn được tổng hợp.
-3. **Tổng hợp**: chỉ lấy kết quả từ các worker thành công (`result.success == True`).
-4. **Verify**: kết quả tổng hợp được đưa qua `verifier.verify()` để kiểm tra chất lượng.
+UAAF triển khai qua `ParallelFanoutStrategy`:
+1. **Phân rã** (`ISubtaskBuilder`): tạo 1 `Task` cho mỗi entity trong `intent.entities`.
+2. **Dispatch song song** (`fan_out(on_error="collect")`): worker thất bại không hủy các worker khác.
+3. **Tổng hợp**: lấy output từ `result.success == True`.
+4. **Verify**: kiểm tra chất lượng kết quả tổng hợp.
 
-Pattern này khác Pattern 3 (Parallelization) ở chỗ: orchestrator chịu trách nhiệm **phân rã**
-và **tổng hợp**, trong khi Pattern 3 chỉ thuần túy dispatch parallel.
+**Khác Pattern 3**: Pattern 3 chỉ thuần túy dispatch parallel. Pattern này thêm **phân rã intent** và **tổng hợp có kiểm soát chất lượng**.
 
 ## Khi nào nên dùng?
 
-- Intent có `complexity=HIGH` và nhiều hơn một entity (`len(entities) > 1`).
-- Mỗi entity có thể xử lý hoàn toàn độc lập nhau.
-- Cần tổng hợp kết quả từ nhiều worker thành một output thống nhất.
-- Chấp nhận partial success: nếu một vài worker lỗi, kết quả vẫn được trả với output từ
-  những worker thành công.
-- Ví dụ: phân tích song song nhiều tài liệu/repo, gọi API cho nhiều entity, xử lý batch lớn.
+- `intent.complexity == HIGH` và `len(entities) > 1`.
+- Mỗi entity xử lý độc lập nhau.
+- Cần tổng hợp kết quả thành một output thống nhất.
+- Chấp nhận partial success (một vài worker lỗi, kết quả vẫn được trả).
 
 ## UAAF triển khai như thế nào?
 
@@ -32,200 +27,192 @@ và **tổng hợp**, trong khi Pattern 3 chỉ thuần túy dispatch parallel.
 | `ParallelFanoutStrategy` | `uaaf/cognitive/strategies/parallel.py` |
 | `ISubtaskBuilder` (protocol) | `uaaf/cognitive/strategies/parallel.py` |
 | `EntitySubtaskBuilder` (default) | `uaaf/cognitive/strategies/parallel.py` |
-| `AgentPool.fan_out()` | `uaaf/execution/pool.py` |
-| `IVerifier` | `uaaf/cognitive/verifier.py` |
 
-**Luồng thực thi bên trong `ParallelFanoutStrategy.execute()`:**
-
+**Luồng thực thi:**
 ```
-intent.entities = {"repo_a": "...", "repo_b": "...", "repo_c": "..."}
+intent.entities = {"auth": "...", "payment": "...", "user": "..."}
     │
-    ├── subtask_builder.build_subtasks(intent, context)
-    │       → [Task("subtask-repo_a"), Task("subtask-repo_b"), Task("subtask-repo_c")]
+    ├── EntitySubtaskBuilder.build_subtasks()
+    │   → [Task("subtask-auth"), Task("subtask-payment"), Task("subtask-user")]
     │
-    ├── agent_pool.fan_out(subtasks, context, on_error="collect")
-    │       → [AgentResult(success=True, output="..."),
-    │           AgentResult(success=False, metadata={"error": "timeout"}),
-    │           AgentResult(success=True, output="...")]
+    ├── AgentPool.fan_out(subtasks, on_error="collect")
+    │   → [AgentResult(ok), AgentResult(success=False), AgentResult(ok)]
     │
-    ├── aggregate: lấy output từ result.success == True
-    │       combined = "output_a\n\noutput_c"
+    ├── aggregate: join output từ success==True
+    │   combined = "auth report\n\nuser report"
     │
-    ├── verifier.verify(combined, context)
-    │       → VerificationResult(passed=True, confidence=0.85)
+    ├── verifier.verify(combined)
+    │   → VerificationResult(passed=True, confidence=0.87)
     │
-    └── CognitiveResult(content=combined, confidence=0.85, strategy_id="parallel_fanout")
+    └── CognitiveResult(content=combined, confidence=0.87, strategy_id="parallel_fanout")
 ```
 
 **Điều kiện `applicable()`:**
-
 ```python
 intent.complexity == ComplexityLevel.HIGH  AND  len(intent.entities) > 1
 ```
 
-Nếu chỉ có 1 entity và complexity=HIGH, `EvaluatorOptimizerStrategy` sẽ được chọn thay thế
-(nếu đặt trong `StrategySelector` sau `ParallelFanoutStrategy`).
+## Ví dụ: Code Analysis — Phân tích toàn bộ codebase UAAF
 
-## Ví dụ code
+Đây chính là use case của `examples/code_analysis/`: orchestrate phân tích song song cho
+từng Python class, mỗi class là một entity trong intent.
 
 ```python
 import anyio
+from uaaf import (
+    AgentPool, BaseAgent, AgentResult, Task,
+    ExecutionContext, ContextScope, Cost,
+    StructuredIntent, ComplexityLevel,
+)
 from uaaf.cognitive.strategies.parallel import (
     ParallelFanoutStrategy,
     ISubtaskBuilder,
-    EntitySubtaskBuilder,
 )
-from uaaf.execution.pool import AgentPool
-from uaaf.execution.agent import BaseAgent, AgentResult, Task
-from uaaf.intent.models import StructuredIntent, ComplexityLevel
-from uaaf.cognitive.verifier import IVerifier, VerificationResult
-from uaaf.runtime.context import ExecutionContext, ContextScope
-from uaaf.observability.cost import Cost
+from uaaf.cognitive.verifier import VerificationResult
 
 
-# --- Worker agent: xử lý 1 entity ---
-class RepoAnalyzer(BaseAgent):
-    agent_id = "repo-analyzer"
-
-    async def execute(self, task: Task, context: ExecutionContext) -> AgentResult:
-        key   = task.payload.get("entity_key", "?")
-        value = task.payload.get("entity_value", "?")
-        output = f"Repo '{key}' ({value}): 142 commits, 3 open issues"
-        return AgentResult(task_id=task.task_id, output=output, cost=Cost.zero())
-
-
-# --- Verifier đơn giản ---
-class LengthVerifier:
-    verifier_id = "length"
-    async def verify(self, output, context, metadata=None):
-        passed = len(output) > 10
-        return VerificationResult(passed=passed, confidence=0.9 if passed else 0.2)
+# --- Worker: phân tích 1 Python class ---
+class ClassAnalysisWorker(BaseAgent):
+    async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
+        class_name  = task.payload["entity_key"]
+        module_path = task.payload["entity_value"]
+        # Thực tế: đọc source, gọi LLM phân tích complexity/docstring/issues
+        report = (
+            f"Class {class_name} ({module_path}): "
+            f"complexity=MEDIUM, 8 methods, docstring coverage 62%"
+        )
+        return AgentResult(task_id=task.task_id, output=report, cost=Cost.zero())
 
 
-# --- Custom ISubtaskBuilder (tùy chọn, thay vì EntitySubtaskBuilder mặc định) ---
-class RepoSubtaskBuilder:
-    """Tạo task cho mỗi repo với thêm metadata."""
-
+# --- Custom subtask builder: thêm metadata ---
+class ClassSubtaskBuilder:
     def build_subtasks(
-        self, intent: StructuredIntent, context: ExecutionContext
+        self, intent: StructuredIntent, ctx: ExecutionContext
     ) -> list[Task]:
         return [
             Task(
-                task_id=f"repo-{key}",
+                task_id=f"class-{name}",
                 payload={
-                    "entity_key": key,
-                    "entity_value": val,
-                    "correlation_id": context.correlation_id,
+                    "entity_key": name,
+                    "entity_value": path,
+                    "project": ctx.scope.domain,
                 },
             )
-            for key, val in intent.entities.items()
+            for name, path in intent.entities.items()
         ]
 
 
+class ReportVerifier:
+    verifier_id = "report-completeness"
+    async def verify(self, output: str, ctx: ExecutionContext, metadata=None):
+        # Kiểm tra kết quả tổng hợp có đủ thông tin không
+        has_content = len(output.strip()) > 50
+        return VerificationResult(
+            passed=has_content,
+            confidence=0.9 if has_content else 0.3,
+            feedback="" if has_content else "Kết quả quá ngắn — có thể nhiều worker bị lỗi",
+        )
+
+
 async def main():
+    from uaaf.observability.audit import AuditLogger
+    from uaaf.observability.cost import CostPolicy, CostTracker
+    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
+    from uaaf.observability.tracer import Tracer
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    def make_worker(name: str) -> ClassAnalysisWorker:
+        return ClassAnalysisWorker(
+            agent_id=name,
+            cost_tracker=CostTracker(CostPolicy()),
+            tracer=Tracer("demo", InMemorySpanExporter()),
+            audit_logger=AuditLogger(),
+            rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=20)),
+        )
+
     pool = AgentPool(max_concurrency=4)
-    pool.register(RepoAnalyzer())
+    for i in range(4):
+        pool.register(make_worker(f"class-analyst-{i}"))
 
-    # Dùng default EntitySubtaskBuilder
-    strategy = ParallelFanoutStrategy()
+    # Dùng custom builder để có thêm metadata
+    strategy = ParallelFanoutStrategy(subtask_builder=ClassSubtaskBuilder())
 
-    # Hoặc dùng custom builder:
-    # strategy = ParallelFanoutStrategy(subtask_builder=RepoSubtaskBuilder())
-
+    # Entities = các class cần phân tích trong codebase UAAF
     intent = StructuredIntent(
-        intent_type="analysis",
-        action="Phân tích tất cả repositories",
+        intent_type="code_analysis",
+        action="Phân tích toàn bộ class trong codebase UAAF",
         entities={
-            "frontend": "github.com/org/ui",
-            "backend":  "github.com/org/api",
-            "infra":    "github.com/org/terraform",
+            "AgentPool":                "uaaf/execution/pool.py",
+            "BaseAgent":                "uaaf/execution/agent.py",
+            "ReActStrategy":            "uaaf/cognitive/strategies/react.py",
+            "EvaluatorOptimizerStrategy": "uaaf/cognitive/strategies/evaluator_optimizer.py",
+            "ModelRouter":              "uaaf/providers/router.py",
         },
         complexity=ComplexityLevel.HIGH,
-        confidence=0.9,
+        confidence=0.95,
     )
-    context = ExecutionContext(
-        scope=ContextScope(user_id="u1", session_id="s1", domain="devops"),
-        correlation_id="orch-worker-demo",
+    ctx = ExecutionContext(
+        scope=ContextScope(user_id="ci-bot", session_id="s1", domain="uaaf"),
+        correlation_id="codebase-analysis-run-01",
     )
 
-    # Kiểm tra applicable trước (StrategySelector sẽ làm điều này tự động)
-    assert strategy.applicable(intent, context)   # True: HIGH + 3 entities
+    # applicable() kiểm tra: HIGH + 5 entities > 1 → True
+    assert strategy.applicable(intent, ctx)
 
-    result = await strategy.execute(intent, context, pool, LengthVerifier())
+    result = await strategy.execute(intent, ctx, pool, ReportVerifier())
     print(result.strategy_id)   # "parallel_fanout"
     print(result.confidence)    # 0.9 (nếu verify passed)
-    print(result.content)       # combined output từ tất cả worker thành công
+    print(result.content[:200]) # combined report từ 5 worker
+
+    # estimate_cost trước khi chạy (hữu ích để pre-flight check)
+    estimate = strategy.estimate_cost(intent, ctx)
+    print(f"Dự kiến: {estimate.steps_est} bước, ~${estimate.usd_est:.4f}")
 
 
 anyio.run(main)
 ```
 
+**Use case khác phù hợp Pattern 4:**
+- **Flashcard System**: `entities = {"chapter_1": "...", "chapter_2": "...", "chapter_3": "..."}` → mỗi chapter sinh flashcard song song → tổng hợp thành deck
+- **Stock Trading**: `entities = {"AAPL": "...", "MSFT": "...", "GOOGL": "..."}` → phân tích song song → tổng hợp portfolio report
+- **Todo Pro batch import**: `entities = {"project_alpha": [...], "project_beta": [...]}` → xử lý song song → import tất cả
+
 ## Interface chính
 
 ```python
-# ---- ISubtaskBuilder Protocol ----
 @runtime_checkable
 class ISubtaskBuilder(Protocol):
     def build_subtasks(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
+        self, intent: StructuredIntent, ctx: ExecutionContext
     ) -> list[Task]: ...
+    # Task.payload có "entity_key" và "entity_value" (EntitySubtaskBuilder mặc định)
 
 
-# ---- EntitySubtaskBuilder (default) ----
-@dataclass
-class EntitySubtaskBuilder:
-    """Tạo 1 Task cho mỗi key-value trong intent.entities."""
-    def build_subtasks(
-        self, intent: StructuredIntent, context: ExecutionContext
-    ) -> list[Task]:
-        # task_id = f"subtask-{key}"
-        # payload = {"entity_key": key, "entity_value": val}
-        ...
-
-
-# ---- ParallelFanoutStrategy ----
 @dataclass
 class ParallelFanoutStrategy:
     strategy_id: str = "parallel_fanout"
     subtask_builder: ISubtaskBuilder = field(default_factory=EntitySubtaskBuilder)
 
-    def applicable(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
-    ) -> bool:
-        # True khi: intent.complexity == HIGH AND len(intent.entities) > 1
+    def applicable(self, intent: StructuredIntent, ctx: ExecutionContext) -> bool:
+        # True: complexity==HIGH AND len(entities) > 1
         ...
 
-    def estimate_cost(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
-    ) -> CostEstimate:
-        # n = len(entities); steps_est = n; usd_est = 0.0001 * n
+    def estimate_cost(self, intent: StructuredIntent, ctx: ExecutionContext) -> CostEstimate:
+        # steps_est = len(entities); usd_est = 0.0001 * n
         ...
 
     async def execute(
         self,
         intent: StructuredIntent,
-        context: ExecutionContext,
-        agent_pool: IAgentPool,   # cần hỗ trợ fan_out() cho concurrent dispatch
-        verifier: IVerifier,      # verify kết quả tổng hợp sau fan_out
-    ) -> CognitiveResult:
-        # Fallback về dispatch() tuần tự nếu pool không có fan_out()
-        ...
+        ctx: ExecutionContext,
+        agent_pool: IAgentPool,  # cần có fan_out(); fallback về dispatch() nếu không có
+        verifier: IVerifier,
+    ) -> CognitiveResult: ...
 ```
 
 ## Lưu ý quan trọng
 
-- **`on_error="collect"` là mặc định** trong `ParallelFanoutStrategy`: partial failure không
-  làm hỏng toàn bộ kết quả. Kiểm tra `CognitiveResult.confidence` để biết chất lượng.
-- **Backward compat**: nếu `agent_pool` là `IAgentPool` thuần (không có `fan_out`), strategy
-  tự động fallback về dispatch tuần tự qua `hasattr(agent_pool, "fan_out")`.
-- **Custom `ISubtaskBuilder`**: khi `EntitySubtaskBuilder` không đủ (cần thêm metadata, logic
-  phân rã khác), inject custom builder qua constructor `ParallelFanoutStrategy(subtask_builder=...)`.
-- **Confidence giảm khi verify không pass**: `confidence = 0.5 * verification.confidence`
-  thay vì `verification.confidence` khi `verification.passed == False`.
-- `estimate_cost()` tỉ lệ tuyến tính với số entity — hữu ích để pre-flight check trước khi gọi LLM tốn kém.
+- **`on_error="collect"`** là mặc định: partial failure không hỏng toàn bộ kết quả.
+- **Custom `ISubtaskBuilder`**: khi cần thêm metadata vào payload hoặc logic phân rã phức tạp hơn, inject qua constructor.
+- **Backward compat**: pool không có `fan_out()` → fallback về dispatch tuần tự qua `hasattr(agent_pool, "fan_out")`.
+- **Confidence**: `0.5 × verification.confidence` khi verify không pass — dấu hiệu output không hoàn chỉnh.

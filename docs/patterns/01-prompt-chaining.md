@@ -2,143 +2,148 @@
 
 ## Pattern là gì?
 
-Prompt Chaining (chuỗi prompt) là kỹ thuật chia một yêu cầu phức tạp thành nhiều bước xử lý tuần tự,
-trong đó output của bước trước trở thành input của bước tiếp theo.
-UAAF triển khai pattern này qua **ReAct loop** (Reasoning + Acting):
-mỗi vòng lặp, agent nhận toàn bộ lịch sử quan sát hiện tại, tự quyết định bước tiếp theo là
-`ACTION:<hành động>` hay `DONE:<câu trả lời>`. Vòng lặp kết thúc khi agent trả về tín hiệu `DONE:`
-hoặc đạt giới hạn `max_steps`.
+Prompt Chaining chia một yêu cầu phức tạp thành nhiều bước xử lý tuần tự, output của bước trước
+là input của bước tiếp theo. UAAF triển khai qua **ReAct loop** (Reasoning + Acting): mỗi vòng
+agent nhận toàn bộ lịch sử quan sát, quyết định `ACTION:<hành động>` hay `DONE:<câu trả lời>`.
 
 ## Khi nào nên dùng?
 
-- Yêu cầu cần suy luận nhiều bước trước khi có câu trả lời cuối cùng.
-- Bước sau phụ thuộc vào kết quả bước trước (không thể song song hóa).
-- Cần giữ lại chuỗi quan sát (chain-of-thought) để trace lỗi hoặc audit.
+- Bước sau **phụ thuộc** kết quả bước trước — không thể song song hoá.
+- Cần chuỗi suy luận (chain-of-thought) để trace lỗi hoặc audit.
 - `intent.complexity >= ComplexityLevel.MEDIUM`.
-- Ví dụ: gỡ lỗi code, tra cứu thông tin đa nguồn, lên kế hoạch từng bước.
+
+**Không phù hợp khi**: các bước độc lập nhau → dùng Pattern 3 (Parallelization).
 
 ## UAAF triển khai như thế nào?
 
 | Thành phần | Vị trí |
 |-----------|--------|
 | `ReActStrategy` | `uaaf/cognitive/strategies/react.py` |
-| `ICognitiveStrategy` (protocol) | `uaaf/cognitive/strategy.py` |
-| `ComplexityLevel` | `uaaf/intent/models.py` |
-| `IAgentPool.dispatch()` | `uaaf/cognitive/strategy.py` |
+| `ICognitiveStrategy` | `uaaf/cognitive/strategy.py` |
 
-**Luồng thực thi bên trong `ReActStrategy.execute()`:**
+**Luồng bên trong `ReActStrategy.execute()`:**
 
 ```
-Vòng lặp (tối đa max_steps lần):
-  1. Xây dựng prompt = intent + tất cả observations hiện tại
-  2. agent_pool.dispatch(task)  ← gọi LLM
-  3. Nếu output bắt đầu bằng "DONE:" → return CognitiveResult ngay
-  4. Nếu output bắt đầu bằng "ACTION:" → thêm vào observations, tiếp tục
-Hết vòng lặp → trả về kết quả cuối với confidence=0.5
+Vòng lặp (tối đa max_steps):
+  1. Prompt = intent + tất cả observations hiện tại
+  2. agent_pool.dispatch(task) → LLM
+  3. Output bắt đầu "DONE:" → return CognitiveResult ngay
+  4. Output bắt đầu "ACTION:" → thêm vào observations, tiếp tục
+Hết max_steps → trả kết quả cuối, confidence=0.5
 ```
 
-## Ví dụ code
+## Ví dụ: Stock Research — "Nên mua AAPL không?"
+
+Nghiên cứu cổ phiếu điển hình gồm nhiều bước phụ thuộc nhau:
+**giá hiện tại → tin tức → phân tích sentiment → khuyến nghị**.
+Mỗi bước cần kết quả bước trước → ReAct là lựa chọn đúng.
 
 ```python
 import anyio
+from uaaf import (
+    AgentPool, BaseAgent, AgentResult, Task,
+    ExecutionContext, ContextScope, Cost,
+    StructuredIntent, ComplexityLevel,
+)
 from uaaf.cognitive.strategies.react import ReActStrategy
-from uaaf.execution.pool import AgentPool
-from uaaf.execution.agent import BaseAgent, AgentResult, Task
-from uaaf.intent.models import StructuredIntent, ComplexityLevel
-from uaaf.cognitive.verifier import IVerifier, VerificationResult
-from uaaf.runtime.context import ExecutionContext, ContextScope
-from uaaf.observability.cost import Cost
+from uaaf.cognitive.verifier import VerificationResult
 
 
-# --- Minimal fake agent: echoes DONE sau 2 bước ---
-class StepAgent(BaseAgent):
-    agent_id = "step-agent"
+# --- Stock research agent: mô phỏng multi-step LLM ---
+class StockResearchAgent(BaseAgent):
+    _steps: list[str]
 
-    def __init__(self):
+    def __post_init__(self) -> None:
+        # Mỗi phần tử là response cho từng bước ReAct
+        self._steps = [
+            "ACTION: Lấy giá AAPL hiện tại",
+            "ACTION: Tìm tin tức AAPL trong 7 ngày qua",
+            "ACTION: Phân tích sentiment từ 3 bài báo tìm được",
+            "DONE: Khuyến nghị MUA — giá $185 ở vùng hỗ trợ, sentiment tích cực 72%",
+        ]
         self._call = 0
 
-    async def execute(self, task: Task, context: ExecutionContext) -> AgentResult:
+    async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
+        response = self._steps[min(self._call, len(self._steps) - 1)]
         self._call += 1
-        if self._call < 2:
-            output = "ACTION: look up more data"
-        else:
-            output = "DONE: Paris là thủ đô của Pháp"
-        return AgentResult(task_id=task.task_id, output=output, cost=Cost.zero())
+        return AgentResult(task_id=task.task_id, output=response, cost=Cost.zero())
 
 
-# --- Minimal fake verifier ---
 class PassVerifier:
     verifier_id = "pass"
-    async def verify(self, output, context, metadata=None):
-        return VerificationResult(passed=True, confidence=0.95)
+    async def verify(self, output: str, ctx: ExecutionContext, metadata=None):
+        return VerificationResult(passed=True, confidence=0.92)
 
 
 async def main():
-    pool = AgentPool(max_concurrency=4)
-    pool.register(StepAgent())
+    from uaaf.observability.audit import AuditLogger
+    from uaaf.observability.cost import CostPolicy, CostTracker
+    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
+    from uaaf.observability.tracer import Tracer
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    agent = StockResearchAgent(
+        agent_id="stock-researcher",
+        cost_tracker=CostTracker(CostPolicy()),
+        tracer=Tracer("demo", InMemorySpanExporter()),
+        audit_logger=AuditLogger(),
+        rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=10)),
+    )
+
+    pool = AgentPool(max_concurrency=2)
+    pool.register(agent)
 
     strategy = ReActStrategy(max_steps=6)
 
     intent = StructuredIntent(
-        intent_type="query",
-        action="Thủ đô của Pháp là gì?",
-        entities={"country": "France"},
+        intent_type="stock_analysis",
+        action="Nên mua cổ phiếu AAPL không?",
+        entities={"ticker": "AAPL", "currency": "USD"},
         complexity=ComplexityLevel.MEDIUM,
         confidence=0.9,
     )
-    context = ExecutionContext(
-        scope=ContextScope(user_id="u1", session_id="s1", domain="geo"),
-        correlation_id="demo-react-01",
+    ctx = ExecutionContext(
+        scope=ContextScope(user_id="trader-01", session_id="s1", domain="stock"),
+        correlation_id="stock-research-aapl",
     )
 
-    result = await strategy.execute(intent, context, pool, PassVerifier())
-    print(result.content)      # "Paris là thủ đô của Pháp"
-    print(result.confidence)   # 0.9
+    result = await strategy.execute(intent, ctx, pool, PassVerifier())
     print(result.strategy_id)  # "react"
+    print(result.content)      # "Khuyến nghị MUA — giá $185..."
+    print(result.reasoning)    # chuỗi ACTION steps đã tích lũy — dùng để audit
 
 
 anyio.run(main)
 ```
 
+**Use case khác phù hợp Pattern 1:**
+- **Todo Pro**: "Tại sao tôi hay trễ deadline?" → bước 1: lấy task history → bước 2: tìm pattern → bước 3: phân tích nguyên nhân → bước 4: đề xuất giải pháp
+- **Coding Practice**: Gỡ lỗi code nhiều bước — mỗi observation là kết quả chạy test, bước tiếp theo fix dựa trên lỗi vừa thấy
+
 ## Interface chính
 
 ```python
 class ReActStrategy:
-    strategy_id: str = "react"               # REACT constant
-    max_steps: int                           # default=6, giới hạn số vòng lặp
+    strategy_id: str = "react"
+    max_steps: int   # default=6
 
-    def applicable(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
-    ) -> bool:
+    def applicable(self, intent: StructuredIntent, ctx: ExecutionContext) -> bool:
         # True khi intent.complexity >= ComplexityLevel.MEDIUM
-        ...
-
-    def estimate_cost(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
-    ) -> CostEstimate:
-        # steps_est = max_steps; usd_est = 0.001
         ...
 
     async def execute(
         self,
         intent: StructuredIntent,
-        context: ExecutionContext,
-        agent_pool: IAgentPool,   # dispatch() được gọi mỗi bước
-        verifier: IVerifier,      # không dùng trong vòng lặp, chỉ dùng sau khi DONE
+        ctx: ExecutionContext,
+        agent_pool: IAgentPool,  # dispatch() gọi mỗi bước
+        verifier: IVerifier,
     ) -> CognitiveResult:
-        # CognitiveResult.reasoning = chuỗi observations đã tích lũy
+        # CognitiveResult.reasoning = chuỗi ACTION observations đã tích lũy
         ...
 ```
 
 ## Lưu ý quan trọng
 
-- Agent phải trả về chuỗi bắt đầu bằng `DONE:` để kết thúc vòng lặp sớm; nếu không,
-  strategy chạy đủ `max_steps` và trả `confidence=0.5`.
-- Mỗi bước gọi `agent_pool.dispatch()` một lần — chi phí tỉ lệ tuyến tính với số bước.
-- `CognitiveResult.reasoning` chứa toàn bộ chuỗi observations — hữu ích cho logging/audit.
-- Không dùng `asyncio` trong `uaaf/` — nội bộ dùng `anyio`. Khi gọi từ `examples/` có thể
-  dùng `anyio.run()` hoặc `asyncio.run()`.
+- Agent phải trả `DONE:` để kết thúc sớm; nếu không, chạy đủ `max_steps` và `confidence=0.5`.
+- Mỗi bước = 1 lần gọi LLM — chi phí tỉ lệ tuyến tính với số bước.
+- `CognitiveResult.reasoning` chứa toàn bộ observations — hữu ích cho logging/audit.

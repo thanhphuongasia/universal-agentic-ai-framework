@@ -2,136 +2,145 @@
 
 ## Pattern là gì?
 
-Evaluator-Optimizer là pattern tự động cải thiện chất lượng output thông qua vòng lặp
-**generate → evaluate → refine**. Thay vì chấp nhận kết quả đầu tiên, strategy liên tục
-sinh output, đánh giá qua verifier, và dùng feedback từ verifier để tinh chỉnh prompt
-cho vòng tiếp theo — cho đến khi output đạt chất lượng (`verification.passed == True`)
-hoặc hết số vòng (`max_rounds`).
+Evaluator-Optimizer tự động cải thiện chất lượng output qua vòng lặp **generate → evaluate → refine**.
+Thay vì chấp nhận kết quả đầu tiên, strategy sinh output, đánh giá qua verifier, dùng feedback
+để tinh chỉnh prompt cho vòng tiếp theo — cho đến khi đạt chất lượng hoặc hết `max_rounds`.
 
 Hai thành phần phối hợp:
-
-- **`EvaluatorOptimizerStrategy`**: điều phối vòng lặp generate→verify→refine.
-- **`VerifierPipeline`**: chạy nhiều verifier song song và tổng hợp kết quả theo ba chế độ:
-  `ALL_PASS` (mọi verifier phải pass), `ANY_PASS` (ít nhất 1 pass), hoặc `THRESHOLD`
-  (số lượng pass >= ngưỡng).
+- **`EvaluatorOptimizerStrategy`**: điều phối vòng lặp generate → verify → refine.
+- **`VerifierPipeline`**: chạy nhiều verifier và tổng hợp theo `ALL_PASS`, `ANY_PASS`, hoặc `THRESHOLD`.
 
 ## Khi nào nên dùng?
 
-- Output cần đạt tiêu chuẩn chất lượng cao (code đúng syntax, văn bản không vi phạm policy, v.v.).
-- Có thể định nghĩa được tiêu chí kiểm tra tự động (không cần human review mỗi vòng).
+- Output cần đạt tiêu chuẩn chất lượng cao có thể kiểm tra tự động.
 - `intent.complexity == ComplexityLevel.HIGH`.
-- Chấp nhận chi phí cao hơn (tối đa `max_rounds × 2` lần gọi LLM: `max_rounds` generate + `max_rounds` verify).
-- Ví dụ: sinh code và kiểm tra lint/test, tạo nội dung marketing và kiểm tra brand guidelines,
-  sinh SQL và kiểm tra syntax + safety.
+- Chấp nhận chi phí cao hơn (`max_rounds × 2` lần gọi LLM).
+
+**Không phù hợp khi**: tiêu chí chất lượng cần human review — chi phí LLM không đủ bù đắp.
 
 ## UAAF triển khai như thế nào?
 
-| Thành phần | Vị trí |
-|-----------|--------|
-| `EvaluatorOptimizerStrategy` | `uaaf/cognitive/strategies/evaluator_optimizer.py` |
-| `VerifierPipeline` | `uaaf/cognitive/verifiers/pipeline.py` |
-| `PipelineMode` | `uaaf/cognitive/verifiers/pipeline.py` |
-| `IVerifier` (protocol) | `uaaf/cognitive/verifier.py` |
-| `VerificationResult` | `uaaf/cognitive/verifier.py` |
-
-**Luồng thực thi bên trong `EvaluatorOptimizerStrategy.execute()`:**
-
 ```
-Vòng lặp (tối đa max_rounds lần):
-    ┌─────────────────────────────────────────────┐
-    │  1. Xây dựng prompt = intent + feedback      │
-    │     (vòng đầu: không có feedback)            │
-    │                                             │
-    │  2. agent_pool.dispatch(task) → output       │
-    │                                             │
-    │  3. verifier.verify(output, context)         │
-    │     → VerificationResult(passed, confidence, │
-    │                          feedback)           │
-    │                                             │
-    │  4. Nếu confidence > best_confidence         │
-    │     → cập nhật best_output                  │
-    │                                             │
-    │  5. Nếu passed == True → return ngay        │
-    │     Nếu passed == False → feedback → lặp lại │
-    └─────────────────────────────────────────────┘
-
+Vòng lặp (tối đa max_rounds):
+  1. Prompt = intent + feedback từ vòng trước (rỗng ở vòng đầu)
+  2. agent_pool.dispatch(task) → output
+  3. verifier.verify(output) → VerificationResult(passed, confidence, feedback)
+  4. Nếu confidence > best → cập nhật best_output
+  5. passed==True → return ngay  |  passed==False → feedback → vòng tiếp
 Hết max_rounds → return best_output (confidence cao nhất đạt được)
 ```
 
-## Ví dụ code
+## Ví dụ: Flashcard System — Sinh flashcard chất lượng cao
+
+Flashcard tốt cần: câu hỏi rõ ràng, câu trả lời đủ ngắn gọn, có ví dụ minh hoạ, độ khó đúng level.
+Những tiêu chí này có thể kiểm tra tự động → Evaluator-Optimizer là lựa chọn đúng.
 
 ```python
 import anyio
+from uaaf import (
+    AgentPool, BaseAgent, AgentResult, Task,
+    ExecutionContext, ContextScope, Cost,
+    StructuredIntent, ComplexityLevel,
+)
 from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
 from uaaf.cognitive.verifiers.pipeline import VerifierPipeline, PipelineMode
-from uaaf.cognitive.verifier import IVerifier, VerificationResult
-from uaaf.execution.pool import AgentPool
-from uaaf.execution.agent import BaseAgent, AgentResult, Task
-from uaaf.intent.models import StructuredIntent, ComplexityLevel
-from uaaf.runtime.context import ExecutionContext, ContextScope
-from uaaf.observability.cost import Cost
+from uaaf.cognitive.verifier import VerificationResult
 
 
-# --- Worker agent: sinh code Python ---
-class CodeGenAgent(BaseAgent):
-    agent_id = "code-gen"
-    _attempt = 0
+# --- Flashcard generator agent ---
+class FlashcardAgent(BaseAgent):
+    _attempt: int = 0
 
-    async def execute(self, task: Task, context: ExecutionContext) -> AgentResult:
-        self._attempt += 1
+    async def _execute(self, task: Task, ctx: ExecutionContext) -> AgentResult:
         feedback = task.payload.get("message", "")
-        if "address feedback" in feedback and self._attempt >= 2:
-            # Vòng 2 trở đi: cải thiện theo feedback
-            code = "def add(a: int, b: int) -> int:\n    return a + b\n"
+        self._attempt += 1
+
+        if self._attempt == 1:
+            # Lần đầu: thiếu ví dụ
+            card = (
+                "Q: Supervised Learning là gì?\n"
+                "A: Học máy dùng dữ liệu có nhãn để train model dự đoán.\n"
+                "Difficulty: beginner"
+            )
+        elif "thiếu ví dụ" in feedback:
+            # Vòng 2: thêm ví dụ theo feedback
+            card = (
+                "Q: Supervised Learning là gì?\n"
+                "A: Học máy dùng dữ liệu có nhãn để train model dự đoán output mới.\n"
+                "   Ví dụ: phân loại email spam/not-spam dựa trên 10,000 email đã gán nhãn.\n"
+                "Difficulty: beginner"
+            )
         else:
-            # Vòng 1: code lỗi thiếu type hint
-            code = "def add(a, b):\n    return a + b\n"
-        return AgentResult(task_id=task.task_id, output=code, cost=Cost.zero())
+            card = task.payload.get("message", "Q: ?\nA: ?\nDifficulty: ?")
+
+        return AgentResult(task_id=task.task_id, output=card, cost=Cost.zero())
 
 
-# --- Verifier 1: kiểm tra type hint ---
-class TypeHintVerifier:
-    verifier_id = "type-hint"
-    async def verify(self, output: str, context, metadata=None) -> VerificationResult:
-        has_hints = "->" in output and ": int" in output
+# --- Verifier 1: câu hỏi phải bắt đầu bằng "Q:" ---
+class QuestionFormatVerifier:
+    verifier_id = "question-format"
+
+    async def verify(self, output: str, ctx: ExecutionContext, metadata=None):
+        ok = output.strip().startswith("Q:") and "A:" in output
         return VerificationResult(
-            passed=has_hints,
-            confidence=0.95 if has_hints else 0.4,
-            feedback="" if has_hints else "Thiếu type hints — thêm annotation cho tham số và return type",
+            passed=ok,
+            confidence=0.95 if ok else 0.2,
+            feedback="" if ok else "Flashcard phải có 'Q:' và 'A:' rõ ràng",
         )
 
 
-# --- Verifier 2: kiểm tra docstring ---
-class DocstringVerifier:
-    verifier_id = "docstring"
-    async def verify(self, output: str, context, metadata=None) -> VerificationResult:
-        has_doc = '"""' in output or "'''" in output
+# --- Verifier 2: phải có ví dụ minh hoạ ---
+class ExampleVerifier:
+    verifier_id = "has-example"
+
+    async def verify(self, output: str, ctx: ExecutionContext, metadata=None):
+        has_example = "ví dụ" in output.lower() or "example" in output.lower()
         return VerificationResult(
-            passed=has_doc,
-            confidence=0.9 if has_doc else 0.5,
-            feedback="" if has_doc else "Thiếu docstring",
+            passed=has_example,
+            confidence=0.9 if has_example else 0.4,
+            feedback="" if has_example else "thiếu ví dụ minh hoạ — thêm 'Ví dụ: ...' vào phần A:",
+        )
+
+
+# --- Verifier 3: có độ khó ---
+class DifficultyVerifier:
+    verifier_id = "has-difficulty"
+
+    async def verify(self, output: str, ctx: ExecutionContext, metadata=None):
+        has_diff = "difficulty" in output.lower() or "độ khó" in output.lower()
+        return VerificationResult(
+            passed=has_diff,
+            confidence=0.85 if has_diff else 0.5,
+            feedback="" if has_diff else "Thiếu trường Difficulty",
         )
 
 
 async def main():
-    pool = AgentPool(max_concurrency=2)
-    pool.register(CodeGenAgent())
+    from uaaf.observability.audit import AuditLogger
+    from uaaf.observability.cost import CostPolicy, CostTracker
+    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
+    from uaaf.observability.tracer import Tracer
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    # --- VerifierPipeline: chỉ cần 1 trong 2 verifier pass (ANY_PASS) ---
-    verifier_any = VerifierPipeline(
-        verifiers=[TypeHintVerifier(), DocstringVerifier()],
-        mode=PipelineMode.ANY_PASS,
+    agent = FlashcardAgent(
+        agent_id="flashcard-gen",
+        cost_tracker=CostTracker(CostPolicy()),
+        tracer=Tracer("demo", InMemorySpanExporter()),
+        audit_logger=AuditLogger(),
+        rate_limiter=RateLimiter(RatePolicy(rps=100.0, burst=10)),
     )
+    pool = AgentPool(max_concurrency=2)
+    pool.register(agent)
 
-    # --- VerifierPipeline: cả 2 phải pass (ALL_PASS) ---
-    verifier_all = VerifierPipeline(
-        verifiers=[TypeHintVerifier(), DocstringVerifier()],
+    # --- Pipeline mode: ALL_PASS — cả 3 tiêu chí phải đạt ---
+    strict_verifier = VerifierPipeline(
+        verifiers=[QuestionFormatVerifier(), ExampleVerifier(), DifficultyVerifier()],
         mode=PipelineMode.ALL_PASS,
     )
 
-    # --- VerifierPipeline: ít nhất 2/3 verifier pass (THRESHOLD) ---
-    verifier_threshold = VerifierPipeline(
-        verifiers=[TypeHintVerifier(), DocstringVerifier(), TypeHintVerifier()],
+    # --- Pipeline mode: THRESHOLD — ít nhất 2/3 phải pass ---
+    lenient_verifier = VerifierPipeline(
+        verifiers=[QuestionFormatVerifier(), ExampleVerifier(), DifficultyVerifier()],
         mode=PipelineMode.THRESHOLD,
         threshold_count=2,
     )
@@ -139,110 +148,93 @@ async def main():
     strategy = EvaluatorOptimizerStrategy(max_rounds=3)
 
     intent = StructuredIntent(
-        intent_type="code_generation",
-        action="Viết hàm Python cộng hai số nguyên",
-        entities={"language": "python", "function": "add"},
+        intent_type="flashcard_generation",
+        action="Tạo flashcard về Supervised Learning cho người mới học ML",
+        entities={"topic": "supervised_learning", "level": "beginner"},
         complexity=ComplexityLevel.HIGH,
         confidence=0.92,
     )
-    context = ExecutionContext(
-        scope=ContextScope(user_id="u1", session_id="s1", domain="coding"),
-        correlation_id="eo-demo",
+    ctx = ExecutionContext(
+        scope=ContextScope(user_id="student-01", session_id="s1", domain="flashcard"),
+        correlation_id="flashcard-ml-beginner",
     )
 
-    # Dùng ANY_PASS: pass nếu có type hint HOẶC có docstring
-    result = await strategy.execute(intent, context, pool, verifier_any)
+    # Dùng strict_verifier: cả 3 tiêu chí đều phải đạt
+    result = await strategy.execute(intent, ctx, pool, strict_verifier)
     print(result.strategy_id)   # "evaluator_optimizer"
-    print(result.confidence)    # >= 0.9 nếu pass sớm
-    print(result.content)
+    print(result.confidence)    # >= 0.85 sau vòng 2 (có ví dụ)
+    print(result.content)       # flashcard đã được refine
+
+    # Chi phí ước tính trước khi chạy
+    estimate = strategy.estimate_cost(intent, ctx)
+    print(f"Dự kiến: {estimate.steps_est} bước (max_rounds×2), ~${estimate.usd_est:.4f}")
 
 
 anyio.run(main)
 ```
 
+**Use case khác phù hợp Pattern 5:**
+- **Code Analysis**: Sinh báo cáo phân tích → verify có đủ mục (complexity, issues, suggestion) → refine nếu thiếu
+- **Stock Trading**: Sinh trading signal → verify: có entry price, stop-loss, take-profit → refine nếu thiếu risk management
+- **Todo Pro**: Sinh kế hoạch tuần → verify: mỗi ngày có ≥ 1 task, tổng thời gian ≤ 8h/ngày → refine nếu overload
+
 ## Interface chính
 
 ```python
-# ---- EvaluatorOptimizerStrategy ----
 class EvaluatorOptimizerStrategy:
     strategy_id: str = "evaluator_optimizer"
     max_rounds: int  # default=3
 
-    def applicable(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
-    ) -> bool:
+    def applicable(self, intent: StructuredIntent, ctx: ExecutionContext) -> bool:
         # True khi intent.complexity == ComplexityLevel.HIGH
-        ...
-
-    def estimate_cost(
-        self,
-        intent: StructuredIntent,
-        context: ExecutionContext,
-    ) -> CostEstimate:
-        # steps_est = max_rounds * 2 (generate + verify mỗi vòng)
-        # usd_est = 0.005
         ...
 
     async def execute(
         self,
         intent: StructuredIntent,
-        context: ExecutionContext,
-        agent_pool: IAgentPool,   # gọi dispatch() mỗi vòng generate
-        verifier: IVerifier,      # gọi verify() mỗi vòng evaluate
+        ctx: ExecutionContext,
+        agent_pool: IAgentPool,  # dispatch() gọi mỗi vòng generate
+        verifier: IVerifier,     # verify() gọi mỗi vòng evaluate
     ) -> CognitiveResult:
-        # Trả output có confidence cao nhất đạt được trong max_rounds
+        # Luôn trả best_output — không bao giờ trả chuỗi rỗng
         ...
 
 
-# ---- VerifierPipeline ----
 class PipelineMode(StrEnum):
-    ALL_PASS  = "all_pass"   # min(confidence); tất cả phải pass
-    ANY_PASS  = "any_pass"   # max(confidence); ít nhất 1 pass
-    THRESHOLD = "threshold"  # avg(confidence); pass_count >= threshold_count
+    ALL_PASS  = "all_pass"   # tất cả verifier phải pass; confidence = min(all)
+    ANY_PASS  = "any_pass"   # ít nhất 1 pass; confidence = max(all)
+    THRESHOLD = "threshold"  # pass_count >= threshold_count; confidence = avg(all)
+
 
 class VerifierPipeline:
-    verifier_id: str = "pipeline"
-
     def __init__(
         self,
         verifiers: list[IVerifier],
         mode: PipelineMode = PipelineMode.ALL_PASS,
-        threshold_count: int = 1,   # chỉ dùng khi mode=THRESHOLD
+        threshold_count: int = 1,
     ) -> None: ...
 
     async def verify(
-        self,
-        output: str,
-        context: ExecutionContext,
-        metadata: dict[str, Any] | None = None,
+        self, output: str, ctx: ExecutionContext, metadata=None
     ) -> VerificationResult:
-        # Chạy tất cả verifier tuần tự, tổng hợp theo mode
-        # VerificationResult.feedback = join các feedback của verifier không pass
+        # VerificationResult.feedback = join feedback của verifier không pass
         ...
 
 
-# ---- VerificationResult ----
 @dataclass
 class VerificationResult:
     passed: bool
-    confidence: float    # 0.0–1.0
-    feedback: str = ""   # mô tả vấn đề cần sửa; empty string nếu passed
+    confidence: float   # 0.0–1.0
+    feedback: str = ""  # actionable — dùng làm prompt refinement vòng tiếp
 ```
 
 ## Lưu ý quan trọng
 
-- **Feedback loop**: `VerificationResult.feedback` được đưa vào prompt vòng tiếp theo.
-  Verifier cần trả feedback cụ thể, actionable (không phải chỉ "lỗi") để agent có thể cải thiện.
-- **Best-of-N**: dù không pass trong `max_rounds`, strategy vẫn trả `best_output` — output
-  có `confidence` cao nhất trong tất cả các vòng. Không bao giờ trả chuỗi rỗng.
-- **`VerifierPipeline` với list rỗng**: tự động trả `passed=True, confidence=1.0` — hữu ích
-  khi muốn tạm thời tắt verification.
-- **Chọn `PipelineMode`**: `ALL_PASS` cho yêu cầu nghiêm ngặt (mọi tiêu chí đều phải đạt);
-  `ANY_PASS` khi tiêu chí tùy chọn; `THRESHOLD` khi cần majority vote.
-- **Chi phí**: mỗi vòng gọi ít nhất 1 lần LLM (generate) + 1 lần verify (có thể gọi thêm LLM
-  nếu verifier dùng LLM). Với `max_rounds=3`, chi phí gấp ~3× so với `DirectStrategy`.
-- `EvaluatorOptimizerStrategy` và `ParallelFanoutStrategy` đều chỉ `applicable()` khi
-  `complexity=HIGH` — trong `StrategySelector`, đặt `ParallelFanoutStrategy` trước nếu muốn
-  ưu tiên fan-out khi có nhiều entity.
+- **Feedback phải actionable**: verifier cần trả feedback cụ thể ("thiếu stop-loss price") không phải chung chung ("lỗi") — agent dùng feedback này để refine.
+- **Best-of-N**: dù không pass trong `max_rounds`, strategy trả output có confidence cao nhất — không trả chuỗi rỗng.
+- **Pipeline rỗng**: `VerifierPipeline(verifiers=[])` → `passed=True, confidence=1.0` — tắt verification tạm thời.
+- **Chọn mode**:
+  - `ALL_PASS`: yêu cầu nghiêm ngặt (code phải pass lint + type check + test)
+  - `ANY_PASS`: tiêu chí tùy chọn (flashcard cần ví dụ HOẶC analogy)
+  - `THRESHOLD`: majority vote (3/5 reviewer đồng ý)
+- Chi phí tối đa = `max_rounds × (1 generate + 1 verify)` lần gọi LLM.
