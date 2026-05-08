@@ -38,7 +38,7 @@ def print_separator(title: str = "") -> None:
 
 async def main() -> None:
     # ── Prompt registry info ────────────────────────────────────────────────
-    prompts_root = Path(__file__).parent.parent.parent / "prompts"
+    prompts_root = Path(__file__).parent / "prompts"
     registry = PromptRegistry(prompts_root=prompts_root)
     cfg = registry.load("todo_app", "v1")
 

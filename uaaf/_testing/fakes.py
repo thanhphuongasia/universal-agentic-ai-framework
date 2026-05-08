@@ -237,3 +237,63 @@ class FakeVerifier:
         passed = self._passes.popleft() if self._passes else True
         confidence = self._confidences.popleft() if self._confidences else (0.9 if passed else 0.3)
         return VerificationResult(passed=passed, confidence=confidence, feedback=self._feedback)
+
+
+class FakeCheckpointStore:
+    """Tracking wrapper around dict-backed store for product-side tests. P7-T07."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, list[Any]] = {}
+        self.save_count = 0
+        self.load_count = 0
+
+    async def save(self, checkpoint: Any) -> None:
+        bucket = self._data.setdefault(checkpoint.workflow_id, [])
+        bucket.append(checkpoint)
+        self.save_count += 1
+
+    async def load_latest(self, workflow_id: str) -> Any | None:
+        self.load_count += 1
+        bucket = self._data.get(workflow_id)
+        if not bucket:
+            return None
+        return max(bucket, key=lambda c: c.sequence)
+
+    async def load_history(self, workflow_id: str) -> list[Any]:
+        self.load_count += 1
+        bucket = self._data.get(workflow_id, [])
+        return sorted(bucket, key=lambda c: c.sequence)
+
+    async def delete(self, workflow_id: str) -> None:
+        self._data.pop(workflow_id, None)
+
+
+class FakeWorkflowEngine:
+    """Deterministic IWorkflowEngine: returns pre-canned WorkflowResult. P7-T07."""
+
+    def __init__(self, results: list[Any] | None = None) -> None:
+        from collections import deque
+
+        self._queue: deque[Any] = deque(results or [])
+        self.run_count = 0
+        self.resume_count = 0
+
+    def _next_result(self, workflow_id: str) -> Any:
+        from uaaf.workflow.engine import WorkflowResult, WorkflowStatus
+
+        if self._queue:
+            return self._queue.popleft()
+        return WorkflowResult(
+            workflow_id=workflow_id,
+            status=WorkflowStatus.COMPLETED,
+            final_state=None,
+            output=None,
+        )
+
+    async def run(self, workflow: Any, initial_input: Any, context: Any) -> Any:
+        self.run_count += 1
+        return self._next_result(workflow.workflow_id)
+
+    async def resume(self, workflow_id: str, workflow: Any, context: Any) -> Any:
+        self.resume_count += 1
+        return self._next_result(workflow_id)

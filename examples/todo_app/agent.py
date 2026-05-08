@@ -19,7 +19,7 @@ from uaaf.prompts.registry import PromptRegistry
 from uaaf.providers.llm import CompletionRequest, ILLMProvider, TokenUsage
 from uaaf.runtime.context import ExecutionContext
 
-_PROMPTS_ROOT = Path(__file__).parent.parent.parent / "prompts"
+_PROMPTS_ROOT = Path(__file__).parent / "prompts"
 _registry = PromptRegistry(prompts_root=_PROMPTS_ROOT)
 
 # Maps ModelTier → concrete OpenAI model string for this example.

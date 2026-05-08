@@ -206,9 +206,13 @@ class LLMAgent(BaseAgent):
                 return response.content, TokenUsage(total_input, total_output)
 
             # Case 2: execute tools, build observation messages, continue
+            # Some providers (OpenAI) return empty content alongside tool_calls.
+            # Fall back to a synthetic thought so callbacks always fire.
             thought = response.content or ""
-            if thought.strip():
-                await cb.on_thought(thought)
+            if not thought.strip():
+                names = [tc["function"]["name"] for tc in tool_calls]
+                thought = "I'll use " + " + ".join(names) + " to gather the data I need."
+            await cb.on_thought(thought)
 
             if self.tool_registry is None:
                 # No registry configured — treat as final answer

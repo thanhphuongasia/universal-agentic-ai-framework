@@ -78,15 +78,30 @@ class AnthropicProvider:
         except Exception as exc:
             raise classify_external_error(exc) from exc
 
-        # Extract content — may be text or tool_use block.
+        # Extract content blocks — Claude emits text + tool_use in same response.
         content_text = ""
+        metadata: dict[str, Any] = {}
+        tool_calls = []
+
         for block in resp.content:
             if block.type == "text":
                 content_text = block.text
-                break
-            if block.type == "tool_use" and block.name == _STRUCTURED_TOOL_NAME:
-                content_text = json.dumps(block.input)
-                break
+            elif block.type == "tool_use":
+                if block.name == _STRUCTURED_TOOL_NAME:
+                    # Structured output pattern — serialize to JSON string.
+                    content_text = json.dumps(block.input)
+                else:
+                    # Regular tool call — map to UAAF format.
+                    tool_calls.append({
+                        "id": block.id,
+                        "function": {
+                            "name": block.name,
+                            "arguments": block.input,  # already a dict
+                        },
+                    })
+
+        if tool_calls:
+            metadata["tool_calls"] = tool_calls
 
         usage = resp.usage
         return Response(
@@ -97,6 +112,7 @@ class AnthropicProvider:
                 output_tokens=usage.output_tokens,
             ),
             finish_reason=resp.stop_reason or "end_turn",
+            metadata=metadata,
         )
 
     async def stream(self, request: CompletionRequest) -> AsyncIterator[StreamChunk]:

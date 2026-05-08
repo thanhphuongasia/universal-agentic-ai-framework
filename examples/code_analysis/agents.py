@@ -28,7 +28,7 @@ from uaaf.providers.llm import ILLMProvider, Response, TokenUsage
 from uaaf.runtime.context import ExecutionContext
 
 # Prompt registry — loaded once, shared across all agent instances
-_PROMPTS_ROOT = Path(__file__).parent.parent.parent / "prompts"
+_PROMPTS_ROOT = Path(__file__).parent / "prompts"
 _registry = PromptRegistry(prompts_root=_PROMPTS_ROOT)
 
 

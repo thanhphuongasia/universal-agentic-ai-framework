@@ -1,0 +1,154 @@
+version: "1.0"
+description: "Stock advisory — ReAct agent with compliance audit trail"
+model: "gpt-4o-mini"
+temperature: 0.1
+max_tokens: 1024
+
+# ── Prompt templates ─────────────────────────────────────────────────────────
+# Variables injected at runtime: {context} = portfolio/market context, {query} = user question
+
+prompts:
+  market_snapshot:
+    system: |
+      You are a stock market analyst. Answer questions about stock prices and signals concisely.
+      Always mention risk when discussing specific stocks.
+
+      === MARKET CONTEXT ===
+      {context}
+      === END CONTEXT ===
+    user: "{query}"
+
+  portfolio_analysis:
+    system: |
+      You are a portfolio analyst. Analyze the portfolio data and provide structured insights.
+      Use the available tools to fetch live quotes and signals before answering.
+      Always include: current allocation, P&L summary, concentration risks.
+      Always mention risk when providing any analysis.
+
+      === PORTFOLIO CONTEXT ===
+      {context}
+      === END CONTEXT ===
+    user: "{query}"
+
+  trade_advisory:
+    system: |
+      You are a trade advisor. Use tools to gather data before making any recommendation.
+      ALWAYS call get_quote and get_signals before making a recommendation.
+      ALWAYS call check_risk to assess the trade risk.
+      Return ONLY valid JSON with this exact schema (no prose, no markdown):
+      {
+        "ticker": "XXXX",
+        "action": "BUY|SELL|HOLD",
+        "confidence": 0.0,
+        "rationale": "...",
+        "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+        "max_position_pct": 0.0
+      }
+    user: "{query}"
+
+  compliance_report:
+    system: |
+      You are a compliance officer generating audit-ready trade analysis reports.
+      Structure your output with clear sections: SUMMARY, SIGNALS, RISK ASSESSMENT, RECOMMENDATION.
+      Always include: ticker, action, rationale, risk level, and compliance disclaimer.
+      This report is subject to 7-year regulatory retention.
+
+      === PORTFOLIO CONTEXT ===
+      {context}
+      === END CONTEXT ===
+    user: "{query}"
+
+# ── Tool definitions ─────────────────────────────────────────────────────────
+# Schema lives here (what the LLM sees).
+# Handler (Python callable) lives in examples/stock_advisory/tools.py.
+
+tools:
+  - name: get_quote
+    description: >
+      Get current market quote for a stock ticker.
+      Returns: price, change_pct, volume, sector, company name.
+    parameters:
+      type: object
+      properties:
+        ticker:
+          type: string
+          description: "Stock ticker symbol (e.g. AAPL, NVDA, MSFT)"
+      required:
+        - ticker
+
+  - name: get_signals
+    description: >
+      Get technical and sentiment signals for a stock ticker.
+      Returns: consensus (BUY/SELL/HOLD), signal list with strength and rationale.
+      Use min_strength=0.6 to filter for high-confidence signals only.
+    parameters:
+      type: object
+      properties:
+        ticker:
+          type: string
+          description: "Stock ticker symbol"
+        min_strength:
+          type: number
+          description: "Minimum signal strength (0.0-1.0). Default: 0.0 (all signals)"
+          default: 0.0
+      required:
+        - ticker
+
+  - name: portfolio_summary
+    description: >
+      Get portfolio holdings with P&L analysis.
+      Returns: total value, cash, positions with allocation % and P&L per position.
+      Use ticker_filter to get details for a single position.
+    parameters:
+      type: object
+      properties:
+        ticker_filter:
+          type: string
+          description: "Optional: filter to a single ticker (e.g. AAPL)"
+      required: []
+
+  - name: check_risk
+    description: >
+      Assess the risk of a proposed trade (BUY or SELL) relative to portfolio size.
+      Returns: risk_level (LOW/MEDIUM/HIGH/CRITICAL), trade_pct_of_portfolio, warnings.
+      ALWAYS call this before making any trade recommendation.
+    parameters:
+      type: object
+      properties:
+        ticker:
+          type: string
+          description: "Stock ticker symbol"
+        shares:
+          type: integer
+          description: "Number of shares to buy or sell"
+        action:
+          type: string
+          enum: ["BUY", "SELL"]
+          description: "Trade direction"
+      required:
+        - ticker
+        - shares
+        - action
+
+  - name: place_order_dry_run
+    description: >
+      Simulate an order (DRY RUN ONLY — no real trade executed).
+      Returns order confirmation with compliance note.
+      Use to verify trade parameters before real submission.
+    parameters:
+      type: object
+      properties:
+        ticker:
+          type: string
+          description: "Stock ticker symbol"
+        action:
+          type: string
+          enum: ["BUY", "SELL"]
+          description: "Trade direction"
+        shares:
+          type: integer
+          description: "Number of shares"
+      required:
+        - ticker
+        - action
+        - shares
