@@ -8,7 +8,6 @@ from uaaf.execution.llm_agent import BudgetSummary, LLMAgent
 from uaaf.observability._pricing import CONTEXT_WINDOW
 from uaaf.providers.llm import TokenUsage
 
-
 # ---------------------------------------------------------------------------
 # CONTEXT_WINDOW map in _pricing.py
 # ---------------------------------------------------------------------------
@@ -49,14 +48,16 @@ def test_budget_summary_has_required_fields() -> None:
 
 def _make_agent() -> LLMAgent:
     from dataclasses import dataclass
+
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
     from uaaf._testing.fakes import FakeLLMProvider
     from uaaf.execution.agent import AgentResult, Task
     from uaaf.observability.audit import AuditConfig, AuditLogger
-    from uaaf.observability.cost import Cost, CostPolicy, CostTracker
+    from uaaf.observability.cost import CostPolicy, CostTracker
     from uaaf.observability.rate_limit import RateLimiter, RatePolicy
     from uaaf.observability.tracer import Tracer
     from uaaf.runtime.context import ExecutionContext
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     @dataclass
     class StubAgent(LLMAgent):

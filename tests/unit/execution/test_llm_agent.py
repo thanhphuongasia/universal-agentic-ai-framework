@@ -18,7 +18,6 @@ from uaaf.observability.tracer import Tracer
 from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
 from uaaf.runtime.context import ContextScope, ExecutionContext
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -61,7 +60,7 @@ def _make_agent(
     llm: FakeLLMProvider,
     tool_registry: ToolRegistry | None = None,
     audit_token_usage: bool = False,
-) -> "MinimalLLMAgent":
+) -> MinimalLLMAgent:
     return MinimalLLMAgent(
         agent_id="test-llm-agent",
         cost_tracker=CostTracker(policy=CostPolicy()),

@@ -11,14 +11,13 @@ import pytest
 
 from uaaf._testing.fakes import FakeLLMProvider
 from uaaf.execution.agent import AgentResult, Task
-from uaaf.execution.llm_agent import LLMAgent, SilentCallbacks, PrintCallbacks, ReActCallbacks
+from uaaf.execution.llm_agent import LLMAgent, PrintCallbacks, ReActCallbacks, SilentCallbacks
 from uaaf.observability.audit import AuditConfig, AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
+from uaaf.observability.cost import CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
 from uaaf.observability.tracer import Tracer
 from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
-from uaaf.runtime.context import ContextScope, ExecutionContext
-
+from uaaf.runtime.context import ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,7 +43,7 @@ def _make_request() -> CompletionRequest:
     )
 
 
-def _make_agent(llm: FakeLLMProvider, tool_registry: Any = None) -> "StubAgent":
+def _make_agent(llm: FakeLLMProvider, tool_registry: Any = None) -> StubAgent:
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     @dataclass

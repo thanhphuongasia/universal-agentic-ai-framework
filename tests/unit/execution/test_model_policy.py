@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
-
+from uaaf._testing.fakes import FakeLLMProvider
 from uaaf.execution.llm_agent import LLMAgent, ModelPolicy
 from uaaf.intent.models import ModelTier
 from uaaf.providers.router import ModelRouter
-from uaaf._testing.fakes import FakeLLMProvider
-
 
 # ---------------------------------------------------------------------------
 # ModelPolicy defaults
@@ -30,13 +27,15 @@ def test_model_policy_has_sensible_defaults() -> None:
 def _make_fake_agent() -> LLMAgent:
     """Return a concrete LLMAgent subclass instance for testing select_model."""
     from dataclasses import dataclass
+
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
     from uaaf.execution.agent import AgentResult, Task
     from uaaf.observability.audit import AuditConfig, AuditLogger
-    from uaaf.observability.cost import Cost, CostPolicy, CostTracker
+    from uaaf.observability.cost import CostPolicy, CostTracker
     from uaaf.observability.rate_limit import RateLimiter, RatePolicy
     from uaaf.observability.tracer import Tracer
     from uaaf.runtime.context import ExecutionContext
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     @dataclass
     class StubAgent(LLMAgent):

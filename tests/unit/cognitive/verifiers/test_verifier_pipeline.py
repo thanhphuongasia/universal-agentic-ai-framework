@@ -119,3 +119,15 @@ class TestMisc:
         result = await pipeline.verify("output", ctx)
         assert "bad schema" in result.feedback
         assert "bad content" in result.feedback
+
+
+# ---------------------------------------------------------------------------
+# Empty pipeline — returns True immediately (coverage line 40)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_verify_with_empty_verifiers_returns_passed(ctx) -> None:
+    pipeline = VerifierPipeline(verifiers=[])
+    result = await pipeline.verify("any output", ctx)
+    assert result.passed is True
+    assert result.confidence == 1.0

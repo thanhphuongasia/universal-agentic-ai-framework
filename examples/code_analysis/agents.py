@@ -3,13 +3,12 @@ Multi-agent layer for code analysis — refactored to use PromptRegistry + OpenA
 ===============================================================================
 Uses: OpenAI (real) + PromptRegistry (YAML versioning) + FakeLLMProvider (demo)
 
-Each ClassAnalysisAgent handles ONE class — they run in parallel via asyncio.gather.
+Each ClassAnalysisAgent handles ONE class — they run in parallel via AgentPool.fan_out.
 Results are collected into a CodebaseReport by the orchestrator.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import time
@@ -20,12 +19,13 @@ from typing import Any
 from examples.code_analysis.ingestion import ClassInfo
 from uaaf._testing.fakes import FakeLLMProvider
 from uaaf.execution.agent import AgentResult, BaseAgent, Task
+from uaaf.execution.pool import AgentPool
 from uaaf.knowledge.context_assembler import ContextAssembler
 from uaaf.knowledge.graph.backbone import GraphBackbone
 from uaaf.observability.cost import Cost
 from uaaf.prompts.registry import PromptRegistry
 from uaaf.providers.llm import ILLMProvider, Response, TokenUsage
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf.runtime.context import ExecutionContext
 
 # Prompt registry — loaded once, shared across all agent instances
 _PROMPTS_ROOT = Path(__file__).parent.parent.parent / "prompts"
@@ -199,8 +199,8 @@ class CodebaseAnalysisOrchestrator:
 
     Flow:
       1. Ingest ClassInfo list into GraphBackbone (shared knowledge)
-      2. Spawn one ClassAnalysisAgent per class
-      3. Run all agents concurrently via asyncio.gather (bounded by semaphore)
+      2. Spawn one ClassAnalysisAgent per class, register in AgentPool
+      3. Run all agents concurrently via AgentPool.fan_out (bounded by max_concurrency)
       4. Aggregate results into CodebaseReport
     """
     shared_backbone: GraphBackbone = field(default_factory=GraphBackbone)
@@ -212,36 +212,34 @@ class CodebaseAnalysisOrchestrator:
         base_context: ExecutionContext,
         agent_factory: AgentFactory,
     ) -> CodebaseReport:
-        """Run all class agents in parallel batches."""
+        """Run all class agents in parallel via AgentPool.fan_out."""
         start_time = time.monotonic()
-        semaphore = asyncio.Semaphore(self.max_concurrency)
+
+        # Build one agent per class and register in pool
+        pool = AgentPool(max_concurrency=self.max_concurrency)
+        for cls in classes:
+            agent = agent_factory.build(cls, shared_backbone=self.shared_backbone)
+            pool.register(agent)
+
+        # One task per class — fan_out routes task[i] → agent[i] (round_robin)
+        tasks = [
+            Task(task_id=f"cls-{cls.name}", payload={"class": cls.name})
+            for cls in classes
+        ]
+
+        # collect mode: 1 worker failure doesn't cancel others
+        agent_results = await pool.fan_out(tasks, base_context, on_error="collect")
+
         results: list[dict[str, Any]] = []
         errors: list[str] = []
-
-        async def analyse_one(cls: ClassInfo, idx: int) -> None:
-            async with semaphore:
-                agent = agent_factory.build(cls, shared_backbone=self.shared_backbone)
-                scope = ContextScope(
-                    user_id=base_context.scope.user_id,
-                    session_id=f"{base_context.scope.session_id}-{cls.name}",
-                    domain=base_context.scope.domain,
-                )
-                ctx = ExecutionContext(
-                    scope=scope,
-                    correlation_id=f"{base_context.correlation_id}-{idx}",
-                )
+        for cls, ar in zip(classes, agent_results, strict=True):
+            if ar.success and ar.output is not None:
                 try:
-                    result = await agent.execute(
-                        Task(task_id=f"cls-{cls.name}", payload={"class": cls.name}),
-                        ctx,
-                    )
-                    results.append(json.loads(result.output))
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"{cls.name}: {exc}")
-
-        await asyncio.gather(*[
-            analyse_one(cls, i) for i, cls in enumerate(classes)
-        ])
+                    results.append(json.loads(ar.output))
+                except (json.JSONDecodeError, TypeError):
+                    errors.append(f"{cls.name}: failed to parse output")
+            else:
+                errors.append(f"{cls.name}: {ar.metadata.get('error', 'unknown error')}")
 
         elapsed = time.monotonic() - start_time
         return CodebaseReport(

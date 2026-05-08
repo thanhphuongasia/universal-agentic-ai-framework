@@ -195,6 +195,19 @@ class FakeAgentPool:
             return self._queue.popleft()
         return AgentResult(task_id=task.task_id, output="default fake", cost=Cost.zero())
 
+    async def fan_out(
+        self,
+        tasks: list[Any],
+        context: Any = None,
+        tag_filter: Any = None,
+        on_error: str = "fail_fast",
+    ) -> list[Any]:
+        """Sequential fake fan_out — pops from queue for each task."""
+        results = []
+        for task in tasks:
+            results.append(await self.dispatch(task))
+        return results
+
 
 class FakeVerifier:
     """Deterministic IVerifier: iterates through a pass/fail sequence."""

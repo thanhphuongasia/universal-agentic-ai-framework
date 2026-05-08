@@ -39,6 +39,7 @@ StrategyId = str
 DIRECT: StrategyId = "direct"
 REACT: StrategyId = "react"
 EVALUATOR_OPTIMIZER: StrategyId = "evaluator_optimizer"
+PARALLEL_FANOUT: StrategyId = "parallel_fanout"
 
 # ---------------------------------------------------------------------------
 # Value objects

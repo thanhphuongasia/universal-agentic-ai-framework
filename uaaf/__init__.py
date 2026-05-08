@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0b6"
 
+from uaaf.execution.pool import AgentPool
 from uaaf.observability.errors import (
     BudgetExceededError,
     DegradedError,
@@ -18,6 +19,7 @@ from uaaf.observability.tracer import Tracer, get_current_correlation_id
 
 __all__ = [
     "__version__",
+    "AgentPool",
     "FrameworkError",
     "RetryableError",
     "DegradedError",

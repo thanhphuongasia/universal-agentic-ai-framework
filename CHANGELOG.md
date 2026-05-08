@@ -5,6 +5,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0b6] - 2026-05-08
+
+### Added (Phase 6 — Multi-Agent Orchestration)
+- `uaaf/execution/pool.py` — `AgentPool`: concrete `IAgentPool` with:
+  - `register(agent, tags)` + `agents_with_tag(tag)` + `agent_ids()`
+  - `dispatch(task, context, strategy)` — round_robin (default) or random routing; no "first registered" silent bug
+  - `dispatch_to(agent_id, task, context)` — explicit routing by id
+  - `fan_out(tasks, context, tag_filter, on_error)` — parallel dispatch via `anyio.create_task_group()`; bounded by `Semaphore(max_concurrency)`; index-stable results
+  - `on_error="fail_fast"` (default): 1 failure raises `ExceptionGroup` / `on_error="collect"`: partial results collected as `AgentResult(success=False)`
+- `uaaf/cognitive/strategies/parallel.py` — `ParallelFanoutStrategy` (ICognitiveStrategy #4):
+  - `ISubtaskBuilder` Protocol + `EntitySubtaskBuilder` default (1 task per entity)
+  - Decomposes HIGH-complexity intent → N subtasks → `fan_out(on_error="collect")` → aggregate → verify
+  - Custom builder injectable via constructor
+- `uaaf/intent/models.py` — `PARALLEL_FANOUT` strategy id constant
+- `uaaf/cognitive/strategies/__init__.py` — now exports all 4 strategies + ISubtaskBuilder
+
+### Changed
+- `examples/code_analysis/agents.py` — `CodebaseAnalysisOrchestrator` replaced `asyncio.gather` + manual semaphore with `AgentPool.fan_out(on_error="collect")`; removed `import asyncio`
+- `uaaf/_testing/fakes.py` — `FakeAgentPool` gains `fan_out(tasks, context, on_error)` method
+- `uaaf/execution/__init__.py` — exports `AgentPool`
+- `uaaf/cognitive/strategies/__init__.py` — exports `ParallelFanoutStrategy`, `ISubtaskBuilder`, `EntitySubtaskBuilder`
+
+### Design decisions
+- `dispatch()` uses round_robin instead of "first registered" — predictable under load (expert review Fix #7)
+- `fan_out` has explicit `on_error` semantics — no implicit cancel-all surprise (expert review Fix #6)
+- `OrchestratorAgent` deferred — duplicate with `ParallelFanoutStrategy`; no concrete framework use case yet (expert review Fix #5)
+- `asyncio.gather` eliminated from `uaaf/` and `examples/` — spec §5 compliance
+
+### CI gate
+- `ruff check uaaf/ tests/ examples/`: 0 violations (new files)
+- `mypy uaaf/ examples/`: 0 errors
+- `pytest`: 487 passed, 1 skipped; coverage 87.77% ≥ 88% threshold
+- `grep -r "asyncio.gather" uaaf/ examples/code_analysis/`: no results
+
 ## [0.1.0b5+examples] - 2026-05-07
 
 ### Added (Example Apps — PromptRegistry + OpenAI refactor)

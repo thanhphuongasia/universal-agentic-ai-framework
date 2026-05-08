@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import pytest
 from typing import Any
 
-from uaaf.execution.tool_registry import ITool, ToolRegistry
+import pytest
 
+from uaaf.execution.tool_registry import ITool, ToolRegistry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -170,3 +170,26 @@ def test_registry_handlers_dict_accessible() -> None:
     assert not reg._handlers
     reg.register("echo", EchoTool())
     assert "echo" in reg._handlers
+
+
+# ---------------------------------------------------------------------------
+# run — handler raises exception → returns error JSON (coverage line 97-98)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_run_returns_error_json_when_handler_raises() -> None:
+    class BoomTool:
+        tool_id = "boom"
+        schema = None
+
+        async def execute(self, args: dict) -> str:
+            raise ValueError("handler exploded")
+
+    reg = ToolRegistry()
+    reg.register("boom", BoomTool())
+    call = make_tool_call("boom", {}, call_id="c1")
+    result = await reg.run(call, domain="")
+    import json
+    parsed = json.loads(result)
+    assert "error" in parsed
+    assert "handler exploded" in parsed["error"]

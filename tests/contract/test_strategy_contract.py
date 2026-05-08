@@ -37,10 +37,16 @@ def _make_evaluator_optimizer():
     return EvaluatorOptimizerStrategy()
 
 
+def _make_parallel_fanout():
+    from uaaf.cognitive.strategies.parallel import ParallelFanoutStrategy
+    return ParallelFanoutStrategy()
+
+
 STRATEGY_REGISTRY: dict[str, Callable] = {
     "direct": _make_direct,
     "react": _make_react,
     "evaluator_optimizer": _make_evaluator_optimizer,
+    "parallel_fanout": _make_parallel_fanout,
 }
 
 
