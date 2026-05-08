@@ -25,6 +25,21 @@ PRICING: dict[str, tuple[float, float]] = {
 
 _MILLION = 1_000_000
 
+# Context window sizes (tokens) per model. Unknown models fall back to 128_000.
+CONTEXT_WINDOW: dict[str, int] = {
+    # OpenAI
+    "gpt-4o":          128_000,
+    "gpt-4o-mini":     128_000,
+    "gpt-4-turbo":     128_000,
+    "gpt-3.5-turbo":   16_385,
+    # Anthropic
+    "claude-opus-4-7":    200_000,
+    "claude-sonnet-4-6":  200_000,
+    "claude-haiku-4-5":   200_000,
+}
+
+_DEFAULT_CONTEXT_WINDOW = 128_000
+
 
 def calculate_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     """Return USD cost for a completion given the model and token counts.

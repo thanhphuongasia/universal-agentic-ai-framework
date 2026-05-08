@@ -9,46 +9,10 @@ Architecture:
 
 from __future__ import annotations
 
-import json
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 from typing import Any
 
 from examples.todo_app.models import Goal, Priority, Status, Task
-
-# ---------------------------------------------------------------------------
-# Tool registry
-# ---------------------------------------------------------------------------
-
-ToolHandler = Callable[..., Awaitable[Any]]
-
-
-@dataclass
-class ToolRegistry:
-    """Maps tool name → async handler. Call .run(tool_call) to execute."""
-    _handlers: dict[str, ToolHandler] = field(default_factory=dict)
-
-    def register(self, name: str, handler: ToolHandler) -> None:
-        self._handlers[name] = handler
-
-    async def run(self, tool_call: dict[str, Any]) -> str:
-        """Execute one tool_call dict (from response.metadata['tool_calls'])."""
-        name = tool_call["function"]["name"]
-        args = tool_call["function"]["arguments"]
-        handler = self._handlers.get(name)
-        if handler is None:
-            return json.dumps({"error": f"Unknown tool: {name}"})
-        result = await handler(**args)
-        return json.dumps(result, default=str)
-
-    async def run_all(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Run all tool_calls and return list of {tool_call_id, content} dicts."""
-        results = []
-        for tc in tool_calls:
-            content = await self.run(tc)
-            results.append({"tool_call_id": tc["id"], "content": content})
-        return results
-
+from uaaf.execution import ToolRegistry
 
 # ---------------------------------------------------------------------------
 # Handler implementations

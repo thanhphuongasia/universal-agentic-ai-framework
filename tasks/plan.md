@@ -34,7 +34,7 @@ Hai tầng này bổ sung cho nhau, không trùng lặp.
 - **`ModelPolicy`** chỉ chứa complexity rules (keywords, word_count), không chứa model name.
   Per-provider config nằm ở `ModelRouter` do project tự wire.
 - **Context window map**: thêm vào `uaaf/observability/_pricing.py`.
-- **`BudgetSummary` auto-log vào `AuditLogger`**: mặc định `log_budget=True` trên `LLMAgent`.
+- **`BudgetSummary` auto-log vào `AuditLogger`**: mặc định `audit_token_usage=True` trên `LLMAgent`.
 
 ## Dependency Graph
 
@@ -44,7 +44,7 @@ uaaf/observability/_pricing.py ← đã có (calculate_usd) — sẽ thêm CONTE
 uaaf/execution/agent.py        ← đã có (BaseAgent)
         │
         ▼
-uaaf/execution/tool_registry.py   [T-L01] — IToolHandler protocol + ToolRegistry
+uaaf/execution/tool_registry.py   [T-L01] — ITool protocol + ToolRegistry
         │
         ▼
 uaaf/execution/llm_agent.py       [T-L02] — LLMAgent core (react_loop)
@@ -75,9 +75,12 @@ examples/todo_app/main.py         [T-L06] — wire PrintCallbacks
 từ framework thay vì tự define.
 
 **Acceptance criteria:**
-- [ ] `uaaf/execution/tool_registry.py` có `IToolHandler` Protocol và `ToolRegistry` class
-- [ ] `ToolRegistry.register(name, handler)` và `.run(tool_call)` và `.run_all(tool_calls)` hoạt động
-- [ ] `uaaf/execution/__init__.py` export `ToolRegistry`
+- [ ] `uaaf/execution/tool_registry.py` có `ITool` Protocol (align với spec §9 class diagram) và `ToolRegistry` class
+- [ ] `ITool` Protocol: `tool_id: str`, `schema: dict[str, Any] | None`, `async execute(args) -> Any`
+- [ ] `ToolRegistry.register(name, tool, allowed_domains=None)` — `None` nghĩa là cho phép tất cả domains
+- [ ] `ToolRegistry.run(tool_call, domain)` raise `PermissionError` nếu domain không có trong `allowed_domains`
+- [ ] `ToolRegistry.run_all(tool_calls, domain)` và backward-compat callable handler support
+- [ ] `uaaf/execution/__init__.py` export `ToolRegistry`, `ITool`
 - [ ] `examples/todo_app/tools.py` import `ToolRegistry` từ `uaaf.execution` thay vì tự define
 
 **Verification:**
@@ -105,10 +108,16 @@ trả về `tuple[str, TokenUsage]` với full Thought→Action→Observation lo
 
 **Acceptance criteria:**
 - [ ] `LLMAgent` có fields: `llm: ILLMProvider`, `tool_registry: ToolRegistry | None`
-- [ ] `react_loop()` xử lý đúng 3 cases: no tool_calls (round 1), tool_calls (multi-round), max_rounds exceeded
+- [ ] `react_loop()` xử lý đúng 4 cases:
+  - Round 1 không có tool_calls → final answer ngay
+  - Tool_calls → multi-round Thought→Action→Observation
+  - Round N>1 trả về `tool_calls=[]` → treat như final answer (terminate cleanly), không raise
+  - Max rounds exceeded → gửi synthesis request không có tools, trả về kết quả
 - [ ] `react_loop()` trả về `tuple[str, TokenUsage]` với accumulated token counts
 - [ ] Messages được build đúng format OpenAI: assistant message có `tool_calls`, tool message có `tool_call_id`
 - [ ] `LLMAgent` vẫn là abstract (có `@abstractmethod _execute`)
+- [ ] `react_loop()` nhận `domain: str = ""` param để pass vào `ToolRegistry.run(tool_call, domain)`
+- [ ] Note trong code: `# Streaming: out of scope — react_loop returns full string. Track as Phase X.`
 
 **Verification:**
 - [ ] `python -m pytest tests/unit/execution/test_llm_agent.py -q` — pass
@@ -128,7 +137,7 @@ trả về `tuple[str, TokenUsage]` với full Thought→Action→Observation lo
 ### Checkpoint: After L-01 + L-02
 - [ ] 383+ tests pass (không có regression)
 - [ ] mypy clean trên toàn bộ `uaaf/`
-- [ ] `ToolRegistry` accessible từ `uaaf.execution`
+- [ ] `ToolRegistry`, `ITool` accessible từ `uaaf.execution`
 - [ ] `LLMAgent` accessible từ `uaaf.execution`
 
 ---
@@ -139,8 +148,11 @@ trả về `tuple[str, TokenUsage]` với full Thought→Action→Observation lo
 
 **Description:** Thêm `ModelPolicy` dataclass và `select_model(query) → ModelTier` vào `LLMAgent`.
 Policy chỉ chứa complexity rules (keywords, word_count_threshold) — KHÔNG chứa model name.
-Model name do `ModelRouter` quyết định dựa trên tier. Cũng update nhỏ `ModelRouter._model_to_tier()`
-để nhận diện tier string trực tiếp ("cheap"/"standard"/"powerful").
+Per-provider config (model string cụ thể) nằm ở `ModelRouter`, không phải `ModelPolicy`.
+Cũng update nhỏ `ModelRouter._model_to_tier()` để nhận diện tier string trực tiếp ("cheap"/"standard"/"powerful").
+
+> **Tech debt note**: keyword-based classification không scale với multi-language queries.
+> Add TODO trong code: `# TODO Phase X: replace với embedding-based hoặc LLM-based classifier`.
 
 **Acceptance criteria:**
 - [ ] `ModelPolicy` dataclass có: `keywords: set[str]`, `word_count_threshold: int`, `cheap_threshold: int`
@@ -254,10 +266,11 @@ Wire `PrintCallbacks` trong `main.py` để output giữ nguyên.
 
 ### Checkpoint: Final
 - [ ] `python -m pytest tests/ -q` — tất cả tests pass (≥ 383)
-- [ ] `python -m mypy uaaf/ examples/` — clean
-- [ ] `python -m ruff check uaaf/ examples/` — clean
-- [ ] `python -m examples.todo_app.main` — chạy end-to-end với FakeLLMProvider
-- [ ] `uaaf/execution/__init__.py` export: `BaseAgent`, `LLMAgent`, `ToolRegistry`, `PrintCallbacks`, `SilentCallbacks`
+- [ ] `python -m pytest --cov=uaaf --cov-fail-under=85` — coverage không giảm
+- [ ] `python -m mypy uaaf/ examples/` — 0 errors
+- [ ] `python -m ruff check uaaf/ examples/` — 0 violations
+- [ ] `python -m examples.todo_app.main` — chạy end-to-end với FakeLLMProvider, output giống y chang trước refactor
+- [ ] `uaaf/execution/__init__.py` export: `BaseAgent`, `LLMAgent`, `ToolRegistry`, `ITool`, `PrintCallbacks`, `SilentCallbacks`
 
 ---
 
@@ -275,5 +288,7 @@ Wire `PrintCallbacks` trong `main.py` để output giữ nguyên.
 | Câu hỏi | Quyết định |
 |---------|-----------|
 | `PrintCallbacks` output | stdout (mặc định), nhưng project overwrite được bằng cách inject `ReActCallbacks` subclass riêng (ví dụ: log to file, structlog, etc.) |
-| `ModelPolicy` per-provider | Có — `ModelPolicy` có `provider_models: dict[str, tuple[str, str]]` mapping `provider_id → (default_model, complex_model)`. Ví dụ: `{"openai": ("gpt-4o-mini", "gpt-4o"), "anthropic": ("claude-haiku-4-5", "claude-sonnet-4-6")}` |
-| `BudgetSummary` auto-log | Mặc định `True` — tự log vào `AuditLogger` sau mỗi `react_loop()`. Config được qua `log_budget: bool = True` field trên `LLMAgent`, project override bằng `log_budget=False` hoặc subclass `budget_logged()` hook |
+| `ModelPolicy` scope | Complexity rules only (`keywords`, `word_count_threshold`) — KHÔNG chứa model/provider name. Per-provider config (model string cụ thể) nằm ở `ModelRouter`. `LLMAgent` không biết về provider specifics. |
+| `BudgetSummary` auto-log | Mặc định `True` — tự log vào `AuditLogger` sau mỗi `react_loop()`. Config được qua `audit_token_usage: bool = True` field trên `LLMAgent`, project override bằng `audit_token_usage=False` hoặc subclass `budget_logged()` hook |
+| Verifier responsibility | Agent tier (`LLMAgent`) không chạy verifier — đó là trách nhiệm của Strategy tier (`ReActStrategy`, `ParallelFanoutStrategy`). `react_loop()` không nhận verifier param. |
+| `ITool` vs `IToolHandler` | Dùng `ITool` để align với spec §9 class diagram. Callable handlers (existing todo_app code) được wrap tự động khi register. |

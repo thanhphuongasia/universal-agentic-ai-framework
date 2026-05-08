@@ -104,6 +104,12 @@ class ModelRouter:
 
     def _model_to_tier(self, model: str) -> ModelTier:
         lower = model.lower()
+        # Direct tier string from LLMAgent.select_model() — "cheap"/"standard"/"powerful"
+        try:
+            return ModelTier(lower)
+        except ValueError:
+            pass
+        # Model-name heuristics (backward compat)
         if "mini" in lower or "haiku" in lower:
             return ModelTier.CHEAP
         if "opus" in lower:

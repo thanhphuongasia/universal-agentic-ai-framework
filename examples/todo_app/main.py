@@ -18,6 +18,7 @@ from examples._utils import silent_tracer
 from examples.todo_app.agent import TodoAnalysisAgent, build_provider
 from examples.todo_app.models import Status, build_mock_data
 from examples.todo_app.tools import build_todo_registry
+from uaaf.execution import PrintCallbacks
 from uaaf.execution.agent import Task as AgentTask
 from uaaf.observability.audit import AuditLogger
 from uaaf.observability.cost import CostPolicy, CostTracker
@@ -62,6 +63,7 @@ async def main() -> None:
         agent_id="todo-analyst",
         llm=llm,
         tool_registry=tool_registry,
+        callbacks=PrintCallbacks(),
         cost_tracker=CostTracker(CostPolicy(
             per_user_per_day_usd=1.0,
             per_domain_per_month_usd=20.0,
