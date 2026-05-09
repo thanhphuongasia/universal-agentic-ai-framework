@@ -56,13 +56,15 @@ PRESETS: list[tuple[str, str, str, str]] = [
 ]
 
 
-def _select_queries() -> list[tuple[str, str, str]]:
-    """Prompt user to pick preset(s) or enter a custom query.
+def _select_queries() -> list[tuple[str, str, str]] | None:
+    """Prompt user to pick preset(s), enter a custom query, or exit.
 
-    Returns list of (label, prompt_name, query) tuples — what the run_with_*
-    functions consume. Non-TTY (piped/CI): defaults to all presets.
+    Returns:
+      list of (label, prompt_name, query) tuples — to run
+      None — user chose Exit (or non-TTY second iteration)
     """
     if not sys.stdin.isatty():
+        # Non-TTY first call: run all presets. Caller breaks loop after.
         return [(label, prompt, q) for label, _, prompt, q in PRESETS]
 
     print_separator("Choose a query")
@@ -73,15 +75,18 @@ def _select_queries() -> list[tuple[str, str, str]]:
     all_idx = len(PRESETS) + 2
     print(f"  {custom_idx}. Custom        — type your own query")
     print(f"  {all_idx}. Run all presets — show full demo")
+    print("  0. Exit")
 
     while True:
-        raw = input(f"\nEnter choice [1-{all_idx}]: ").strip()
+        raw = input(f"\nEnter choice [0-{all_idx}]: ").strip()
         try:
             choice = int(raw)
         except ValueError:
             print("  ⚠️  Enter a number.")
             continue
 
+        if choice == 0:
+            return None
         if 1 <= choice <= len(PRESETS):
             label, _, prompt, q = PRESETS[choice - 1]
             return [(label, prompt, q)]
@@ -94,7 +99,7 @@ def _select_queries() -> list[tuple[str, str, str]]:
             return [("Custom", "analyze", text)]
         if choice == all_idx:
             return [(label, prompt, q) for label, _, prompt, q in PRESETS]
-        print(f"  ⚠️  Choose between 1 and {all_idx}.")
+        print(f"  ⚠️  Choose between 0 and {all_idx}.")
 
 
 # ---------------------------------------------------------------------------
@@ -288,25 +293,36 @@ async def main(mode: str = "both") -> None:
     goals, tasks = build_mock_data()
     _print_portfolio(goals, tasks)
 
-    # Interactive query selection (or fall back to all presets in non-TTY)
-    queries = _select_queries()
-
     scope = ContextScope(user_id="demo-user", session_id="todo-session-1", domain="todo")
     ctx = ExecutionContext(scope=scope, correlation_id="demo-001")
 
     selected = list(MODES.items()) if mode == "both" else [(mode, MODES[mode])]
 
-    for mode_name, run_fn in selected:
-        # Each mode gets a fresh agent — FakeLLMProvider queue is per-instance
+    # Build agents + ingest ONCE — reused across all loop iterations
+    mode_agents: dict[str, TodoAnalysisAgent] = {}
+    for mode_name, _ in selected:
         agent = _build_agent(goals, tasks)
         print_separator(f"Ingestion → MemoryBackbone  [{mode_name}]")
         await agent.ingest_goals(goals, scope_key=scope.session_id)
         print(f"  ✅ {len(goals) + len(tasks)} observations written")
+        mode_agents[mode_name] = agent
 
-        await run_fn(agent, ctx, queries)
+    # ── Query loop — keep asking until user picks Exit ──────────────────────
+    while True:
+        queries = _select_queries()
+        if queries is None:
+            print("\n  👋 Bye!")
+            break
 
-    if mode == "both":
-        _print_comparison_table()
+        for mode_name, run_fn in selected:
+            await run_fn(mode_agents[mode_name], ctx, queries)
+
+        if mode == "both":
+            _print_comparison_table()
+
+        # Non-TTY: run once and exit (avoid CI infinite loop)
+        if not sys.stdin.isatty():
+            break
 
     await _run_tool_demos(goals, tasks)
     _print_summary_stats(goals)
