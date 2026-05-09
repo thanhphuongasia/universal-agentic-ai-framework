@@ -31,7 +31,12 @@ from typing import Any
 from examples.todo_app.agent import TodoAnalysisAgent, build_provider
 from examples.todo_app.intent import TodoIntentAnalyzer, build_llm_analyzer
 from examples.todo_app.models import Goal, Status, Task, build_mock_data
-from examples.todo_app.strategies import TodoDirectStrategy, TodoReActStrategy
+from examples.todo_app.strategies import (
+    TodoDirectStrategy,
+    TodoEvaluatorStrategy,
+    TodoParallelStrategy,
+    TodoReActStrategy,
+)
 from examples.todo_app.tools import build_todo_registry
 from uaaf._testing.fakes import FakeVerifier
 from uaaf.execution import PrintCallbacks
@@ -54,6 +59,8 @@ from uaaf.runtime.request_handler import RequestHandler
 PRESETS: list[tuple[str, str, str, str]] = [
     ("Priority Breakdown", "LOW",    "priority_breakdown",
      "Give me a JSON breakdown of completed tasks by priority and effort per goal."),
+    ("Per-Goal Effort",    "HIGH",   "analyze",
+     "Analyze each goal separately and report the effort accuracy for every goal."),
     ("Full Analysis",      "MEDIUM", "analyze",
      "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers."),
     ("Next Sprint",        "HIGH",   "next_sprint",
@@ -216,11 +223,19 @@ async def run_with_request_handler(
     pool = AgentPool()
     pool.register(agent)
     analyzer = _build_analyzer()
-    # Order matters: ReAct checked first (gated by LLM hint + complexity),
-    # Direct is the always-applicable fallback.
+    # Order = priority. Selector picks the FIRST applicable strategy.
+    #   Parallel  : "each goal / separately" keyword match
+    #   Evaluator : intent_type=="report" (JSON output queries)
+    #   ReAct     : LLM suggests react + complexity ≥ MEDIUM
+    #   Direct    : catch-all fallback
     handler = RequestHandler(
         analyzer=analyzer,
-        selector=StrategySelector([TodoReActStrategy(), TodoDirectStrategy()]),
+        selector=StrategySelector([
+            TodoParallelStrategy(),
+            TodoEvaluatorStrategy(),
+            TodoReActStrategy(),
+            TodoDirectStrategy(),
+        ]),
         pool=pool,
         verifier=FakeVerifier(),
     )
