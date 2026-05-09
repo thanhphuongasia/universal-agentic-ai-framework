@@ -1,17 +1,26 @@
 """
-Todo App — UAAF Example (refactored)
-=====================================
-Uses: OpenAI (real) + PromptRegistry (YAML versioning) + ToolRegistry (function calling)
+Todo App — UAAF Example
+========================
+Demonstrates two equivalent dispatch paths:
+
+  Mode A  direct       agent.execute(Task(...))           — caller picks prompt
+  Mode B  handler      RequestHandler.handle(message)     — analyzer picks prompt
+
+Both paths run the SAME 3 queries through the SAME agent class. The only
+difference is who decides which prompt template + strategy to use.
 
 Run:
-    OPENAI_API_KEY=sk-... python -m examples.todo_app.main
-    python -m examples.todo_app.main          # demo mode with FakeLLMProvider
+    OPENAI_API_KEY=sk-... python -m examples.todo_app.main             # both modes
+    python -m examples.todo_app.main direct                            # mode A only
+    python -m examples.todo_app.main handler                           # mode B only
+    python -m examples.todo_app.main                                   # demo (FakeLLM)
 """
 
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import json
+import sys
 from typing import Any
 
 from examples.todo_app.agent import TodoAnalysisAgent, build_provider
@@ -27,10 +36,33 @@ from uaaf.intent.selector import StrategySelector
 from uaaf.observability.audit import AuditLogger
 from uaaf.observability.cost import CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.prompts.registry import PromptRegistry
 from uaaf.runtime.context import ContextScope, ExecutionContext
 from uaaf.runtime.request_handler import RequestHandler
 
+# ---------------------------------------------------------------------------
+# Shared queries — same input for both modes
+# ---------------------------------------------------------------------------
+
+# Tuple format: (label, prompt_name, query)
+#   - label       : section header
+#   - prompt_name : used by Mode A (caller picks); ignored by Mode B (analyzer picks)
+#   - query       : free-text user message
+QUERIES: list[tuple[str, str, str]] = [
+    ("Full Analysis",
+     "analyze",
+     "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers."),
+    ("Priority Breakdown",
+     "priority_breakdown",
+     "Give me a JSON breakdown of completed tasks by priority and effort per goal."),
+    ("Next Sprint",
+     "next_sprint",
+     "What should I focus on next sprint to maximize goal completion?"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def print_separator(title: str = "") -> None:
     width = 64
@@ -41,20 +73,14 @@ def print_separator(title: str = "") -> None:
         print(f"\n{'─' * width}")
 
 
-def _build_agent(
-    goals: list[Goal],
-    tasks: list[Task],
-    session_id: str,
-) -> TodoAnalysisAgent:
-    """Build a fresh TodoAnalysisAgent with ingested data — reusable for both paths."""
+def _build_agent(goals: list[Goal], tasks: list[Task]) -> TodoAnalysisAgent:
+    """Build a fresh TodoAnalysisAgent — call once per mode for fair LLM-provider state."""
     from examples._utils import silent_tracer
 
-    llm = build_provider()
-    tool_registry = build_todo_registry(goals, tasks)
-    agent = TodoAnalysisAgent(
+    return TodoAnalysisAgent(
         agent_id="todo-analyst",
-        llm=llm,
-        tool_registry=tool_registry,
+        llm=build_provider(),
+        tool_registry=build_todo_registry(goals, tasks),
         callbacks=PrintCallbacks(),
         cost_tracker=CostTracker(CostPolicy(
             per_user_per_day_usd=1.0,
@@ -65,128 +91,26 @@ def _build_agent(
         audit_logger=AuditLogger(),
         rate_limiter=RateLimiter(RatePolicy(rps=1.0, burst=10)),
     )
-    return agent
 
 
-async def run_with_request_handler(
-    goals: list[Goal],
-    tasks: list[Task],
+# ---------------------------------------------------------------------------
+# Mode A — direct agent.execute()
+# ---------------------------------------------------------------------------
+
+async def run_with_direct_execute(
+    agent: TodoAnalysisAgent,
     ctx: ExecutionContext,
+    queries: list[tuple[str, str, str]],
 ) -> None:
-    """Run the same 3 queries through RequestHandler — compare with direct agent.execute().
+    """Caller picks prompt_name explicitly + dispatches to agent directly.
 
-    Wiring:
-      message
-        → TodoIntentAnalyzer.analyze()     [classify: type / complexity / prompt_name]
-        → StrategySelector.select()        [pick TodoDirectStrategy]
-        → ctx_routed = replace(ctx, strategy_id="direct")
-        → TodoDirectStrategy.execute()     [build Task payload, dispatch via pool]
-        → AgentPool.dispatch(task, ctx_routed)
-        → TodoAnalysisAgent.execute()      [cross-cutting + _react_loop]
-        → CognitiveResult
+    Bypasses cognitive routing — ctx.strategy_id stays None.
     """
-    print_separator("RequestHandler — Wiring")
-    print("""
-  message
-    → TodoIntentAnalyzer     classify: intent_type / complexity / prompt_name
-    → StrategySelector       pick strategy based on intent
-    → ctx_routed             stamp strategy_id on immutable context copy
-    → TodoDirectStrategy     translate intent → Task payload
-    → AgentPool.dispatch     route to registered agent
-    → TodoAnalysisAgent      same cross-cutting pipeline as direct call
-    → CognitiveResult        content + strategy_id
-    """)
-
-    # Wire the RequestHandler
-    agent = _build_agent(goals, tasks, ctx.scope.session_id)
-    await agent.ingest_goals(goals, scope_key=ctx.scope.session_id)
-
-    pool = AgentPool()
-    pool.register(agent)
-
-    analyzer = TodoIntentAnalyzer()
-    handler = RequestHandler(
-        analyzer=analyzer,
-        selector=StrategySelector([TodoDirectStrategy()]),
-        pool=pool,
-        verifier=FakeVerifier(),
-    )
-
-    queries = [
-        "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers.",
-        "Give me a JSON breakdown of completed tasks by priority and effort per goal.",
-        "What should I focus on next sprint to maximize goal completion?",
-    ]
-
-    for query in queries:
-        # Show what the analyzer sees BEFORE dispatching
-        intent = await analyzer.analyze(query, ctx.scope.scope_key)
-        print_separator(f"Handler: {intent.intent_type.upper()}")
-        print(f"  Query      : {query}")
-        print(f"  ├ type     : {intent.intent_type}")
-        print(f"  ├ prompt   : {intent.entities['prompt_name']}  ← auto-selected by analyzer")
-        print(f"  ├ complexity: {intent.complexity.name}  (LOW→cheap, HIGH→standard model)")
-        print(f"  └ strategy : {intent.suggested_strategy}\n")
-
-        result = await handler.handle(query, ctx)
-
-        print(f"\n  strategy_id on context : '{result.strategy_id}'  ← routing proof")
-        print(f"  Output:\n  {result.content[:300]}")
-
-    print_separator("Direct vs RequestHandler — Key Differences")
-    print("""
-  direct agent.execute()          RequestHandler.handle()
-  ──────────────────────────────  ──────────────────────────────────────
-  caller picks prompt_name        analyzer auto-selects prompt_name
-  ctx.strategy_id = None          ctx.strategy_id = "direct"
-  no intent classification        StructuredIntent: type + complexity
-  no routing audit trail          strategy_id stamps every request
-  hard to swap strategy later     swap strategy in StrategySelector only
-    """)
-
-
-async def main() -> None:
-    # ── Prompt registry info ────────────────────────────────────────────────
-    prompts_root = Path(__file__).parent / "prompts"
-    registry = PromptRegistry(prompts_root=prompts_root)
-    cfg = registry.load("todo_app", "v1")
-
-    print_separator("UAAF Todo App — OpenAI + PromptRegistry + Tools")
-    print("\n  Prompt config : prompts/todo_app/v1.yaml")
-    print(f"  Version       : {cfg.version}  |  Model: {cfg.model}  |  Temp: {cfg.temperature}")
-    print(f"  Prompts       : {list(cfg.prompts)}")
-    print(f"  Tools defined : {[t.name for t in cfg.tools]}")
-
-    # ── Build mock data ─────────────────────────────────────────────────────
-    goals, tasks = build_mock_data()
-    print_separator("Portfolio")
-    print(f"\n  {len(goals)} goals, {len(tasks)} tasks")
-    for goal in goals:
-        print(f"  {goal.summary()}")
-
-    scope = ContextScope(user_id="demo-user", session_id="todo-session-1", domain="todo")
-    ctx = ExecutionContext(scope=scope, correlation_id="demo-001")
-
-    # ── Wire agent ──────────────────────────────────────────────────────────
-    agent = _build_agent(goals, tasks, scope.session_id)
-    tool_registry = build_todo_registry(goals, tasks)
-
-    # ── Ingest ─────────────────────────────────────────────────────────────
-    print_separator("Ingestion → MemoryBackbone")
-    await agent.ingest_goals(goals, scope_key=scope.session_id)
-    print(f"  ✅ {len(goals) + len(tasks)} observations written")
-
-    # ── Queries ─────────────────────────────────────────────────────────────
-    queries = [
-        ("Full Analysis",      "analyze",          "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers."),
-        ("Priority Breakdown", "priority_breakdown","Give me a JSON breakdown of completed tasks by priority and effort per goal."),
-        ("Next Sprint",        "next_sprint",       "What should I focus on next sprint to maximize goal completion?"),
-    ]
+    print_separator("Mode A — direct agent.execute()")
 
     for label, prompt_name, query in queries:
         print_separator(f"{label}  [{prompt_name}]")
-        print(f"  System prompt : prompts/todo_app/v1.yaml → prompts.{prompt_name}.system")
-        print(f"  User          : {query}\n")
+        print(f"  User : {query}\n")
 
         result = await agent.execute(
             AgentTask(
@@ -196,29 +120,89 @@ async def main() -> None:
             ctx,
         )
         print(result.output)
-        print(f"\n  💰 ${result.cost.usd:.6f} | in={result.cost.input_tokens} out={result.cost.output_tokens} | model={cfg.model}")
+        print(
+            f"\n  💰 ${result.cost.usd:.6f} | in={result.cost.input_tokens}"
+            f" out={result.cost.output_tokens} | strategy_id={ctx.strategy_id}"
+        )
 
-    # ── Tool demo (direct call, without LLM) ───────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Mode B — RequestHandler.handle()
+# ---------------------------------------------------------------------------
+
+async def run_with_request_handler(
+    agent: TodoAnalysisAgent,
+    ctx: ExecutionContext,
+    queries: list[tuple[str, str, str]],
+) -> None:
+    """Analyzer classifies intent → selector picks strategy → strategy dispatches.
+
+    Wiring:
+      message
+        → TodoIntentAnalyzer    classify: type / complexity / prompt_name
+        → StrategySelector      pick strategy
+        → ctx_routed            stamp strategy_id on immutable copy
+        → TodoDirectStrategy    intent → Task payload, dispatch via pool
+        → AgentPool.dispatch    route to registered agent
+        → CognitiveResult       content + strategy_id (routing proof)
+    """
+    print_separator("Mode B — RequestHandler.handle()")
+
+    pool = AgentPool()
+    pool.register(agent)
+    analyzer = TodoIntentAnalyzer()
+    handler = RequestHandler(
+        analyzer=analyzer,
+        selector=StrategySelector([TodoDirectStrategy()]),
+        pool=pool,
+        verifier=FakeVerifier(),
+    )
+
+    for label, _, query in queries:  # prompt_name ignored — analyzer picks
+        intent = await analyzer.analyze(query, ctx.scope.scope_key)
+        print_separator(f"{label}  [{intent.entities['prompt_name']}]")
+        print(f"  User       : {query}")
+        print(f"  ├ type     : {intent.intent_type}")
+        print(f"  ├ prompt   : {intent.entities['prompt_name']}  ← auto-selected")
+        print(f"  ├ complexity: {intent.complexity.name}")
+        print(f"  └ strategy : {intent.suggested_strategy}\n")
+
+        result = await handler.handle(query, ctx)
+        print(result.content)
+        print(f"\n  strategy_id : '{result.strategy_id}'  ← routing proof")
+
+
+# ---------------------------------------------------------------------------
+# Display helpers (mode-independent)
+# ---------------------------------------------------------------------------
+
+def _print_portfolio(goals: list[Goal], tasks: list[Task]) -> None:
+    print_separator("Portfolio")
+    print(f"\n  {len(goals)} goals, {len(tasks)} tasks")
+    for goal in goals:
+        print(f"  {goal.summary()}")
+
+
+async def _run_tool_demos(goals: list[Goal], tasks: list[Task]) -> None:
     print_separator("Tool Calls — Direct Demo")
     print("  (Shows what the LLM would receive as tool results)\n")
 
-    tool_demos: list[dict[str, Any]] = [
-        {"id": "tc1", "function": {"name": "get_task_stats",    "arguments": {"goal_id": "g1"}}},
+    tool_registry = build_todo_registry(goals, tasks)
+    demos: list[dict[str, Any]] = [
+        {"id": "tc1", "function": {"name": "get_task_stats",     "arguments": {"goal_id": "g1"}}},
         {"id": "tc2", "function": {"name": "get_effort_analysis","arguments": {"goal_id": "all", "min_ratio": 1.1}}},
         {"id": "tc3", "function": {"name": "get_next_priorities","arguments": {"limit": 4}}},
     ]
-    for demo in tool_demos:
+    for demo in demos:
         fn_name = demo["function"]["name"]
         fn_args = demo["function"]["arguments"]
         result_str = await tool_registry.run(demo)
-        result_data = __import__("json").loads(result_str)
+        result_data = json.loads(result_str)
         print(f"  🔧 {fn_name}({fn_args})")
-        # Pretty-print key parts
-        import json
-        print(f"     → {json.dumps(result_data, indent=6)[:400]}")
-        print()
+        print(f"     → {json.dumps(result_data, indent=6)[:400]}\n")
 
-    # ── Summary stats ───────────────────────────────────────────────────────
+
+def _print_summary_stats(goals: list[Goal]) -> None:
     print_separator("Summary Stats")
     for goal in goals:
         completed = [t for t in goal.tasks if t.status == Status.COMPLETED]
@@ -227,15 +211,70 @@ async def main() -> None:
         avg_ratio = sum(t.effort_ratio for t in completed) / len(completed)
         print(f"\n  [{goal.goal_id.upper()}] {goal.name}")
         print(f"    Completion : {goal.completion_rate * 100:.0f}%")
-        print(f"    Effort     : {goal.total_actual_hours:.1f}h / {goal.total_estimated_hours:.1f}h  (avg {avg_ratio:.2f}x)")
+        print(
+            f"    Effort     : {goal.total_actual_hours:.1f}h /"
+            f" {goal.total_estimated_hours:.1f}h  (avg {avg_ratio:.2f}x)"
+        )
+
+
+def _print_comparison_table() -> None:
+    print_separator("Direct vs RequestHandler — Key Differences")
+    print("""
+  direct agent.execute()          RequestHandler.handle()
+  ──────────────────────────────  ──────────────────────────────────────
+  caller picks prompt_name        analyzer auto-selects prompt_name
+  ctx.strategy_id = None          ctx.strategy_id = "direct"
+  no intent classification        StructuredIntent: type + complexity
+  no routing audit trail          strategy_id stamps every request
+  hard to swap strategy later     swap strategy in StrategySelector only
+""")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+# Map mode flag → run function. Add new modes here without touching main().
+MODES = {
+    "direct":  run_with_direct_execute,
+    "handler": run_with_request_handler,
+}
+
+
+async def main(mode: str = "both") -> None:
+    if mode not in {*MODES, "both"}:
+        raise SystemExit(f"Unknown mode {mode!r}. Use one of: direct, handler, both")
+
+    print_separator("UAAF Todo App")
+    print(f"\n  Mode: {mode}")
+
+    goals, tasks = build_mock_data()
+    _print_portfolio(goals, tasks)
+
+    scope = ContextScope(user_id="demo-user", session_id="todo-session-1", domain="todo")
+    ctx = ExecutionContext(scope=scope, correlation_id="demo-001")
+
+    selected = list(MODES.items()) if mode == "both" else [(mode, MODES[mode])]
+
+    for mode_name, run_fn in selected:
+        # Each mode gets a fresh agent — FakeLLMProvider queue is per-instance
+        agent = _build_agent(goals, tasks)
+        print_separator(f"Ingestion → MemoryBackbone  [{mode_name}]")
+        await agent.ingest_goals(goals, scope_key=scope.session_id)
+        print(f"  ✅ {len(goals) + len(tasks)} observations written")
+
+        await run_fn(agent, ctx, QUERIES)
+
+    if mode == "both":
+        _print_comparison_table()
+
+    await _run_tool_demos(goals, tasks)
+    _print_summary_stats(goals)
 
     print_separator()
-    print("  Prompt versioning: bump to v2.yaml to iterate prompts without code changes")
-    print("  Tool calling:      LLM chooses tools from YAML schema, Python executes them\n")
-
-    # ── RequestHandler comparison ────────────────────────────────────────────
-    await run_with_request_handler(goals, tasks, ctx)
+    print("  Swap modes via CLI arg: direct | handler | both (default)\n")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    cli_mode = sys.argv[1] if len(sys.argv) > 1 else "both"
+    asyncio.run(main(cli_mode))
