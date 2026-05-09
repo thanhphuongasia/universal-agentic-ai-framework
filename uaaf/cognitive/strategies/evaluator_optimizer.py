@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from uaaf.cognitive.strategy import IAgentPool, IVerifier
 from uaaf.execution.agent import Task
 from uaaf.intent.models import (
@@ -17,16 +19,28 @@ from uaaf.runtime.context import ExecutionContext
 class EvaluatorOptimizerStrategy:
     """Generate a draft, evaluate it, refine until it passes or max_rounds exhausted.
 
-    When `verbose=True`, prints `[generator]` / `[evaluator]` markers so callers
-    can see which side of the loop is acting at each step. Off by default — keep
-    framework code silent in production; turn on for demos / debugging.
+    Emits structured INFO logs at each step under the logger name
+    ``uaaf.cognitive.strategies.evaluator_optimizer`` (or a custom logger
+    passed via constructor). App decides destination/format/level — framework
+    stays silent unless caller configures the logger.
+
+    Log message format (each on a single line):
+        [generator] round N/M dispatching refining=<bool>
+        [evaluator] verify round N
+        [evaluator] passed round N confidence=0.85
+        [evaluator] failed round N confidence=0.40 feedback=<text>
+        [evaluator] exhausted best=0.40
     """
 
     strategy_id = EVALUATOR_OPTIMIZER
 
-    def __init__(self, max_rounds: int = 3, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        max_rounds: int = 3,
+        logger: logging.Logger | None = None,
+    ) -> None:
         self.max_rounds = max_rounds
-        self.verbose = verbose
+        self._log = logger or logging.getLogger(__name__)
 
     def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
         return intent.complexity == ComplexityLevel.HIGH
@@ -64,27 +78,25 @@ class EvaluatorOptimizerStrategy:
                 payload={"message": prompt, "intent_type": intent.intent_type},
             )
 
-            if self.verbose:
-                tag = "generator (refine)" if feedback else "generator"
-                print(f"  ⚙️  [{tag}] round {round_num + 1}/{self.max_rounds}: dispatching…")
+            self._log.info(
+                "[generator] round %d/%d dispatching refining=%s",
+                round_num + 1, self.max_rounds, bool(feedback),
+            )
 
             result = await agent_pool.dispatch(task)
             output = str(result.output)
 
-            if self.verbose:
-                print(f"  🔍 [evaluator] verifying round {round_num + 1} output…")
-
+            self._log.info("[evaluator] verify round %d", round_num + 1)
             verification = await verifier.verify(output, context)
             if verification.confidence > best_confidence:
                 best_output = output
                 best_confidence = verification.confidence
 
             if verification.passed:
-                if self.verbose:
-                    print(
-                        f"  ✅ [evaluator] passed (confidence={verification.confidence:.2f}) "
-                        f"— returning round {round_num + 1} output"
-                    )
+                self._log.info(
+                    "[evaluator] passed round %d confidence=%.2f",
+                    round_num + 1, verification.confidence,
+                )
                 return CognitiveResult(
                     content=output,
                     confidence=verification.confidence,
@@ -92,18 +104,15 @@ class EvaluatorOptimizerStrategy:
                 )
 
             feedback = verification.feedback
-            if self.verbose:
-                snippet = feedback[:80] + ("…" if len(feedback) > 80 else "")
-                print(
-                    f"  ↻  [evaluator] failed (confidence={verification.confidence:.2f}) "
-                    f"→ feeding back to generator: {snippet!r}"
-                )
-
-        if self.verbose:
-            print(
-                f"  ⏹  [evaluator] max_rounds={self.max_rounds} exhausted — "
-                f"returning best (confidence={best_confidence:.2f})"
+            self._log.info(
+                "[evaluator] failed round %d confidence=%.2f feedback=%s",
+                round_num + 1, verification.confidence, feedback[:80],
             )
+
+        self._log.info(
+            "[evaluator] exhausted max_rounds=%d best=%.2f",
+            self.max_rounds, best_confidence,
+        )
         return CognitiveResult(
             content=best_output,
             confidence=best_confidence,

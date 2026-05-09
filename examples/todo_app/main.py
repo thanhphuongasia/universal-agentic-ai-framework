@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 from typing import Any
 
@@ -148,6 +149,45 @@ def _build_analyzer() -> IIntentAnalyzer:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Logging — strategies emit structured INFO events; we render with emoji prefix
+# ---------------------------------------------------------------------------
+
+class _EmojiFormatter(logging.Formatter):
+    """Map [component] markers in strategy log messages to emoji prefixes."""
+
+    EMOJI_RULES: tuple[tuple[str, str], ...] = (
+        ("[generator]",       "⚙️ "),
+        ("[evaluator] passed",     "✅"),
+        ("[evaluator] failed",     "↻ "),
+        ("[evaluator] verify",     "🔍"),
+        ("[evaluator] exhausted",  "⏹ "),
+        ("[evaluator] refine_done", "🔁"),
+    )
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = record.getMessage()
+        emoji = next(
+            (e for prefix, e in self.EMOJI_RULES if msg.startswith(prefix)),
+            "  ",
+        )
+        return f"  {emoji} {msg}"
+
+
+def _configure_strategy_logging() -> None:
+    """Route INFO from strategy modules through the emoji formatter to stdout."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_EmojiFormatter())
+    for name in (
+        "uaaf.cognitive.strategies.evaluator_optimizer",
+        "examples.todo_app.strategies",
+    ):
+        log = logging.getLogger(name)
+        log.setLevel(logging.INFO)
+        log.addHandler(handler)
+        log.propagate = False  # don't double-print via root
+
 
 def print_separator(title: str = "") -> None:
     width = 64
@@ -340,6 +380,8 @@ MODES = {
 async def main(mode: str = "both") -> None:
     if mode not in {*MODES, "both"}:
         raise SystemExit(f"Unknown mode {mode!r}. Use one of: direct, handler, both")
+
+    _configure_strategy_logging()
 
     print_separator("UAAF Todo App")
     print(f"\n  Mode: {mode}")

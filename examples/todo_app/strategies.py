@@ -10,11 +10,15 @@ Hybrid pattern: LLM hints (`intent.suggested_strategy`), code constrains
 
 All 4 bridge StructuredIntent → Task payload that TodoAnalysisAgent._execute()
 understands ({"query": ..., "prompt": ...}).
+
+Logging: events emitted via stdlib logging.Logger — app decides destination
+and formatting (see examples/todo_app/main.py for the demo emoji handler).
 """
 
 from __future__ import annotations
 
 import json
+import logging
 
 from uaaf.cognitive.strategy import IAgentPool, IVerifier
 from uaaf.execution.agent import Task
@@ -161,14 +165,15 @@ class TodoEvaluatorStrategy:
       - Invalid JSON → re-dispatch with stricter "return ONLY valid JSON" hint
                        (confidence=0.7, even if 2nd attempt also fails)
 
-    Prints [generator] / [evaluator] markers when verbose=True (default for
-    demos) so the user can see which side of the loop is acting at each step.
+    Logging: emits structured INFO events under
+    ``examples.todo_app.strategies`` (or a custom logger). App configures
+    handler/level — strategy stays silent unless caller wires output.
     """
 
     strategy_id = EVALUATOR_OPTIMIZER
 
-    def __init__(self, verbose: bool = True) -> None:
-        self.verbose = verbose
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self._log = logger or logging.getLogger(__name__)
 
     def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
         return intent.intent_type == "report"
@@ -196,8 +201,7 @@ class TodoEvaluatorStrategy:
             payload={"query": intent.action, "prompt": prompt_name},
         )
 
-        if self.verbose:
-            print("  ⚙️  [generator] round 1/2: dispatching first attempt…")
+        self._log.info("[generator] round 1/2 dispatching refining=False")
 
         if isinstance(agent_pool, AgentPool):
             result = await agent_pool.dispatch(task, context)
@@ -205,18 +209,17 @@ class TodoEvaluatorStrategy:
             result = await agent_pool.dispatch(task)
         output = str(result.output)
 
-        if self.verbose:
-            print("  🔍 [evaluator] checking JSON shape…")
+        self._log.info("[evaluator] verify round 1 check=json_shape")
 
         if _looks_like_json(output):
-            if self.verbose:
-                print("  ✅ [evaluator] valid JSON — returning (confidence=0.95)")
+            self._log.info("[evaluator] passed round 1 confidence=0.95")
             return CognitiveResult(
                 content=output, confidence=0.95, strategy_id=self.strategy_id
             )
 
-        if self.verbose:
-            print("  ↻  [evaluator] not pure JSON — feeding back to generator")
+        self._log.info(
+            "[evaluator] failed round 1 confidence=0.0 feedback=output_not_pure_json"
+        )
 
         refined_task = Task(
             task_id=f"todo-eval-refine-{context.correlation_id}",
@@ -226,20 +229,18 @@ class TodoEvaluatorStrategy:
             },
         )
 
-        if self.verbose:
-            print("  ⚙️  [generator (refine)] round 2/2: dispatching with stricter prompt…")
+        self._log.info("[generator] round 2/2 dispatching refining=True")
 
         if isinstance(agent_pool, AgentPool):
             refined = await agent_pool.dispatch(refined_task, context)
         else:
             refined = await agent_pool.dispatch(refined_task)
 
-        if self.verbose:
-            refined_ok = _looks_like_json(str(refined.output))
-            print(
-                f"  {'✅' if refined_ok else '⚠️ '} [evaluator] refine done "
-                f"(confidence=0.70, valid_json={refined_ok})"
-            )
+        refined_ok = _looks_like_json(str(refined.output))
+        self._log.info(
+            "[evaluator] refine_done round 2 confidence=0.70 valid_json=%s",
+            refined_ok,
+        )
 
         return CognitiveResult(
             content=str(refined.output),
