@@ -160,9 +160,15 @@ class TodoEvaluatorStrategy:
       - Valid JSON   → return (confidence=0.95, no refine)
       - Invalid JSON → re-dispatch with stricter "return ONLY valid JSON" hint
                        (confidence=0.7, even if 2nd attempt also fails)
+
+    Prints [generator] / [evaluator] markers when verbose=True (default for
+    demos) so the user can see which side of the loop is acting at each step.
     """
 
     strategy_id = EVALUATOR_OPTIMIZER
+
+    def __init__(self, verbose: bool = True) -> None:
+        self.verbose = verbose
 
     def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
         return intent.intent_type == "report"
@@ -190,16 +196,27 @@ class TodoEvaluatorStrategy:
             payload={"query": intent.action, "prompt": prompt_name},
         )
 
+        if self.verbose:
+            print("  ⚙️  [generator] round 1/2: dispatching first attempt…")
+
         if isinstance(agent_pool, AgentPool):
             result = await agent_pool.dispatch(task, context)
         else:
             result = await agent_pool.dispatch(task)
-
         output = str(result.output)
+
+        if self.verbose:
+            print("  🔍 [evaluator] checking JSON shape…")
+
         if _looks_like_json(output):
+            if self.verbose:
+                print("  ✅ [evaluator] valid JSON — returning (confidence=0.95)")
             return CognitiveResult(
                 content=output, confidence=0.95, strategy_id=self.strategy_id
             )
+
+        if self.verbose:
+            print("  ↻  [evaluator] not pure JSON — feeding back to generator")
 
         refined_task = Task(
             task_id=f"todo-eval-refine-{context.correlation_id}",
@@ -208,10 +225,21 @@ class TodoEvaluatorStrategy:
                 "prompt": prompt_name,
             },
         )
+
+        if self.verbose:
+            print("  ⚙️  [generator (refine)] round 2/2: dispatching with stricter prompt…")
+
         if isinstance(agent_pool, AgentPool):
             refined = await agent_pool.dispatch(refined_task, context)
         else:
             refined = await agent_pool.dispatch(refined_task)
+
+        if self.verbose:
+            refined_ok = _looks_like_json(str(refined.output))
+            print(
+                f"  {'✅' if refined_ok else '⚠️ '} [evaluator] refine done "
+                f"(confidence=0.70, valid_json={refined_ok})"
+            )
 
         return CognitiveResult(
             content=str(refined.output),
