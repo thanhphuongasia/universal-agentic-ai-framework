@@ -32,6 +32,9 @@ _PLANNING_KEYWORDS = frozenset({
     "next sprint", "focus", "prioritize", "what should", "recommend",
     "plan", "schedule", "roadmap", "maximize",
 })
+_PER_ENTITY_KEYWORDS = frozenset({
+    "each goal", "every goal", "separately", "individually", "per-goal",
+})
 
 
 @dataclass
@@ -54,11 +57,17 @@ class TodoIntentAnalyzer:
     ) -> StructuredIntent:
         msg = message.lower()
 
+        # Common: detect per-entity scope (used by Parallel strategy)
+        per_entity = any(kw in msg for kw in _PER_ENTITY_KEYWORDS)
+
         if any(kw in msg for kw in _REPORT_KEYWORDS):
+            entities = {"prompt_name": "priority_breakdown"}
+            if per_entity:
+                entities["scope"] = "per_entity"
             return StructuredIntent(
                 intent_type="report",
                 action=message,
-                entities={"prompt_name": "priority_breakdown"},
+                entities=entities,
                 complexity=ComplexityLevel.LOW,
                 confidence=0.9,
                 suggested_strategy=DIRECT,
@@ -66,10 +75,13 @@ class TodoIntentAnalyzer:
             )
 
         if any(kw in msg for kw in _PLANNING_KEYWORDS):
+            entities = {"prompt_name": "next_sprint"}
+            if per_entity:
+                entities["scope"] = "per_entity"
             return StructuredIntent(
                 intent_type="planning",
                 action=message,
-                entities={"prompt_name": "next_sprint"},
+                entities=entities,
                 complexity=ComplexityLevel.HIGH,
                 confidence=0.85,
                 suggested_strategy=REACT,
@@ -77,10 +89,13 @@ class TodoIntentAnalyzer:
             )
 
         # Default: general analysis
+        entities = {"prompt_name": "analyze"}
+        if per_entity:
+            entities["scope"] = "per_entity"
         return StructuredIntent(
             intent_type="analysis",
             action=message,
-            entities={"prompt_name": "analyze"},
+            entities=entities,
             complexity=ComplexityLevel.MEDIUM,
             confidence=0.80,
             suggested_strategy=DIRECT,
@@ -102,6 +117,9 @@ Required JSON fields:
     "priority_breakdown" — for stats / JSON / by-priority queries
     "next_sprint"        — for planning / forward-looking queries
     "analyze"            — default / general analysis
+  AND MAY contain "scope":
+    "per_entity"         — set if user wants per-goal / per-task analysis
+                           (keywords: each, every, separately, individually)
 - complexity: "LOW" | "MEDIUM" | "HIGH"
 - confidence: 0.0-1.0
 - ambiguous: boolean
@@ -123,6 +141,11 @@ Examples:
   "Analyze my goals progress" →
     {"intent_type":"analysis","action":"analyze","entities":{"prompt_name":"analyze"},
      "complexity":"MEDIUM","confidence":0.85,"ambiguous":false,"clarification_questions":[],
+     "suggested_strategy":"direct","suggested_model_tier":"standard"}
+
+  "Analyze each goal separately" →
+    {"intent_type":"analysis","action":"analyze","entities":{"prompt_name":"analyze","scope":"per_entity"},
+     "complexity":"HIGH","confidence":0.9,"ambiguous":false,"clarification_questions":[],
      "suggested_strategy":"direct","suggested_model_tier":"standard"}
 
 Respond with ONLY the JSON object — no prose, no markdown.

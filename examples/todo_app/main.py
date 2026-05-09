@@ -158,12 +158,24 @@ class _EmojiFormatter(logging.Formatter):
     """Map [component] markers in strategy log messages to emoji prefixes."""
 
     EMOJI_RULES: tuple[tuple[str, str], ...] = (
-        ("[generator]",       "⚙️ "),
+        # Evaluator
+        ("[generator]",            "⚙️ "),
         ("[evaluator] passed",     "✅"),
         ("[evaluator] failed",     "↻ "),
         ("[evaluator] verify",     "🔍"),
         ("[evaluator] exhausted",  "⏹ "),
         ("[evaluator] refine_done", "🔁"),
+        # Direct
+        ("[direct] dispatching",   "📤"),
+        ("[direct] complete",      "✓ "),
+        # ReAct
+        ("[react] dispatching",    "🧠"),
+        ("[react] complete",       "✓ "),
+        # Parallel
+        ("[parallel] decompose",   "🪓"),
+        ("[parallel] fan_out",     "⚡"),
+        ("[parallel] sequential",  "🐢"),
+        ("[parallel] aggregating", "🧩"),
     )
 
     def format(self, record: logging.LogRecord) -> str:

@@ -42,12 +42,12 @@ class TodoDirectStrategy:
     Translates StructuredIntent → Task payload understood by TodoAnalysisAgent:
       intent.action              → payload["query"]
       intent.entities["prompt_name"] → payload["prompt"]
-
-    This is intentionally domain-specific — the framework's generic DirectStrategy
-    doesn't know the "prompt" key convention. Each domain strategy owns that mapping.
     """
 
     strategy_id = DIRECT
+
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self._log = logger or logging.getLogger(__name__)
 
     def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
         return True
@@ -75,13 +75,16 @@ class TodoDirectStrategy:
             payload={"query": intent.action, "prompt": prompt_name},
         )
 
-        # AgentPool.dispatch accepts optional context (passes strategy_id to agent).
-        # IAgentPool Protocol only requires dispatch(task) for generic callers;
-        # here we know we have a concrete AgentPool so we pass context.
+        self._log.info(
+            "[direct] dispatching task=%s prompt=%s", task.task_id, prompt_name,
+        )
+
         if isinstance(agent_pool, AgentPool):
             result = await agent_pool.dispatch(task, context)
         else:
             result = await agent_pool.dispatch(task)
+
+        self._log.info("[direct] complete confidence=0.90")
 
         return CognitiveResult(
             content=str(result.output),
@@ -108,6 +111,9 @@ class TodoReActStrategy:
     """
 
     strategy_id = REACT
+
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self._log = logger or logging.getLogger(__name__)
 
     def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
         return (
@@ -138,10 +144,17 @@ class TodoReActStrategy:
             payload={"query": intent.action, "prompt": prompt_name},
         )
 
+        self._log.info(
+            "[react] dispatching task=%s prompt=%s (multi-step intent)",
+            task.task_id, prompt_name,
+        )
+
         if isinstance(agent_pool, AgentPool):
             result = await agent_pool.dispatch(task, context)
         else:
             result = await agent_pool.dispatch(task)
+
+        self._log.info("[react] complete confidence=0.90")
 
         return CognitiveResult(
             content=str(result.output),
@@ -273,8 +286,14 @@ _PARALLEL_KEYWORDS = frozenset({"each goal", "every goal", "separately", "indivi
 class TodoParallelStrategy:
     """Fan out one query into N per-goal subtasks, dispatch in parallel.
 
-    applicable: action contains "each goal" / "every goal" / "separately" /
-    "individually" — heuristic that the user wants per-entity analysis.
+    applicable: True when EITHER
+      • intent.entities["scope"] == "per_entity"  (analyzer signal — preferred), OR
+      • intent.action contains a per-entity keyword (fallback for rule analyzer
+        that copies message verbatim into action)
+
+    The dual check means LLM analyzer can populate entities.scope with a single
+    classification, while the rule analyzer doesn't need to be retrofitted —
+    keyword match on action still works.
 
     Splits into 1 subtask per goal (g1, g2, g3), dispatches concurrently via
     AgentPool.fan_out, joins outputs with goal labels.
@@ -283,7 +302,12 @@ class TodoParallelStrategy:
     strategy_id = PARALLEL_FANOUT
     GOAL_IDS = ("g1", "g2", "g3")
 
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self._log = logger or logging.getLogger(__name__)
+
     def applicable(self, intent: StructuredIntent, context: ExecutionContext) -> bool:
+        if intent.entities.get("scope") == "per_entity":
+            return True
         action = intent.action.lower()
         return any(kw in action for kw in _PARALLEL_KEYWORDS)
 
@@ -317,11 +341,23 @@ class TodoParallelStrategy:
             for gid in self.GOAL_IDS
         ]
 
+        self._log.info(
+            "[parallel] decompose intent into %d subtasks goals=%s",
+            len(tasks), list(self.GOAL_IDS),
+        )
+
         if isinstance(agent_pool, AgentPool):
+            self._log.info("[parallel] fan_out %d tasks via AgentPool", len(tasks))
             results = await agent_pool.fan_out(tasks, context, on_error="collect")
         else:
-            # Generic IAgentPool — sequential fallback
+            self._log.info("[parallel] sequential fallback (pool is not AgentPool)")
             results = [await agent_pool.dispatch(t) for t in tasks]
+
+        failures = sum(1 for r in results if not r.success)
+        self._log.info(
+            "[parallel] aggregating %d results failures=%d",
+            len(results), failures,
+        )
 
         combined = "\n\n".join(
             f"━━ {gid.upper()} ━━\n{r.output}"
