@@ -40,24 +40,61 @@ from uaaf.runtime.context import ContextScope, ExecutionContext
 from uaaf.runtime.request_handler import RequestHandler
 
 # ---------------------------------------------------------------------------
-# Shared queries — same input for both modes
+# Query presets — picked interactively at runtime (simple → complex)
 # ---------------------------------------------------------------------------
 
-# Tuple format: (label, prompt_name, query)
-#   - label       : section header
-#   - prompt_name : used by Mode A (caller picks); ignored by Mode B (analyzer picks)
-#   - query       : free-text user message
-QUERIES: list[tuple[str, str, str]] = [
-    ("Full Analysis",
-     "analyze",
-     "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers."),
-    ("Priority Breakdown",
-     "priority_breakdown",
+# Tuple format: (label, complexity_hint, prompt_name, query)
+#   - complexity_hint : LOW / MEDIUM / HIGH — what the analyzer would classify it as
+#   - prompt_name     : used by Mode A (caller picks); ignored by Mode B (analyzer picks)
+PRESETS: list[tuple[str, str, str, str]] = [
+    ("Priority Breakdown", "LOW",    "priority_breakdown",
      "Give me a JSON breakdown of completed tasks by priority and effort per goal."),
-    ("Next Sprint",
-     "next_sprint",
+    ("Full Analysis",      "MEDIUM", "analyze",
+     "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers."),
+    ("Next Sprint",        "HIGH",   "next_sprint",
      "What should I focus on next sprint to maximize goal completion?"),
 ]
+
+
+def _select_queries() -> list[tuple[str, str, str]]:
+    """Prompt user to pick preset(s) or enter a custom query.
+
+    Returns list of (label, prompt_name, query) tuples — what the run_with_*
+    functions consume. Non-TTY (piped/CI): defaults to all presets.
+    """
+    if not sys.stdin.isatty():
+        return [(label, prompt, q) for label, _, prompt, q in PRESETS]
+
+    print_separator("Choose a query")
+    for i, (label, level, _, query) in enumerate(PRESETS, 1):
+        snippet = query[:64] + ("…" if len(query) > 64 else "")
+        print(f"  {i}. [{level:<6}] {label:<20}  {snippet}")
+    custom_idx = len(PRESETS) + 1
+    all_idx = len(PRESETS) + 2
+    print(f"  {custom_idx}. Custom        — type your own query")
+    print(f"  {all_idx}. Run all presets — show full demo")
+
+    while True:
+        raw = input(f"\nEnter choice [1-{all_idx}]: ").strip()
+        try:
+            choice = int(raw)
+        except ValueError:
+            print("  ⚠️  Enter a number.")
+            continue
+
+        if 1 <= choice <= len(PRESETS):
+            label, _, prompt, q = PRESETS[choice - 1]
+            return [(label, prompt, q)]
+        if choice == custom_idx:
+            text = input("  Your query: ").strip()
+            if not text:
+                print("  ⚠️  Empty query.")
+                continue
+            # Custom queries default to "analyze" prompt for Mode A
+            return [("Custom", "analyze", text)]
+        if choice == all_idx:
+            return [(label, prompt, q) for label, _, prompt, q in PRESETS]
+        print(f"  ⚠️  Choose between 1 and {all_idx}.")
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +273,7 @@ def _print_comparison_table() -> None:
 
 # Map mode flag → run function. Add new modes here without touching main().
 MODES = {
-    "direct":  run_with_direct_execute,
+    #"direct":  run_with_direct_execute,
     "handler": run_with_request_handler,
 }
 
@@ -251,6 +288,9 @@ async def main(mode: str = "both") -> None:
     goals, tasks = build_mock_data()
     _print_portfolio(goals, tasks)
 
+    # Interactive query selection (or fall back to all presets in non-TTY)
+    queries = _select_queries()
+
     scope = ContextScope(user_id="demo-user", session_id="todo-session-1", domain="todo")
     ctx = ExecutionContext(scope=scope, correlation_id="demo-001")
 
@@ -263,7 +303,7 @@ async def main(mode: str = "both") -> None:
         await agent.ingest_goals(goals, scope_key=scope.session_id)
         print(f"  ✅ {len(goals) + len(tasks)} observations written")
 
-        await run_fn(agent, ctx, QUERIES)
+        await run_fn(agent, ctx, queries)
 
     if mode == "both":
         _print_comparison_table()
