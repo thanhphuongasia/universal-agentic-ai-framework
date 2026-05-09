@@ -301,11 +301,11 @@ async def run_with_request_handler(
         print(f"  ├ type     : {intent.intent_type}")
         print(f"  ├ prompt   : {intent.entities['prompt_name']}  ← auto-selected")
         print(f"  ├ complexity: {intent.complexity.name}")
-        print(f"  └ strategy : {intent.suggested_strategy}\n")
+        print(f"  └ suggested : {intent.suggested_strategy}  (analyzer hint — selector may override)\n")
 
         result = await handler.handle(query, ctx)
         print(result.content)
-        print(f"\n  strategy_id : '{result.strategy_id}'  ← routing proof")
+        print(f"\n  strategy_id : '{result.strategy_id}'  ← actually routed to (selector decision)")
 
 
 # ---------------------------------------------------------------------------
