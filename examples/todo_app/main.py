@@ -53,18 +53,25 @@ from uaaf.runtime.request_handler import RequestHandler
 # Query presets — picked interactively at runtime (simple → complex)
 # ---------------------------------------------------------------------------
 
-# Tuple format: (label, complexity_hint, prompt_name, query)
-#   - complexity_hint : LOW / MEDIUM / HIGH — what the analyzer would classify it as
-#   - prompt_name     : used by Mode A (caller picks); ignored by Mode B (analyzer picks)
-PRESETS: list[tuple[str, str, str, str]] = [
+# Tuple format: (label, complexity, prompt_name, query, strategy_label)
+#   - complexity     : hint for menu — LOW / MEDIUM / HIGH
+#   - prompt_name    : Mode A uses this; Mode B ignores (analyzer picks)
+#   - strategy_label : which strategy this preset is designed to trigger in
+#                      Mode B (purely for menu display — actual routing is
+#                      decided at runtime by StrategySelector + applicable())
+PRESETS: list[tuple[str, str, str, str, str]] = [
     ("Priority Breakdown", "LOW",    "priority_breakdown",
-     "Give me a JSON breakdown of completed tasks by priority and effort per goal."),
+     "Give me a JSON breakdown of completed tasks by priority and effort per goal.",
+     "evaluator"),
     ("Per-Goal Effort",    "HIGH",   "analyze",
-     "Analyze each goal separately and report the effort accuracy for every goal."),
+     "Analyze each goal separately and report the effort accuracy for every goal.",
+     "parallel"),
     ("Full Analysis",      "MEDIUM", "analyze",
-     "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers."),
+     "Analyze my goals and tasks. Show completion rates, effort accuracy, and blockers.",
+     "direct"),
     ("Next Sprint",        "HIGH",   "next_sprint",
-     "What should I focus on next sprint to maximize goal completion?"),
+     "What should I focus on next sprint to maximize goal completion?",
+     "react"),
 ]
 
 
@@ -77,16 +84,16 @@ def _select_queries() -> list[tuple[str, str, str]] | None:
     """
     if not sys.stdin.isatty():
         # Non-TTY first call: run all presets. Caller breaks loop after.
-        return [(label, prompt, q) for label, _, prompt, q in PRESETS]
+        return [(label, prompt, q) for label, _, prompt, q, _ in PRESETS]
 
-    print_separator("Choose a query")
-    for i, (label, level, _, query) in enumerate(PRESETS, 1):
-        snippet = query[:64] + ("…" if len(query) > 64 else "")
-        print(f"  {i}. [{level:<6}] {label:<20}  {snippet}")
+    print_separator("Choose a query — each preset exercises a different strategy")
+    for i, (label, level, _, query, strat) in enumerate(PRESETS, 1):
+        snippet = query[:56] + ("…" if len(query) > 56 else "")
+        print(f"  {i}. [{level:<6}] [→ {strat:<9}] {label:<20}  {snippet}")
     custom_idx = len(PRESETS) + 1
     all_idx = len(PRESETS) + 2
-    print(f"  {custom_idx}. Custom        — type your own query")
-    print(f"  {all_idx}. Run all presets — show full demo")
+    print(f"  {custom_idx}. Custom         — type your own query (routing depends on content)")
+    print(f"  {all_idx}. Run all presets — exercise all 4 strategies in sequence")
     print("  0. Exit")
 
     while True:
@@ -100,7 +107,7 @@ def _select_queries() -> list[tuple[str, str, str]] | None:
         if choice == 0:
             return None
         if 1 <= choice <= len(PRESETS):
-            label, _, prompt, q = PRESETS[choice - 1]
+            label, _, prompt, q, _ = PRESETS[choice - 1]
             return [(label, prompt, q)]
         if choice == custom_idx:
             text = input("  Your query: ").strip()
@@ -110,7 +117,7 @@ def _select_queries() -> list[tuple[str, str, str]] | None:
             # Custom queries default to "analyze" prompt for Mode A
             return [("Custom", "analyze", text)]
         if choice == all_idx:
-            return [(label, prompt, q) for label, _, prompt, q in PRESETS]
+            return [(label, prompt, q) for label, _, prompt, q, _ in PRESETS]
         print(f"  ⚠️  Choose between 0 and {all_idx}.")
 
 
