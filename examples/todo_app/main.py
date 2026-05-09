@@ -31,7 +31,7 @@ from typing import Any
 from examples.todo_app.agent import TodoAnalysisAgent, build_provider
 from examples.todo_app.intent import TodoIntentAnalyzer, build_llm_analyzer
 from examples.todo_app.models import Goal, Status, Task, build_mock_data
-from examples.todo_app.strategies import TodoDirectStrategy
+from examples.todo_app.strategies import TodoDirectStrategy, TodoReActStrategy
 from examples.todo_app.tools import build_todo_registry
 from uaaf._testing.fakes import FakeVerifier
 from uaaf.execution import PrintCallbacks
@@ -113,7 +113,7 @@ def _select_queries() -> list[tuple[str, str, str]] | None:
 
 #  "rule" — TodoIntentAnalyzer  (keyword match, no LLM, fast, free)
 #  "llm"  — LLMIntentAnalyzer   (real classification via LLM, costs tokens)
-ANALYZER_MODE: str = "rule"
+ANALYZER_MODE: str = "llm"
 
 
 def _build_analyzer():
@@ -216,9 +216,11 @@ async def run_with_request_handler(
     pool = AgentPool()
     pool.register(agent)
     analyzer = _build_analyzer()
+    # Order matters: ReAct checked first (gated by LLM hint + complexity),
+    # Direct is the always-applicable fallback.
     handler = RequestHandler(
         analyzer=analyzer,
-        selector=StrategySelector([TodoDirectStrategy()]),
+        selector=StrategySelector([TodoReActStrategy(), TodoDirectStrategy()]),
         pool=pool,
         verifier=FakeVerifier(),
     )
