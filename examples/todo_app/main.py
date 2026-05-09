@@ -42,6 +42,7 @@ from uaaf._testing.fakes import FakeVerifier
 from uaaf.execution import PrintCallbacks
 from uaaf.execution.agent import Task as AgentTask
 from uaaf.execution.pool import AgentPool
+from uaaf.intent.analyzer import IIntentAnalyzer
 from uaaf.intent.selector import StrategySelector
 from uaaf.observability.audit import AuditLogger
 from uaaf.observability.cost import CostPolicy, CostTracker
@@ -130,8 +131,13 @@ def _select_queries() -> list[tuple[str, str, str]] | None:
 ANALYZER_MODE: str = "llm"
 
 
-def _build_analyzer():
-    """Build the IIntentAnalyzer used by RequestHandler — driven by ANALYZER_MODE."""
+def _build_analyzer() -> IIntentAnalyzer:
+    """Build the IIntentAnalyzer used by RequestHandler — driven by ANALYZER_MODE.
+
+    Return type is the Protocol so the IDE doesn't anchor on one impl when you
+    go-to-definition on `analyzer.analyze(...)`. At runtime Python dispatches
+    to whichever concrete class was instantiated here.
+    """
     if ANALYZER_MODE == "rule":
         return TodoIntentAnalyzer()
     if ANALYZER_MODE == "llm":
@@ -230,6 +236,7 @@ async def run_with_request_handler(
     pool = AgentPool()
     pool.register(agent)
     analyzer = _build_analyzer()
+    print(f"  Analyzer instance: {type(analyzer).__name__}\n")
     # Order = priority. Selector picks the FIRST applicable strategy.
     #   Parallel  : "each goal / separately" keyword match
     #   Evaluator : intent_type=="report" (JSON output queries)
