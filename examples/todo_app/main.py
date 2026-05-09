@@ -12,8 +12,13 @@ difference is who decides which prompt template + strategy to use.
 Run:
     OPENAI_API_KEY=sk-... python -m examples.todo_app.main             # both modes
     python -m examples.todo_app.main direct                            # mode A only
-    python -m examples.todo_app.main handler                           # mode B only
+    python -m examples.todo_app.main handler                           # mode B (rule analyzer)
+    python -m examples.todo_app.main handler llm                       # mode B (LLM analyzer)
     python -m examples.todo_app.main                                   # demo (FakeLLM)
+
+CLI: <mode> [analyzer]
+  mode     : direct | handler | both       (default: both)
+  analyzer : rule   | llm                  (default: rule, see ANALYZER_MODE)
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ import sys
 from typing import Any
 
 from examples.todo_app.agent import TodoAnalysisAgent, build_provider
-from examples.todo_app.intent import TodoIntentAnalyzer
+from examples.todo_app.intent import TodoIntentAnalyzer, build_llm_analyzer
 from examples.todo_app.models import Goal, Status, Task, build_mock_data
 from examples.todo_app.strategies import TodoDirectStrategy
 from examples.todo_app.tools import build_todo_registry
@@ -100,6 +105,24 @@ def _select_queries() -> list[tuple[str, str, str]] | None:
         if choice == all_idx:
             return [(label, prompt, q) for label, _, prompt, q in PRESETS]
         print(f"  ⚠️  Choose between 0 and {all_idx}.")
+
+
+# ---------------------------------------------------------------------------
+# Analyzer switch — flip here OR via CLI: `python -m ... handler llm`
+# ---------------------------------------------------------------------------
+
+#  "rule" — TodoIntentAnalyzer  (keyword match, no LLM, fast, free)
+#  "llm"  — LLMIntentAnalyzer   (real classification via LLM, costs tokens)
+ANALYZER_MODE: str = "rule"
+
+
+def _build_analyzer():
+    """Build the IIntentAnalyzer used by RequestHandler — driven by ANALYZER_MODE."""
+    if ANALYZER_MODE == "rule":
+        return TodoIntentAnalyzer()
+    if ANALYZER_MODE == "llm":
+        return build_llm_analyzer()
+    raise ValueError(f"Unknown ANALYZER_MODE {ANALYZER_MODE!r} — use 'rule' or 'llm'.")
 
 
 # ---------------------------------------------------------------------------
@@ -188,11 +211,11 @@ async def run_with_request_handler(
         → AgentPool.dispatch    route to registered agent
         → CognitiveResult       content + strategy_id (routing proof)
     """
-    print_separator("Mode B — RequestHandler.handle()")
+    print_separator(f"Mode B — RequestHandler.handle()  [analyzer={ANALYZER_MODE}]")
 
     pool = AgentPool()
     pool.register(agent)
-    analyzer = TodoIntentAnalyzer()
+    analyzer = _build_analyzer()
     handler = RequestHandler(
         analyzer=analyzer,
         selector=StrategySelector([TodoDirectStrategy()]),
@@ -332,5 +355,12 @@ async def main(mode: str = "both") -> None:
 
 
 if __name__ == "__main__":
+    # CLI: <mode> [analyzer]
+    #   mode     : direct | handler | both       (default: both)
+    #   analyzer : rule | llm                    (default: ANALYZER_MODE constant)
     cli_mode = sys.argv[1] if len(sys.argv) > 1 else "both"
+    if len(sys.argv) > 2:
+        if sys.argv[2] not in ("rule", "llm"):
+            raise SystemExit(f"Unknown analyzer {sys.argv[2]!r}. Use 'rule' or 'llm'.")
+        ANALYZER_MODE = sys.argv[2]
     asyncio.run(main(cli_mode))
