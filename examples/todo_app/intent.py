@@ -10,7 +10,6 @@ are drop-in interchangeable in TodoDirectStrategy.
 
 from __future__ import annotations
 
-import json as _json
 import os as _os
 from dataclasses import dataclass
 from typing import Any
@@ -130,59 +129,25 @@ Respond with ONLY the JSON object — no prose, no markdown.
 """
 
 
-def _fake_intent_provider() -> Any:
-    """Demo-mode provider: cycles through valid intent JSON for each preset.
-
-    Real OpenAI provider used when OPENAI_API_KEY is set; this fallback
-    keeps demo runs working without an API key.
-    """
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.providers.llm import Response, TokenUsage
-
-    def _resp(intent_type: str, prompt_name: str, complexity: str) -> Response:
-        return Response(
-            content=_json.dumps({
-                "intent_type": intent_type,
-                "action": "demo",
-                "entities": {"prompt_name": prompt_name},
-                "complexity": complexity,
-                "confidence": 0.9,
-                "ambiguous": False,
-                "clarification_questions": [],
-                "suggested_strategy": "direct",
-                "suggested_model_tier": "standard",
-            }),
-            model="fake",
-            usage=TokenUsage(40, 30),
-            finish_reason="stop",
-        )
-
-    # 4 cycles × 3 types = 12 responses — enough for "all presets" + several iterations
-    cycle = [
-        _resp("report",   "priority_breakdown", "LOW"),
-        _resp("analysis", "analyze",            "MEDIUM"),
-        _resp("planning", "next_sprint",        "HIGH"),
-    ]
-    return FakeLLMProvider(responses=cycle * 4)
-
-
 def build_llm_analyzer(
     provider: Any | None = None,
     model: str = "gpt-4o-mini",
 ) -> LLMIntentAnalyzer:
     """Factory: LLMIntentAnalyzer wired with the todo-domain system prompt.
 
-    If `provider` not given:
-      - OPENAI_API_KEY set → real OpenAIProvider
-      - otherwise          → FakeLLMProvider that emits valid intent JSON
+    Requires a real LLM — raises RuntimeError if `provider` is not given AND
+    OPENAI_API_KEY is not set. No fake fallback: LLM analyzer is meaningless
+    without a real classifier; use ANALYZER_MODE='rule' for offline runs.
     """
     if provider is None:
         api_key = _os.getenv("OPENAI_API_KEY")
-        if api_key:
-            from uaaf.providers.adapters.openai import OpenAIProvider
-            provider = OpenAIProvider(api_key=api_key)
-        else:
-            provider = _fake_intent_provider()
+        if not api_key:
+            raise RuntimeError(
+                "LLM analyzer requires OPENAI_API_KEY. "
+                "Set the env var, or use ANALYZER_MODE='rule' / CLI 'rule' for offline runs."
+            )
+        from uaaf.providers.adapters.openai import OpenAIProvider
+        provider = OpenAIProvider(api_key=api_key)
 
     return LLMIntentAnalyzer(
         provider=provider,
