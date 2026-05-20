@@ -55,12 +55,12 @@
 
 ## Phase 8.1.E — Isolation test + CI + release prep
 
-- [ ] **T19** Write `scripts/test-workflow-isolation.sh` (fresh venv + assert `import uaaf` fails)
-- [ ] **T20** Update `.github/workflows/ci.yml`: add `workflow-isolation` job
-- [ ] **T21** Update root `README.md` install section
-- [ ] **T22** Write `packages/uaaf-workflow/README.md` (standalone framing + quickstart)
-- [ ] **T23** Verify version pin consistency (root + workflow pyproject.toml + CHANGELOG)
-- [ ] **T24** Write `memory/project_phase8_1_status.md` + update MEMORY.md index
+- [x] **T19** Write `scripts/test-workflow-isolation.sh` (fresh venv + assert `import uaaf` fails)
+- [x] **T20** Update `.github/workflows/ci.yml`: add `workflow-isolation` job
+- [x] **T21** Update root `README.md` install section
+- [x] **T22** Write `packages/uaaf-workflow/README.md` (standalone framing + quickstart)
+- [x] **T23** Verify version pin consistency (root + workflow pyproject.toml + CHANGELOG)
+- [x] **T24** Write `memory/project_phase8_status.md` + update MEMORY.md index
 
 **Checkpoint 8.1 (FINAL)** — workflow is standalone, CI proves isolation, tag v0.2.0a1 ready
 

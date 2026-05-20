@@ -10,19 +10,25 @@
 ## Install
 
 ```bash
-pip install uaaf                       # core
+# Workflow engine only — no AI dependencies (anyio only)
+pip install uaaf-workflow
+
+# Full AI framework — automatically pulls uaaf-workflow
+pip install uaaf
 pip install "uaaf[openai]"             # + OpenAI adapter
 pip install "uaaf[anthropic]"          # + Anthropic adapter
 pip install "uaaf[openai,anthropic]"   # both
 ```
 
-For development:
+For development (editable install of both packages):
 
 ```bash
 git clone <repo>
 cd uaaf-framework
-pip install -e ".[dev]"
+bash scripts/install-dev.sh
 ```
+
+See [packages/MIGRATION.md](packages/MIGRATION.md) if upgrading from v0.1.x.
 
 ## Quick start
 

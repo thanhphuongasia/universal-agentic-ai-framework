@@ -22,16 +22,40 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          pip install -e packages/uaaf-workflow
+          pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check uaaf/ tests/
+        run: ruff check uaaf/ packages/uaaf-workflow/src/ tests/
 
       - name: Type check
-        run: mypy uaaf/
+        run: mypy uaaf/ packages/uaaf-workflow/src/
 
       - name: Test with coverage
-        run: pytest --cov=uaaf --cov-report=xml --cov-fail-under=85
+        run: pytest --cov=uaaf --cov=packages/uaaf-workflow/src --cov-report=xml --cov-fail-under=85
 
-      - name: Build wheel
+      - name: Build uaaf wheel
         run: python -m build
+
+      - name: Build uaaf-workflow wheel
+        run: python -m build packages/uaaf-workflow
+
+  workflow-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build uaaf-workflow wheel
+        run: |
+          pip install build
+          python -m build --wheel packages/uaaf-workflow
+
+      - name: Run isolation test
+        run: bash scripts/test-workflow-isolation.sh
