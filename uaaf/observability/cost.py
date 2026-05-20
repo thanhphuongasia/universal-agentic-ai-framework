@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from uaaf.observability.errors import BudgetExceededError
+from uaaf_workflow.errors import BudgetExceededError
 
 # ---------------------------------------------------------------------------
 # Value objects

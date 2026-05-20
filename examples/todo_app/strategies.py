@@ -33,7 +33,7 @@ from uaaf.intent.models import (
     CostEstimate,
     StructuredIntent,
 )
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 class TodoDirectStrategy:

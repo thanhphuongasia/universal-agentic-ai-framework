@@ -16,7 +16,7 @@ from uaaf.intent.models import DIRECT, EVALUATOR_OPTIMIZER, REACT, ComplexityLev
 from uaaf.intent.selector import StrategySelector
 from uaaf.observability.cost import Cost
 from uaaf.providers.llm import Response, TokenUsage
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 def _ctx() -> ExecutionContext:

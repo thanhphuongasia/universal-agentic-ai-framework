@@ -19,7 +19,7 @@ import anyio
 
 from uaaf.execution.agent import AgentResult, BaseAgent, Task
 from uaaf.observability.cost import Cost
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @dataclass

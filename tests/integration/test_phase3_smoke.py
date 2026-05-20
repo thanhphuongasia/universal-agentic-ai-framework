@@ -14,7 +14,7 @@ from uaaf.intent.models import ComplexityLevel, StructuredIntent
 from uaaf.knowledge.context_assembler import ContextAssembler
 from uaaf.knowledge.hybrid import HybridBackbone
 from uaaf.knowledge.memory.backbone import MemoryBackbone
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

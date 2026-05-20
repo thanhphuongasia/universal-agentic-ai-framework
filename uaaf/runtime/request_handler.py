@@ -15,7 +15,7 @@ from uaaf.execution.pool import AgentPool
 from uaaf.intent.analyzer import IIntentAnalyzer
 from uaaf.intent.models import CognitiveResult
 from uaaf.intent.selector import StrategySelector
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 @dataclass

@@ -9,7 +9,7 @@ import pytest
 from uaaf._testing.fakes import FakeAgentPool, FakeIntentAnalyzer, FakeVerifier
 from uaaf.intent.models import CognitiveResult, CostEstimate, StructuredIntent
 from uaaf.intent.selector import StrategySelector
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 from uaaf.runtime.request_handler import RequestHandler
 
 

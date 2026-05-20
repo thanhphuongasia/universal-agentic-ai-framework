@@ -19,7 +19,7 @@ from uaaf.intent.models import (
     StructuredIntent,
 )
 from uaaf.observability.cost import Cost
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 def _make_direct():

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 @dataclass(frozen=True)

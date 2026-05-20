@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from uaaf.cognitive.verifier import VerificationResult
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 class GroundTruthVerifier:

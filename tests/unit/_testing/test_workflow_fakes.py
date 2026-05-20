@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from uaaf._testing.fakes import FakeCheckpointStore, FakeWorkflowEngine
-from uaaf.runtime.context import ContextScope, ExecutionContext
-from uaaf.workflow.checkpoint import ICheckpointStore, make_checkpoint
-from uaaf.workflow.engine import IWorkflowEngine, WorkflowResult, WorkflowStatus
-from uaaf.workflow.state_machine import Workflow
+from uaaf_workflow.context import ContextScope, ExecutionContext
+from uaaf_workflow.checkpoint import ICheckpointStore, make_checkpoint
+from uaaf_workflow.engine import IWorkflowEngine, WorkflowResult, WorkflowStatus
+from uaaf_workflow.state_machine import Workflow
 
 
 def _ctx() -> ExecutionContext:

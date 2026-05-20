@@ -78,7 +78,7 @@ from uaaf.observability.cost import Cost, CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
 from uaaf.observability.tracer import Tracer
 from uaaf.providers.llm import CompletionRequest, Message
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 @dataclass

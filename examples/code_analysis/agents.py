@@ -25,7 +25,7 @@ from uaaf.knowledge.graph.backbone import GraphBackbone
 from uaaf.observability.cost import Cost
 from uaaf.prompts.registry import PromptRegistry
 from uaaf.providers.llm import ILLMProvider, Response, TokenUsage
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 # Prompt registry — loaded once, shared across all agent instances
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"

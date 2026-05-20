@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "uaaf"
-version = "0.1.0a1"
+version = "0.2.0a1"
 description = "Universal Agentic AI Framework — pluggable foundation for AI agent products"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
-    "anyio>=4.0",
+    "uaaf-workflow>=0.2.0a1",
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
     "pydantic>=2.0",
@@ -57,7 +57,7 @@ strict = true
 ignore_missing_imports = true
 
 [tool.coverage.run]
-source = ["uaaf"]
+source = ["uaaf", "packages/uaaf-workflow/src"]
 omit = ["uaaf/_testing/*"]
 
 [tool.coverage.report]

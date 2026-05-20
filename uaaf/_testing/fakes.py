@@ -279,7 +279,7 @@ class FakeWorkflowEngine:
         self.resume_count = 0
 
     def _next_result(self, workflow_id: str) -> Any:
-        from uaaf.workflow.engine import WorkflowResult, WorkflowStatus
+        from uaaf_workflow.engine import WorkflowResult, WorkflowStatus
 
         if self._queue:
             return self._queue.popleft()

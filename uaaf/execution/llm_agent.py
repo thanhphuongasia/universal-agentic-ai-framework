@@ -26,7 +26,7 @@ from uaaf.providers.llm import (
     Message,
     TokenUsage,
 )
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 _DEFAULT_CONTEXT_WINDOW = 128_000
 

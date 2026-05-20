@@ -11,7 +11,7 @@ from typing import Any
 
 from uaaf.observability._pricing import calculate_usd
 from uaaf.observability.cost import Cost
-from uaaf.observability.errors import (
+from uaaf_workflow.errors import (
     classify_external_error,
 )
 from uaaf.providers.llm import (

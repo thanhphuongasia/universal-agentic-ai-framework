@@ -85,7 +85,7 @@ metadata["tool_calls"] = [
 Mọi exception từ SDK đều phải đi qua `classify_external_error`:
 
 ```python
-from uaaf.observability.errors import classify_external_error
+from uaaf_workflow.errors import classify_external_error
 
 try:
     resp = await self._client.some_api_call(...)
@@ -116,7 +116,7 @@ from typing import Any
 
 from uaaf.observability._pricing import calculate_usd
 from uaaf.observability.cost import Cost
-from uaaf.observability.errors import classify_external_error
+from uaaf_workflow.errors import classify_external_error
 from uaaf.providers.llm import (
     CompletionRequest,
     Embedding,

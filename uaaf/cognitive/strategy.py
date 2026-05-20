@@ -8,7 +8,7 @@ from uaaf.cognitive.verifier import IVerifier as IVerifier
 from uaaf.cognitive.verifier import VerificationResult as VerificationResult
 from uaaf.execution.agent import AgentResult, Task
 from uaaf.intent.models import CognitiveResult, CostEstimate, StructuredIntent
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 # ---------------------------------------------------------------------------
 # IAgentPool

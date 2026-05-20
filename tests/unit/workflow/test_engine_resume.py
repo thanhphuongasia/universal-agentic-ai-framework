@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.runtime.context import ContextScope, ExecutionContext
-from uaaf.workflow.checkpoint import make_checkpoint
-from uaaf.workflow.engine import WorkflowEngine, WorkflowStatus
-from uaaf.workflow.state_machine import StateTransition, Workflow
-from uaaf.workflow.stores.in_memory import InMemoryCheckpointStore
+from uaaf_workflow.context import ContextScope, ExecutionContext
+from uaaf_workflow.checkpoint import make_checkpoint
+from uaaf_workflow.engine import WorkflowEngine, WorkflowStatus
+from uaaf_workflow.state_machine import StateTransition, Workflow
+from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def _ctx() -> ExecutionContext:

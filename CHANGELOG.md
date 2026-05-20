@@ -5,6 +5,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0a1] - UNRELEASED
+
+### BREAKING CHANGES — Phase 8.1 (Workflow as independent library)
+
+`uaaf-workflow` is now a **standalone PyPI package** with its own namespace `uaaf_workflow`.
+The following imports no longer work after this release:
+
+```python
+# REMOVED — migrate to uaaf_workflow.*
+from uaaf.workflow.engine import WorkflowEngine
+from uaaf.observability.errors import RetryableError, DegradedError, FatalError
+from uaaf.runtime.context import ExecutionContext, ContextScope
+from uaaf import WorkflowEngine  # top-level re-export removed
+```
+
+See `packages/MIGRATION.md` for the full sed migration map.
+
+### Migration
+
+```bash
+pip install uaaf-workflow   # standalone (anyio only)
+pip install uaaf            # full AI framework (auto-pulls uaaf-workflow)
+```
+
+### Added
+
+- `packages/uaaf-workflow/` — standalone wheel, `anyio` as only dep
+- `packages/MIGRATION.md` — mechanical sed migration map
+- `scripts/install-dev.sh` — editable install for both packages in dev
+
+### Removed
+
+- `uaaf/workflow/` — moved to `uaaf_workflow`
+- `uaaf/observability/errors.py` — moved to `uaaf_workflow.errors`
+- `uaaf/runtime/context.py` — moved to `uaaf_workflow.context`
+- Top-level re-exports of workflow symbols from `uaaf/__init__.py`
+
 ## [0.1.0b7] - 2026-05-08
 
 ### Added (Phase 7 — Workflow Engine + State Machine + Checkpoint)

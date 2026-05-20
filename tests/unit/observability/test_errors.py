@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uaaf.observability.errors import (
+from uaaf_workflow.errors import (
     BudgetExceededError,
     DegradedError,
     FatalError,

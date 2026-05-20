@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Any
 
 from uaaf.cognitive.verifier import IVerifier, VerificationResult
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 class PipelineMode(StrEnum):

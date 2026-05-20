@@ -9,7 +9,7 @@ from uaaf.observability.cost import (
     CostPolicy,
     CostTracker,
 )
-from uaaf.observability.errors import BudgetExceededError
+from uaaf_workflow.errors import BudgetExceededError
 
 
 def _cost(usd: float, inp: int = 10, out: int = 5) -> Cost:

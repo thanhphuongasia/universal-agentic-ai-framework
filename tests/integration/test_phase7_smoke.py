@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.runtime.context import ContextScope, ExecutionContext
-from uaaf.workflow.checkpoint import make_checkpoint
-from uaaf.workflow.engine import WorkflowEngine, WorkflowStatus
-from uaaf.workflow.state_machine import StateTransition, Workflow
-from uaaf.workflow.stores.file import FileCheckpointStore
-from uaaf.workflow.stores.in_memory import InMemoryCheckpointStore
+from uaaf_workflow.context import ContextScope, ExecutionContext
+from uaaf_workflow.checkpoint import make_checkpoint
+from uaaf_workflow.engine import WorkflowEngine, WorkflowStatus
+from uaaf_workflow.state_machine import StateTransition, Workflow
+from uaaf_workflow.stores.file import FileCheckpointStore
+from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def _ctx() -> ExecutionContext:
@@ -150,21 +150,21 @@ class TestSigkillSimulation:
 
 
 class TestPublicAPIImports:
-    def test_workflow_engine_importable_from_uaaf(self):
-        from uaaf import WorkflowEngine  # noqa: F401
+    def test_workflow_engine_importable_from_uaaf_workflow(self):
+        from uaaf_workflow import WorkflowEngine  # noqa: F401
 
-    def test_workflow_importable_from_uaaf(self):
-        from uaaf import Workflow  # noqa: F401
+    def test_workflow_importable_from_uaaf_workflow(self):
+        from uaaf_workflow import Workflow  # noqa: F401
 
-    def test_istate_importable_from_uaaf(self):
-        from uaaf import IState  # noqa: F401
+    def test_istate_importable_from_uaaf_workflow(self):
+        from uaaf_workflow import IState  # noqa: F401
 
-    def test_icheckpointstore_importable_from_uaaf(self):
-        from uaaf import ICheckpointStore  # noqa: F401
+    def test_icheckpointstore_importable_from_uaaf_workflow(self):
+        from uaaf_workflow import ICheckpointStore  # noqa: F401
 
-    def test_filecheckpointstore_importable_from_uaaf(self):
-        from uaaf import FileCheckpointStore  # noqa: F401
+    def test_filecheckpointstore_importable_from_uaaf_workflow(self):
+        from uaaf_workflow import FileCheckpointStore  # noqa: F401
 
     def test_version_bumped(self):
         import uaaf
-        assert uaaf.__version__ == "0.1.0b7"
+        assert uaaf.__version__ == "0.2.0a1"

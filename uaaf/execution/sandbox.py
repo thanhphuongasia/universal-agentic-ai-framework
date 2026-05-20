@@ -15,7 +15,7 @@ import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from uaaf.observability.errors import RetryableError
+from uaaf_workflow.errors import RetryableError
 
 # ---------------------------------------------------------------------------
 # Result

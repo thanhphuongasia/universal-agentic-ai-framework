@@ -41,7 +41,7 @@ async def test_fake_llm_pops_queue_in_order() -> None:
 
 @pytest.mark.anyio
 async def test_fake_llm_raises_configured_exception() -> None:
-    from uaaf.observability.errors import RetryableError
+    from uaaf_workflow.errors import RetryableError
 
     fake = FakeLLMProvider(raise_on_call=RetryableError("forced"))
     with pytest.raises(RetryableError):

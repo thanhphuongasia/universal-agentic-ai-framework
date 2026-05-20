@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.observability.errors import RateLimitTimeout
+from uaaf_workflow.errors import RateLimitTimeout
 from uaaf.observability.rate_limit import InMemoryRateStore, RateLimiter, RatePolicy
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ async def test_timeout_raises_rate_limit_timeout() -> None:
 
 @pytest.mark.anyio
 async def test_timeout_is_rate_limit_timeout_subtype() -> None:
-    from uaaf.observability.errors import DegradedError
+    from uaaf_workflow.errors import DegradedError
 
     limiter = RateLimiter(policy=RatePolicy(rps=0.001, burst=1))
     await limiter.acquire("s")

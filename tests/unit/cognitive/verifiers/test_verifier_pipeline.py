@@ -6,7 +6,7 @@ import pytest
 
 from uaaf._testing.fakes import FakeVerifier
 from uaaf.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

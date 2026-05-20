@@ -6,11 +6,11 @@ import pytest
 
 from uaaf._testing.fakes import FakeLLMProvider
 from uaaf.intent.models import ModelTier
-from uaaf.observability.errors import RetryableError
+from uaaf_workflow.errors import RetryableError
 from uaaf.providers.fallback import ProviderFallbackChain
 from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
 from uaaf.providers.router import ModelRouter
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 def _resp(text: str) -> Response:

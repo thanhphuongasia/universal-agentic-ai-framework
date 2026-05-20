@@ -163,7 +163,7 @@ async def handle_before(prompt: str) -> str:
 
 **After**:
 ```python
-from uaaf.observability.errors import DegradedError, RetryableError, retry_policy
+from uaaf_workflow.errors import DegradedError, RetryableError, retry_policy
 
 async def call_with_retry(prompt: str) -> str:
     async for attempt in retry_policy(max_attempts=3):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uaaf.cognitive.strategy import ICognitiveStrategy
 from uaaf.intent.models import StructuredIntent
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 class StrategySelector:

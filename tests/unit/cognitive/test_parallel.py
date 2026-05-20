@@ -15,7 +15,7 @@ from uaaf.execution.agent import AgentResult, Task
 from uaaf.execution.pool import AgentPool
 from uaaf.intent.models import PARALLEL_FANOUT, ComplexityLevel, StructuredIntent
 from uaaf.observability.cost import Cost
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers

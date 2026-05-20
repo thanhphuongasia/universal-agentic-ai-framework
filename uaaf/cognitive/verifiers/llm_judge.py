@@ -7,7 +7,7 @@ from typing import Any
 
 from uaaf.cognitive.verifier import VerificationResult
 from uaaf.providers.llm import CompletionRequest, ILLMProvider, Message
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 _DEFAULT_MODEL = "gpt-4o-mini"
 

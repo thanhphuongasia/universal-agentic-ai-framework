@@ -11,7 +11,7 @@ from uaaf.cognitive.verifiers.llm_judge import LLMJudgeVerifier
 from uaaf.cognitive.verifiers.pipeline import VerifierPipeline
 from uaaf.cognitive.verifiers.schema import SchemaVerifier
 from uaaf.providers.llm import Response, TokenUsage
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

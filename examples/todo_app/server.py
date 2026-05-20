@@ -38,7 +38,7 @@ from uaaf.intent.selector import StrategySelector
 from uaaf.observability.audit import AuditLogger
 from uaaf.observability.cost import CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 from uaaf.runtime.request_handler import RequestHandler
 
 app = FastAPI(title="UAAF Todo App — SSE Chat")

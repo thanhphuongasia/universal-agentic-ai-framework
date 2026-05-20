@@ -51,7 +51,7 @@ async def test_complete_returns_response() -> None:
 
 @pytest.mark.anyio
 async def test_complete_maps_rate_limit_to_retryable() -> None:
-    from uaaf.observability.errors import RetryableError
+    from uaaf_workflow.errors import RetryableError
 
     class FakeOverloadedError(Exception):
         __module__ = "anthropic"
@@ -69,7 +69,7 @@ async def test_complete_maps_rate_limit_to_retryable() -> None:
 
 @pytest.mark.anyio
 async def test_complete_maps_auth_error_to_fatal() -> None:
-    from uaaf.observability.errors import FatalError
+    from uaaf_workflow.errors import FatalError
 
     class FakeAuthError(Exception):
         __module__ = "anthropic"

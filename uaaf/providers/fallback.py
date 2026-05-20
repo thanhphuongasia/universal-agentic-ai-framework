@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from uaaf.observability.cost import Cost
-from uaaf.observability.errors import DegradedError, RetryableError
+from uaaf_workflow.errors import DegradedError, RetryableError
 from uaaf.providers.llm import (
     CompletionRequest,
     Embedding,

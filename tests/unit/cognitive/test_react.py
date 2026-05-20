@@ -6,7 +6,7 @@ import pytest
 
 from uaaf.cognitive.strategies.react import ReActStrategy
 from uaaf.intent.models import REACT, CognitiveResult, ComplexityLevel, StructuredIntent
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 def _intent(complexity: ComplexityLevel = ComplexityLevel.MEDIUM) -> StructuredIntent:

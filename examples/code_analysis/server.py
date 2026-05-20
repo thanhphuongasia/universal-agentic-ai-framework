@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from examples.code_analysis.workflow import AnalyseState, IngestState, SummarizeState
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 app = FastAPI(title="UAAF Code Analysis — SSE Chat")
 

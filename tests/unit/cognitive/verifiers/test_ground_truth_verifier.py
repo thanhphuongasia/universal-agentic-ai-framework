@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

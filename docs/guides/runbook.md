@@ -371,7 +371,7 @@ from uaaf.cognitive.strategy import IAgentPool, IVerifier
 from uaaf.execution.agent import Task
 from uaaf.execution.pool import AgentPool
 from uaaf.intent.models import DIRECT, CognitiveResult, CostEstimate, StructuredIntent
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 class MyDirectStrategy:
     strategy_id = DIRECT
@@ -420,7 +420,7 @@ handler = RequestHandler(
 ### Bước 4 — Handle request
 
 ```python
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 ctx = ExecutionContext(
     scope=ContextScope(user_id="u1", session_id="s1", domain="my-app"),

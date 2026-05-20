@@ -27,7 +27,7 @@ from uaaf.observability._pricing import calculate_usd
 from uaaf.observability.cost import Cost
 from uaaf.prompts.registry import PromptRegistry
 from uaaf.providers.llm import CompletionRequest, ILLMProvider, TokenUsage
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 _registry = PromptRegistry(prompts_root=_PROMPTS_ROOT)

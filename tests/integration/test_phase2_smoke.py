@@ -13,7 +13,7 @@ from uaaf.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
 from uaaf.cognitive.verifiers.schema import SchemaVerifier
 from uaaf.execution.agent import AgentResult
 from uaaf.intent.models import ComplexityLevel, StructuredIntent
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

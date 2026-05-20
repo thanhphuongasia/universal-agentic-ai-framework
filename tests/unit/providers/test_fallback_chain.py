@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.observability.errors import DegradedError, RetryableError
+from uaaf_workflow.errors import DegradedError, RetryableError
 from uaaf.providers.fallback import ProviderFallbackChain
 from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
 

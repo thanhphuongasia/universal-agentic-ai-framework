@@ -199,7 +199,7 @@ from uaaf.knowledge.graph.backbone import GraphBackbone
 from uaaf.observability.cost import Cost
 from uaaf.prompts.registry import PromptRegistry
 from uaaf.providers.llm import ILLMProvider, Response, TokenUsage
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 _registry = PromptRegistry(prompts_root=_PROMPTS_ROOT)
@@ -408,8 +408,8 @@ from examples.my_domain.agents import AgentFactory, DomainOrchestrator, DomainRe
 from examples.my_domain.ingestion import MyIngester
 from uaaf.knowledge.graph.backbone import GraphBackbone
 from uaaf.prompts.registry import PromptRegistry
-from uaaf.runtime.context import ExecutionContext
-from uaaf.workflow.state_machine import StateTransition
+from uaaf_workflow.context import ExecutionContext
+from uaaf_workflow.state_machine import StateTransition
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 
@@ -489,10 +489,10 @@ from typing import Any
 
 from examples.my_domain.workflow import AnalyseState, IngestState, SummarizeState
 from examples.my_domain.tools import build_registry
-from uaaf.runtime.context import ContextScope, ExecutionContext
-from uaaf.workflow.engine import WorkflowEngine
-from uaaf.workflow.state_machine import Workflow
-from uaaf.workflow.stores.in_memory import InMemoryCheckpointStore
+from uaaf_workflow.context import ContextScope, ExecutionContext
+from uaaf_workflow.engine import WorkflowEngine
+from uaaf_workflow.state_machine import Workflow
+from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 async def main(source: str | None = None) -> None:

@@ -15,7 +15,7 @@ from typing import Protocol, runtime_checkable
 
 import anyio
 
-from uaaf.observability.errors import RateLimitTimeout
+from uaaf_workflow.errors import RateLimitTimeout
 
 # ---------------------------------------------------------------------------
 # Config

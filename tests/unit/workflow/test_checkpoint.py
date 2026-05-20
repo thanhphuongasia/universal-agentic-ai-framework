@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.workflow.checkpoint import Checkpoint, ICheckpointStore, make_checkpoint
-from uaaf.workflow.stores.in_memory import InMemoryCheckpointStore
+from uaaf_workflow.checkpoint import Checkpoint, ICheckpointStore, make_checkpoint
+from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def _cp(workflow_id: str, state_id: str, output: object, sequence: int) -> Checkpoint:

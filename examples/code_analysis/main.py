@@ -27,10 +27,10 @@ from typing import Any
 from examples.code_analysis.tools import build_code_registry
 from examples.code_analysis.workflow import AnalyseState, IngestState, SummarizeState
 from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.runtime.context import ContextScope, ExecutionContext
-from uaaf.workflow.engine import WorkflowEngine
-from uaaf.workflow.state_machine import Workflow
-from uaaf.workflow.stores.in_memory import InMemoryCheckpointStore
+from uaaf_workflow.context import ContextScope, ExecutionContext
+from uaaf_workflow.engine import WorkflowEngine
+from uaaf_workflow.state_machine import Workflow
+from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def print_separator(title: str = "") -> None:

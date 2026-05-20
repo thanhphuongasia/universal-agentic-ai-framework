@@ -5,7 +5,7 @@ from __future__ import annotations
 from uaaf.cognitive.strategy import IAgentPool, IVerifier
 from uaaf.execution.agent import Task
 from uaaf.intent.models import DIRECT, CognitiveResult, CostEstimate, StructuredIntent
-from uaaf.runtime.context import ExecutionContext
+from uaaf_workflow.context import ExecutionContext
 
 
 class DirectStrategy:

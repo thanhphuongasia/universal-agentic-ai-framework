@@ -16,7 +16,7 @@ from uaaf.intent.models import (
     StructuredIntent,
 )
 from uaaf.intent.selector import StrategySelector
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 def _intent(complexity: ComplexityLevel = ComplexityLevel.LOW) -> StructuredIntent:

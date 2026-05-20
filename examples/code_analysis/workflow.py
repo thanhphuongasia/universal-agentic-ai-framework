@@ -23,8 +23,8 @@ from examples.code_analysis.agents import (
 from examples.code_analysis.ingestion import PythonIngester
 from uaaf.knowledge.graph.backbone import GraphBackbone
 from uaaf.prompts.registry import PromptRegistry
-from uaaf.runtime.context import ExecutionContext
-from uaaf.workflow.state_machine import StateTransition
+from uaaf_workflow.context import ExecutionContext
+from uaaf_workflow.state_machine import StateTransition
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 

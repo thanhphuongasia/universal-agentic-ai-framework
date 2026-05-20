@@ -34,7 +34,7 @@ UAAF không cung cấp sẵn card schema — product tự define. Pattern đề 
 ```python
 import json
 from uaaf.knowledge.memory.episodic import EpisodicMemoryStore
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 store = EpisodicMemoryStore(max_entries=500)
 
@@ -73,7 +73,7 @@ from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
 verifier = GroundTruthVerifier(mode="word_overlap", threshold=0.6)
 
 async def evaluate_answer(user_answer: str, correct_answer: str) -> bool:
-    from uaaf.runtime.context import ContextScope, ExecutionContext
+    from uaaf_workflow.context import ContextScope, ExecutionContext
     ctx = ExecutionContext(
         scope=ContextScope(user_id="u1", session_id="s1", domain="flashcard"),
         correlation_id="c1",
@@ -104,7 +104,7 @@ from uaaf.observability.cost import Cost, CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
 from uaaf.observability.tracer import Tracer
 from uaaf.providers.llm import CompletionRequest, Message
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 
 @dataclass

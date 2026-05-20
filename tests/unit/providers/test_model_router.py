@@ -6,7 +6,7 @@ import pytest
 
 from uaaf._testing.fakes import FakeLLMProvider
 from uaaf.intent.models import ModelTier
-from uaaf.observability.errors import DegradedError
+from uaaf_workflow.errors import DegradedError
 from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
 from uaaf.providers.router import ModelRouter
 

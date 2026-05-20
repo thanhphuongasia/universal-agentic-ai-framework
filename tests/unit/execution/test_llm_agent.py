@@ -16,7 +16,7 @@ from uaaf.observability.cost import Cost, CostPolicy, CostTracker
 from uaaf.observability.rate_limit import RateLimiter, RatePolicy
 from uaaf.observability.tracer import Tracer
 from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
-from uaaf.runtime.context import ContextScope, ExecutionContext
+from uaaf_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers
