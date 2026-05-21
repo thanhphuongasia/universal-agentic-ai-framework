@@ -84,11 +84,15 @@ Bạn cần `OPENAI_API_KEY` env var. Hết. Đó là 5-line agent với cost tr
 | Factory `Agent()` — 4 prompt modes + 4 tool modes | ✅ | 10 → 10.3 | [01-factory](01-factory.md) |
 | `.stream()` (events + token-by-token) | ✅ | 10.4 + 10.6 | [01-factory](01-factory.md#17-streaming) |
 | Multi-provider fallback `model=[list]` | ✅ | 10.4 + 10.6 | [01-factory](01-factory.md#14-multi-provider) |
-| Multi-agent facades (`Chain`, `FanOut`, ...) | ✅ | 10.5 | [04-multi-agent](04-multi-agent.md) |
+| Multi-agent facades (`Chain`, `FanOut`, `Router`, `Orchestrator`, `Evaluator`) | ✅ | 10.5 | [04-multi-agent](04-multi-agent.md) |
+| `HierarchicalRouter` facade (2-stage routing) | ✅ | 14.4 | [04-multi-agent](04-multi-agent.md) |
+| `Agent(thinking_mode=True)` — `<thinking>`/`<answer>` parsing | ✅ | 14.1 | [01-factory](01-factory.md) |
+| `Agent(n_samples=N, vote=...)` — Best-of-N consensus | ✅ | 14.2 | [01-factory](01-factory.md) |
+| `Agent(adaptive_compute=True)` — difficulty → tier dispatch | ✅ | 14.3 | [01-factory](01-factory.md) |
 | `BatchRunner` — concurrent + OpenAI Batch API | ✅ | 12 + 12.1 | [06-batch](06-batch.md) |
 | `PromptOptimizer` — auto-tune via eval | ✅ | 13 | [07-prompt-optimizer](07-prompt-optimizer.md) |
 | `ryuu-knowledge-rag` | 🔲 | 11 | (planned) |
-| `ryuu-reasoning` (Z3/Prolog) | 🔲 | 14 | (planned) |
+| `ryuu-reasoning` (Z3/Prolog) | 🔲 | 14.7 | (planned) |
 
 ---
 
@@ -296,10 +300,10 @@ print(f"Best prompt: {best.best_prompt} (score {best.best_score:.2f})")
 
 ```python
 from ryuu import (
-    # Factory (Phase 10) — single-agent
+    # Factory (Phase 10 + 14.x kwargs) — single-agent
     Agent, StreamEvent,
-    # Multi-agent facades (Phase 10.5)
-    Chain, FanOut, Router, Orchestrator, Evaluator,
+    # Multi-agent facades (Phase 10.5 + 14.4)
+    Chain, FanOut, Router, HierarchicalRouter, Orchestrator, Evaluator,
     # Batch processing (Phase 12 + 12.1)
     BatchRunner, BatchItem, BatchAPIClient, OpenAIBatchClient,
     # Prompt optimization (Phase 13)
@@ -309,6 +313,12 @@ from ryuu import (
     # Intent + observability
     ComplexityLevel, ModelTier, StructuredIntent,
     Cost, Tracer, get_current_correlation_id,
+)
+
+# Phase 14.1-14.3 cognitive strategies (Layer A — for advanced/class-based use)
+from ryuu_cognitive.strategies import (
+    ThinkingStrategy, BestOfNStrategy, AdaptiveStrategy,
+    # plus DirectStrategy, ReActStrategy, EvaluatorOptimizerStrategy, ParallelFanoutStrategy
 )
 ```
 

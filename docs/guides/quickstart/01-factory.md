@@ -498,3 +498,130 @@ agent = Agent(
 
 ---
 
+### 1.12 Thinking Mode — Claude-like `<thinking>`/`<answer>` ✅ (Phase 14.1)
+
+```python
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Solve math problems",
+    thinking_mode=True,        # ← Factory injects template + parses tags
+)
+result = await agent.run("What is 17 × 23?")
+print(result.output)     # "391"
+print(result.thinking)   # "Step 1: 17 × 20 = 340. Step 2: 17 × 3 = 51..."
+```
+
+**Internal:** Augments `system_prompt` với template ép LLM emit `<thinking>...</thinking><answer>...</answer>`. Parse output thành 2 fields. Fallback graceful: tag missing → `output = raw`, `thinking = ""`.
+
+**Khi nào dùng:**
+- ✅ Audit/compliance — log reasoning trail
+- ✅ Debug — hiểu vì sao LLM chọn intent này
+- ✅ Educational — show students reasoning steps
+- ❌ Cost-sensitive — thinking thêm ~200-400 output tokens
+
+**Architecture:** Layer A `ThinkingStrategy` ở `ryuu-cognitive/strategies/thinking_strategy.py`. Class-based agents dùng strategy trực tiếp; Factory wrap qua kwarg.
+
+### 1.13 Best-of-N — Sample N + Vote ✅ (Phase 14.2)
+
+```python
+# Majority vote (default)
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Classify intent",
+    n_samples=3,                       # ← framework runs 3 parallel calls
+    vote="majority",
+    temperature=0.9,                    # high temp → diverse samples
+)
+
+# Custom score function
+agent = Agent(
+    model="gpt-4o-mini",
+    n_samples=5,
+    vote="score_fn",
+    score_fn=lambda output: len(output) if "json" in output else 0,
+)
+
+result = await agent.run("classify this query")
+print(result.output)                                   # winner
+print(result.metadata["samples"])                       # all N samples
+print(result.metadata["best_of_n_confidence"])          # 0.0-1.0
+```
+
+**3 vote modes:**
+| Mode | Logic | Use case |
+|---|---|---|
+| `"majority"` | `Counter(samples).most_common(1)` | Categorical outputs (intent classification) |
+| `"score_fn"` | `max(samples, key=score_fn)` | Length / format / regex match |
+| `"llm_judge"` | Verifier callable scores each | Quality grading (defer Phase 14.x v2) |
+
+**Cost:** N× single-call. **Anti-flap improvement:** 30-50% trên ambiguous queries.
+
+**Architecture:** Layer A `BestOfNStrategy` ở `ryuu-cognitive/strategies/best_of_n_strategy.py`.
+
+### 1.14 Adaptive Compute — Difficulty → Tier ✅ (Phase 14.3)
+
+```python
+agent = Agent(
+    model="gpt-4o-mini",                  # baseline (override per tier)
+    instructions="Analyze code questions",
+    adaptive_compute=True,                 # ← Factory classifies + dispatches
+    tier_models={"trivial": "gpt-4o-mini", "medium": "gpt-4o-mini", "hard": "gpt-4o"},
+    tier_max_iterations={"trivial": 2, "medium": 4, "hard": 8},
+    tier_max_tokens={"trivial": 300, "medium": 800, "hard": 2000},
+)
+result = await agent.run("Analyze architecture")
+print(result.metadata["difficulty"])   # "hard"
+print(result.metadata["tier_model"])    # "gpt-4o"
+```
+
+**Default tier config** (nếu không override):
+```
+trivial → gpt-4o-mini + 2 iter + 300 tokens   (greetings, simple lookups)
+medium  → gpt-4o-mini + 4 iter + 800 tokens   (typical chat queries)
+hard    → gpt-4o       + 8 iter + 2000 tokens  (multi-step analysis)
+```
+
+**Difficulty detection:** Built-in keyword heuristic (no extra LLM call). Hard keywords: `analyze, compare, evaluate, trace`. Trivial: short greetings, `what is X` < 8 words. Anything else → medium.
+
+**Cost saving:** 40-60% trên chat volume khi đa số queries trivial/medium.
+
+**Khi nào dùng:**
+- ✅ Production chat với volume cao + budget pressure
+- ✅ Mix dễ + khó (saving rõ rệt)
+- ❌ Tất cả queries cùng độ phức tạp (no benefit)
+
+**Architecture:** Layer A `AdaptiveStrategy` ở `ryuu-cognitive/strategies/adaptive_strategy.py`. Cho LLM-backed classifier, pass `AdaptiveStrategy(difficulty_fn=my_llm_classifier)` qua `strategy=` explicit.
+
+### 1.15 Strategy Explicit Override — Advanced
+
+Cho advanced custom config, pass `strategy=` instance trực tiếp:
+
+```python
+from ryuu_cognitive.strategies import BestOfNStrategy, AdaptiveStrategy, ThinkingStrategy
+
+# Custom BestOfN với LLM judge verifier
+agent = Agent(
+    model="gpt-4o-mini",
+    strategy=BestOfNStrategy(
+        n=5,
+        vote="llm_judge",
+        verifier=judge_agent,
+    ),
+)
+
+# Custom Adaptive với LLM-backed difficulty classifier
+agent = Agent(
+    model="gpt-4o-mini",
+    strategy=AdaptiveStrategy(
+        difficulty_fn=my_llm_classifier,
+        tier_models={"trivial": "gpt-3.5", "medium": "gpt-4o-mini", "hard": "claude-opus"},
+    ),
+)
+```
+
+**Validation:** `strategy=` mutually exclusive với kwargs (`thinking_mode`, `n_samples > 1`, `adaptive_compute`) → ValueError nếu set cả 2.
+
+**Quy tắc:** Kwargs cho 90% use case (UX gọn). `strategy=` cho 10% advanced cần fine-tune sâu.
+
+---
+

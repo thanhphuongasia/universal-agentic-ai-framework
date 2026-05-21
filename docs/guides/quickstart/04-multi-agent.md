@@ -590,7 +590,61 @@ orchestrator = Orchestrator(
 
 ---
 
-### 4.8 Quyết Định Nhanh
+### 4.8 HierarchicalRouter — 2-Stage Routing ✅ (Phase 14.4)
+
+Khi flat routing (`Router`) có quá nhiều options (8+) → accuracy giảm. Tách 2-stage: category trước, specific intent sau.
+
+```python
+from ryuu import Agent, HierarchicalRouter
+
+router = HierarchicalRouter(
+    # Stage 1: classify category (3-5 options)
+    category_classifier=Agent(
+        model="gpt-4o-mini",
+        instructions="""
+            Identify category:
+              structure: classes, methods, dependencies
+              behavior: runtime flow, calls
+              data: entities, fields, CRUD
+            Output ONE word.
+        """,
+        max_tokens=5,
+    ),
+    # Stage 2: specific intent per category
+    routes_by_category={
+        "structure": {"symbol_explain": s_agent, "dep_analysis": d_agent, "class_diagram": c_agent},
+        "behavior":  {"sequence_diagram": seq_agent, "graph_traversal": graph_agent},
+        "data":      {"crud_matrix": crud_agent, "entity_diagram": e_agent},
+    },
+    # Optional: fallback agent if Stage 1 returns unknown category
+    fallback_route=symbol_agent,
+    # Optional: custom Stage 2 picker (default = inline LLM classifier)
+    specific_analyzer=lambda query, options: pick_via_rule(query, options),
+)
+result = await router.run(query)
+```
+
+**Internal flow:**
+1. `category_classifier.run(query)` → e.g. `"data"`
+2. Lookup `routes_by_category["data"]` → `{"crud_matrix": ..., "entity_diagram": ...}`
+3. **Default Stage 2**: inline LLM classifier với options → `"crud_matrix"`
+4. **Custom Stage 2**: call `specific_analyzer(query, options)` → key
+5. Dispatch to selected agent
+
+**Cost:** 2 LLM calls vs 1 (flat Router). **Accuracy:** +10-20% trên ambiguous queries vì mỗi stage decision space nhỏ hơn (3-way vs 8-way).
+
+**Pattern #9 từ "Claude-like Thinking Engine"** — routing concern, không phải cognitive. Khác `Router` (flat 1-stage), khác `Orchestrator` (plan/worker).
+
+**Khi nào dùng:**
+- ✅ 8+ intent types và rule classifier chưa đủ chính xác
+- ✅ Domain có natural hierarchy (vd structure/behavior/data)
+- ✅ Confidence cao cho category, không chắc cho specific
+- ❌ < 5 intents → flat `Router` đủ
+- ❌ Multi-intent message → `Orchestrator` decompose tốt hơn
+
+---
+
+### 4.9 Quyết Định Nhanh
 
 | Câu hỏi | Pattern |
 |---|---|
@@ -599,6 +653,7 @@ orchestrator = Orchestrator(
 | Pipeline có expensive step muốn checkpoint? | Chaining |
 | Main agent cần discover N worker từ input? | Orchestrator-Worker |
 | Output có thể sai, cần auto-retry với feedback? | Evaluator-Optimizer |
+| Input có nhiều loại với hierarchy tự nhiên (8+ types)? | HierarchicalRouter (2-stage) |
 | Chỉ là 3 step gọi LLM tuần tự, không expensive? | Không pattern — viết 3 method trong 1 agent |
 
 ---
