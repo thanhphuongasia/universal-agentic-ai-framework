@@ -262,9 +262,11 @@ ryuu-framework/                        # 1 repo, nhiều packages (Python worksp
 │   │       ├── strategies/
 │   │       │   ├── direct.py
 │   │       │   ├── react.py
-│   │       │   ├── best_of_n.py
 │   │       │   ├── evaluator_optimizer.py
-│   │       │   └── parallel_fanout.py
+│   │       │   ├── parallel_fanout.py
+│   │       │   ├── thinking_strategy.py        # Phase 14.1 — wraps base với <thinking>/<answer>
+│   │       │   ├── best_of_n_strategy.py        # Phase 14.2 — sample N + vote (replaces best_of_n.py)
+│   │       │   └── adaptive_strategy.py         # Phase 14.3 — difficulty → tier model selection
 │   │       ├── verifier.py            # IVerifier Protocol
 │   │       ├── verifiers/
 │   │       │   ├── schema.py
@@ -272,6 +274,11 @@ ryuu-framework/                        # 1 repo, nhiều packages (Python worksp
 │   │       │   ├── ground_truth.py
 │   │       │   └── human_review.py
 │   │       └── pipeline.py            # VerifierPipeline
+│   │
+│   #  Cognitive Strategies (Phase 14.1-14.3) — Claude-like Thinking Patterns
+│   #  Each strategy is ICognitiveStrategy impl, usable from both class-based BaseAgent
+│   #  AND Factory `Agent()` (qua kwarg convenience: thinking_mode/n_samples/adaptive_compute
+│   #  HOẶC explicit strategy=<instance>). Đúng 2-layer separation.
 │   │
 │   # ─── Knowledge tách thành 4 sub-packages (rev 2) ───
 │   ├── ryuu-knowledge-core/

@@ -226,7 +226,63 @@ Tham khảo: DSPy, OpenAI Prompt Optimizer beta.
 
 ---
 
-### **Phase 14: `ryuu-reasoning`** (3 tuần)
+### **Phase 14.1-14.6: Claude-like Thinking Patterns** (~17h)
+
+> **Trigger:** Code analysis team feedback — patterns universal (thinking, adaptive
+> compute, best-of-N, hierarchical classify) phải ở framework, không phải product code.
+>
+> **Architecture decision (2026-05-21)**: 2-layer placement:
+> - **Layer A (mechanism)** — `ryuu-cognitive/strategies/` cho cognitive patterns
+> - **Layer B (ergonomic)** — `ryuu/factory.py` kwargs + `ryuu/facades.py` cho routing
+> - Factory expose **Option A**: kwargs convenience (90% use) + `strategy=` explicit (advanced)
+
+**Sub-phases:**
+
+| Phase | Layer | Add | Effort |
+|---|---|---|---|
+| **14.1** | Cognitive | `ThinkingStrategy` + Factory `thinking_mode=True` wire | 3h |
+| **14.2** | Cognitive | `BestOfNStrategy` + Factory `n_samples=N, vote=...` wire | 4h |
+| **14.3** | Cognitive | `AdaptiveStrategy` + Factory `adaptive_compute=True` wire | 4h |
+| **14.4** | Facade (routing) | `HierarchicalRouter` facade trong `ryuu/facades.py` | 3h |
+| **14.5** | Docs | Update migration guide §16, architecture §7 | 1h |
+| **14.6** | Demo | Update `intent_patterns_demo.py` before/after | 2h |
+
+**File cần tạo/sửa:**
+```
+packages/ryuu-cognitive/src/ryuu_cognitive/strategies/
+├── thinking_strategy.py          ← NEW (Phase 14.1) — wraps base strategy with <thinking>/<answer>
+├── best_of_n_strategy.py          ← NEW (Phase 14.2) — sample N + vote (majority/llm_judge/score_fn)
+└── adaptive_strategy.py           ← NEW (Phase 14.3) — difficulty → tier model selection
+
+ryuu/factory.py                    ← MODIFY: thinking_mode/n_samples/vote/adaptive_compute/tier_* kwargs
+                                            + strategy= explicit param (advanced)
+ryuu/facades.py                    ← MODIFY: add HierarchicalRouter (Phase 14.4)
+ryuu/_thinking_parser.py            ← NEW (Phase 14.1) — parse <thinking> + <answer> tags helper
+ryuu/_difficulty_classifier.py      ← NEW (Phase 14.3) — cheap default classifier helper
+
+tests/unit/cognitive_pkg/
+├── test_thinking_strategy.py       ← NEW (~6 tests Phase 14.1)
+├── test_best_of_n_strategy.py       ← NEW (~6 tests Phase 14.2)
+└── test_adaptive_strategy.py        ← NEW (~5 tests Phase 14.3)
+
+tests/unit/ryuu/
+├── test_factory_thinking.py         ← NEW (~3 tests — Factory wire to ThinkingStrategy)
+├── test_factory_best_of_n.py        ← NEW (~3 tests — Factory wire to BestOfNStrategy)
+├── test_factory_adaptive.py         ← NEW (~3 tests — Factory wire to AdaptiveStrategy)
+└── test_hierarchical_router.py      ← NEW (~5 tests Phase 14.4)
+```
+
+**Detailed plan**: `tasks/plan-phase14-thinking-patterns.md`
+
+**Rationale:**
+- Strategies ở `ryuu-cognitive` → class-based BaseAgent dùng được, không bị lock vào Factory
+- Factory kwargs cho ergonomic UX, `strategy=` cho advanced custom
+- HierarchicalRouter là routing, không phải cognitive — đúng vị trí ở `ryuu/facades.py`
+- LOC saving: ~200 lines self-impl/pattern × 4 patterns × N apps → maintain 1 lần ở framework
+
+---
+
+### **Phase 14.7: `ryuu-reasoning`** (3 tuần)
 
 **Cuối cùng vì:**
 - Niche use case (finance/medical only)
@@ -264,7 +320,8 @@ Week 4     │ Phase 10  │ Agent() factory
 Week 5-6   │ Phase 11  │ ryuu-knowledge-rag
 Week 7     │ Phase 12  │ ryuu-batch
 Week 8-9   │ Phase 13  │ ryuu-prompt-optimizer
-Week 10-12 │ Phase 14  │ ryuu-reasoning
+Week 10    │ Phase 14.1-14.6 │ Claude-like thinking patterns (4 facades + docs)
+Week 11-13 │ Phase 14.7│ ryuu-reasoning
 ```
 
 **Total: ~12 tuần (3 tháng)** để có framework feature-parity với Bedrock + production-ready.

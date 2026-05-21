@@ -6,6 +6,70 @@
 
 ---
 
+## 🚀 Cài Đặt (3 phút)
+
+### Local Editable Install (Khuyến nghị cho dev)
+
+Dùng khi bạn đang phát triển cả ryuu + app trên cùng máy. Sửa code framework → app thấy ngay (no reinstall).
+
+```bash
+# 1. Tạo venv cho app
+cd /path/to/your_app
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install ryuu + 13 sub-packages editable (1 lần)
+bash /path/to/uaaf-framework/scripts/install-dev.sh
+
+# 3. App giờ dùng được
+python -c "from ryuu import Agent; print('OK')"
+```
+
+**App's `pyproject.toml`** chỉ cần `dependencies = ["ryuu"]` — KHÔNG cần absolute path. Di chuyển uaaf-framework folder sau này → uninstall + reinstall, không sửa app code.
+
+### Wheel Install (Stable / Deploy)
+
+Sau khi framework stable, build wheel:
+
+```bash
+# Trong uaaf-framework
+python -m build
+
+# Trong app's venv
+pip install /path/to/uaaf-framework/dist/ryuu-0.3.0a11-py3-none-any.whl
+```
+
+### PyPI Install (Future, khi published)
+
+```bash
+pip install ryuu
+# Hoặc cherry-pick:
+pip install ryuu-core ryuu-providers ryuu-execution
+```
+
+---
+
+## ⚡ Quickstart in 3 Minutes
+
+```python
+import anyio
+from ryuu import Agent
+
+async def main():
+    agent = Agent(
+        model="gpt-4o-mini",
+        instructions="You are a Python tutor. Keep answers under 80 words.",
+    )
+    result = await agent.run("What is the difference between list and tuple?")
+    print(result.output)
+
+anyio.run(main)
+```
+
+Bạn cần `OPENAI_API_KEY` env var. Hết. Đó là 5-line agent với cost tracking + ReAct loop sẵn (NullObject defaults — tự bật qua kwarg khi cần).
+
+---
+
 ## Status Legend
 
 ✅ shipped — gọi được ngay từ `from ryuu import ...`
@@ -128,6 +192,47 @@ reviewers = FanOut(
 )
 results = await reviewers.run(code_snippet)
 # → 3 perspectives on same input, run in parallel
+```
+
+### Refactor existing app: class-based → Factory
+
+So sánh `examples/todo_app/main.py` (class-based, ~1650 lines tổng) vs
+`examples/todo_app/factory_demo.py` (Factory + facades, ~170 lines) — cùng
+4 use cases (Priority Breakdown / Per-Goal Effort / Full Analysis / Next Sprint):
+
+```python
+# OLD (class-based): 4 custom strategies + IntentAnalyzer + StrategySelector + ToolRegistry wiring
+# → ~370 lines strategies.py + 179 lines intent.py + 149 lines agent.py
+
+# NEW (Factory + facades): single file
+from ryuu import Agent, Evaluator, FanOut, Router
+
+# Tool Mode C — pre-built registry, DI for goals/tasks
+tool_registry = build_todo_registry(goals, tasks)
+
+# 4 agents, 1 system prompt each
+report_agent = Agent(model="gpt-4o-mini", instructions="Return ONLY JSON",
+                     tool_registry=tool_registry)
+
+# Use case 1: JSON report → Evaluator (auto-refine)
+evaluator = Evaluator(generator=report_agent, verifier=_json_check, max_refines=2)
+result = await evaluator.run("Priority breakdown as JSON")
+
+# Use case 2: Per-goal fan-out → FanOut
+fanout = FanOut(agent=per_goal_agent, items=["g1","g2","g3"],
+                template="Analyze {item}")
+results = await fanout.run()
+
+# Use case 3+4: Routed by keyword → Router
+router = Router(routes={"analyze": analyze_agent, "next_sprint": sprint_agent},
+                analyzer=lambda q: "next_sprint" if "sprint" in q else "analyze")
+result = await router.run(query)
+```
+
+Run cả 2:
+```bash
+python -m examples.todo_app.main           # original class-based
+python -m examples.todo_app.factory_demo   # new Factory + facades
 ```
 
 ### Bulk processing với 50% discount

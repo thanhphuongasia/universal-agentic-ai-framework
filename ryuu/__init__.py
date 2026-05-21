@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-__version__ = "0.3.0a11"
+__version__ = "0.3.0a12"
 
 # Factory facade (Phase 10 MVP) — lean single-agent + tool-calling
 from ryuu.factory import Agent, StreamEvent
 
-# Multi-agent facades (Phase 10.5)
-from ryuu.facades import Chain, Evaluator, FanOut, Orchestrator, Router
+# Multi-agent facades (Phase 10.5 + 14.4)
+from ryuu.facades import (
+    Chain,
+    Evaluator,
+    FanOut,
+    HierarchicalRouter,
+    Orchestrator,
+    Router,
+)
 
 # Batch processing (Phase 12 + 12.1)
 from ryuu.batch import BatchAPIClient, BatchItem, BatchRunner, OpenAIBatchClient
@@ -32,10 +39,11 @@ __all__ = [
     # Factory (Phase 10)
     "Agent",
     "StreamEvent",
-    # Multi-agent facades (Phase 10.5)
+    # Multi-agent facades (Phase 10.5 + 14.4)
     "Chain",
     "Evaluator",
     "FanOut",
+    "HierarchicalRouter",
     "Orchestrator",
     "Router",
     # Batch (Phase 12 + 12.1)

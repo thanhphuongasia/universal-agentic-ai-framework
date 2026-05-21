@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, Union, runtime_checkable
 
 
 @runtime_checkable
@@ -15,7 +16,7 @@ class ITool(Protocol):
     async def execute(self, args: dict[str, Any]) -> Any: ...
 
 
-_CallableHandler = Callable[..., Awaitable[Any]]
+_CallableHandler = Callable[..., Union[Awaitable[Any], Any]]
 
 
 class _CallableWrapper:
@@ -27,7 +28,13 @@ class _CallableWrapper:
         self._fn = fn
 
     async def execute(self, args: dict[str, Any]) -> Any:
-        return await self._fn(**args)
+        # Accept both sync and async tool callables. Sync result is returned
+        # as-is; async result is awaited. This matches what the Factory docs
+        # advertise (`tools=[plain_sync_fn]`).
+        result = self._fn(**args)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
 
 
 class ToolRegistry:

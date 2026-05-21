@@ -50,6 +50,9 @@ class AgentResult:
     cost: Cost
     success: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Phase 14.1 — populated by ThinkingStrategy (Factory thinking_mode=True).
+    # Empty string when thinking_mode not active. Backward-compat default.
+    thinking: str = ""
 
 
 # ---------------------------------------------------------------------------

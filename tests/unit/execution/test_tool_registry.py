@@ -75,6 +75,24 @@ async def test_registry_run_callable_handler() -> None:
 
 
 @pytest.mark.anyio
+async def test_registry_run_sync_callable_handler() -> None:
+    """Sync callables work too — _CallableWrapper awaits only if awaitable.
+
+    Regression guard: before the fix, _CallableWrapper.execute did
+    `await self._fn(**args)` unconditionally, which crashed on sync tools
+    with `"object str can't be used in 'await' expression"`.
+    """
+    reg = ToolRegistry()
+
+    def multiply(a: int, b: int) -> int:
+        return a * b
+
+    reg.register("multiply", multiply)
+    result = await reg.run(make_tool_call("multiply", {"a": 4, "b": 5}))
+    assert json.loads(result) == 20
+
+
+@pytest.mark.anyio
 async def test_registry_unknown_tool_returns_error_json() -> None:
     reg = ToolRegistry()
     result = await reg.run(make_tool_call("nonexistent", {}))

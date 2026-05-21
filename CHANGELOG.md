@@ -5,6 +5,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a12] - 2026-05-21
+
+### Added — Phase 14.1-14.4: Claude-like Thinking Patterns (2-layer architecture)
+
+**Layer A (mechanism)** — 3 cognitive strategies trong `ryuu-cognitive/strategies/`:
+
+```python
+from ryuu_cognitive.strategies import (
+    ThinkingStrategy,    # <thinking>/<answer> wrap (Phase 14.1)
+    BestOfNStrategy,     # sample N + vote (Phase 14.2)
+    AdaptiveStrategy,    # difficulty → tier dispatch (Phase 14.3)
+)
+```
+
+Each `ICognitiveStrategy` impl usable directly với class-based BaseAgent.
+
+**Layer B (ergonomic)** — Factory kwargs convenience + `strategy=` explicit:
+
+```python
+# Kwargs (90% use case)
+Agent(model="gpt-4o", thinking_mode=True)                         # → ThinkingStrategy
+Agent(model="gpt-4o", n_samples=3, vote="majority")                # → BestOfNStrategy
+Agent(model="gpt-4o", adaptive_compute=True, tier_models={...})    # → AdaptiveStrategy
+
+# Explicit (advanced, mutually exclusive với kwargs)
+Agent(model="gpt-4o", strategy=BestOfNStrategy(n=5, vote="llm_judge"))
+```
+
+**Phase 14.4 — `HierarchicalRouter` facade** (routing, không phải cognitive):
+
+```python
+from ryuu import HierarchicalRouter
+
+router = HierarchicalRouter(
+    category_classifier=Agent(model="gpt-4o-mini", instructions="..."),
+    routes_by_category={"data": {"crud_matrix": agent_a}, "structure": {...}},
+    fallback_route=default_agent,
+    specific_analyzer=lambda q, opts: opts[0],   # optional custom Stage 2
+)
+result = await router.run(query)
+```
+
+**New API surface:**
+- `Agent` kwargs: `thinking_mode`, `n_samples`, `vote`, `confidence_threshold`,
+  `score_fn`, `adaptive_compute`, `tier_models`, `tier_max_iterations`,
+  `tier_max_tokens`, `strategy`
+- `AgentResult.thinking: str = ""` (Phase 14.1 parsed reasoning, backward-compat default)
+- `ryuu_cognitive.strategies.ThinkingStrategy` / `BestOfNStrategy` / `AdaptiveStrategy`
+- `ryuu.HierarchicalRouter` facade (re-exported from top-level)
+- `ryuu._thinking_parser` / `ryuu._difficulty_classifier` helpers
+
+**Validation:** kwargs (`thinking_mode` / `n_samples > 1` / `adaptive_compute`) mutually
+exclusive với `strategy=` explicit → ValueError.
+
+**Tests:** +34 (10 thinking + 10 best_of_n + 9 adaptive + 5 hierarchical_router).
+
+### Changed — Modular refactor: factory.py + facades.py → packages
+
+`ryuu/factory.py` (1005 lines) → `ryuu/factory/` package (6 files, all < 500 lines):
+- `__init__.py` (28) — re-export Agent + StreamEvent
+- `stream_event.py` (34) — StreamEvent + RESERVED_SCOPE_KEYS
+- `_internal_agent.py` (242) — `_FactoryLLMAgent` (LLMAgent subclass)
+- `_resolvers.py` (148) — `validate`, `resolve_file_paths`, `resolve_yaml_prompt`
+- `_builders.py` (192) — `build_tool_registry`, `build_hook_registry`, `build_cross_cutting`, `apply_yaml_tool_schemas`, `wrap_tool_registry_with_hooks`
+- `agent.py` (481) — Agent class + `__post_init__` + `run` + `stream` + `_run_*`
+
+`ryuu/facades.py` (348 lines) → `ryuu/facades/` package (8 files):
+- `__init__.py` — re-exports
+- `_helpers.py` — shared `run_step`
+- One file per facade class (chain / fanout / router / orchestrator / evaluator / hierarchical_router)
+
+Public API unchanged. `from ryuu import Agent, Chain, ...` continues working.
+
+### Docs
+
+- `tasks/plan-phase14-thinking-patterns.md` — detailed 2-layer plan
+- `tasks/roadmap-phase8.8-to-14.md` — Phase 14.1-14.6 sub-phases + Phase 14.7 reasoning
+- `docs/architecture/uaaf-v2-architecture.md` — §7 Cognitive Tier updated với 3 new strategies
+- `examples/code_analysis/docs/2026-05-21_migration-to-ryuu.md` — §16 Thinking Patterns
+- `examples/code_analysis/intent_patterns_demo.py` — side-by-side self-impl vs built-in
+- `examples/todo_app/factory_demo.py` — Factory + facade demo
+
+### Tests
+
+965 unit + 7 perf + 3 integration (no regression from 0.3.0a11 → +34 new tests).
+
 ## [0.3.0a11] - 2026-05-21
 
 ### Added — Phase 12.1: Real OpenAI Batch API implementation
