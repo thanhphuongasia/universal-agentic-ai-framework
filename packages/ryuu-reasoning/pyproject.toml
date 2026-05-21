@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ryuu-reasoning"
+version = "0.2.0a1"
+description = "Formal verifiers for RYUU: rule-based, Z3 SMT, future Prolog/Soufflé"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "ryuu-core>=0.2.0a1",
+    "ryuu-cognitive>=0.2.0a1",
+]
+
+[project.optional-dependencies]
+z3 = ["z3-solver>=4.12"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

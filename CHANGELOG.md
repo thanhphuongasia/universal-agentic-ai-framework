@@ -5,6 +5,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a16] - 2026-05-22
+
+### Added — Phase 14.7: `ryuu-reasoning` MVP — formal verifiers
+
+New standalone package providing formal verifiers for the cognitive verifier
+pipeline. Pure Python `RuleVerifier` (no deps) + optional `Z3Verifier` (SMT).
+
+**Public API:**
+
+```python
+from ryuu_reasoning import Rule, RuleVerifier, Z3Verifier
+
+# Rule-based (no deps)
+verifier = RuleVerifier(rules=[
+    Rule(name="positive", expression="amount > 0", severity="critical"),
+    Rule(name="ratio", expression="amount <= 0.3 * income", severity="critical"),
+    Rule(name="prefer", expression="amount <= 50000", severity="warning"),
+])
+
+# Z3 SMT (optional: pip install "ryuu-reasoning[z3]")
+def loan(data, z3):
+    return z3.And(data["amount"] <= 0.3 * data["income"], data["amount"] <= 100000)
+
+verifier = Z3Verifier(constraint_builder=loan)
+```
+
+**Components:**
+- `Rule` — predicate (Callable) OR expression (string eval'd safely with no
+  builtins). Severity `critical` fails verification; `warning` informs only.
+- `RuleVerifier` — IVerifier impl. Parses LLM output as JSON, evaluates rules
+  against dict, returns `VerificationResult(passed, confidence, feedback)`.
+- `Z3Verifier` — IVerifier impl wrapping z3-solver. `constraint_builder(data, z3)`
+  returns z3 BoolRef; verifier checks satisfiability. Raises ImportError if
+  z3-solver not installed.
+
+**Use case matrix:**
+
+| Need | Use |
+|---|---|
+| Predicate rules (field comparisons) | `RuleVerifier` |
+| Arithmetic constraints (LP, ILP) | `Z3Verifier` |
+| Logical chains, knowledge base | PrologVerifier (future Phase 14.7.x) |
+| Pattern queries over large facts | SouffleVerifier (future) |
+
+**Integration:** plug as `IVerifier` in `VerifierPipeline`:
+```
+SchemaVerifier → LLMJudgeVerifier → GroundTruthVerifier →
+  RuleVerifier (compliance) → Z3Verifier (constraints)
+```
+
+**Tests:** +9 RuleVerifier + 4 Z3Verifier (skipped if z3-solver not installed).
+Total: 1003 passed, 7 skipped (+4 new Z3 + 3 existing). 0 regression.
+
+**Example:** `examples/reasoning_demo.py` — 3 loan compliance scenarios with
+RuleVerifier + Z3 SMT-backed validation.
+
+**Installer:** `scripts/install-dev.sh` adds `ryuu-reasoning` in Tier 4.
+
 ## [0.3.0a15] - 2026-05-22
 
 ### Added — Phase 11.y: Factory `output_schema=` + OpenAI strict JSON Schema mode

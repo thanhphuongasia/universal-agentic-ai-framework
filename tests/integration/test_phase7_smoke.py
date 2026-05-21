@@ -167,4 +167,4 @@ class TestPublicAPIImports:
 
     def test_version_bumped(self):
         import ryuu
-        assert ryuu.__version__ == "0.3.0a15"  # Phase 11.y output_schema= + strict mode
+        assert ryuu.__version__ == "0.3.0a16"  # Phase 14.7 ryuu-reasoning

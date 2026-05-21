@@ -40,9 +40,15 @@ ORDER=(
     # Tier 4 — depend on tier 3
     "ryuu-knowledge"
     "ryuu-knowledge-rag"   # Phase 11 — RAG pipeline (chunker + vector store + retriever)
+    "ryuu-reasoning"       # Phase 14.7 — formal verifiers (RuleVerifier + optional Z3Verifier)
 
     # Tier 5 — runtime facade
     "ryuu-runtime"
+
+    # Tier 6 — messaging layer (Phase 8.8 — channel-agnostic chat primitives)
+    "messaging/ryuu-messaging-core"
+    "messaging/ryuu-messaging-cli"
+    "messaging/ryuu-messaging-telegram"
 )
 
 for pkg in "${ORDER[@]}"; do

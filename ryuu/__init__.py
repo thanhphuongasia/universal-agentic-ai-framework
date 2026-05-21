@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.3.0a15"
+__version__ = "0.3.0a16"
 
 # Factory facade (Phase 10 MVP) — lean single-agent + tool-calling
 from ryuu.factory import Agent, StreamEvent
