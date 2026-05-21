@@ -625,3 +625,159 @@ agent = Agent(
 
 ---
 
+### 1.16 RAG Knowledge — `Agent(knowledge=...)` ✅ (Phase 11.x)
+
+Tự động retrieve context từ RAG backbone + inject vào user query mỗi `.run()`. Consumer chỉ thêm 1 kwarg, không sửa logic.
+
+```python
+from ryuu import Agent
+from ryuu_knowledge_rag import RAGBackbone, RAGPipeline, InMemoryVectorStore
+from ryuu_providers.adapters.openai import OpenAIProvider
+
+# 1. Build RAG backbone (1× setup, hoặc per project_id)
+backbone = RAGBackbone(pipeline=RAGPipeline(
+    embedder=OpenAIProvider(api_key=cfg.openai_api_key),
+    vector_store=InMemoryVectorStore(),   # production: Chroma/Qdrant/Pinecone
+))
+await backbone.write("Company uses Python 3.11", scope_key="engineering")
+await backbone.write("Deploy via Docker + K8s on AWS", scope_key="engineering")
+
+# 2. Agent với knowledge=
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Answer based on retrieved context. Say 'I don't know' if no context.",
+    knowledge=backbone,                          # ← Phase 11.x
+    knowledge_budget_tokens=2000,                # max context per call
+    knowledge_scope_field="domain",              # scope_key = ContextScope.domain
+)
+
+# 3. Use — Factory auto-injects relevant chunks
+result = await agent.run("What deploys our app?", domain="engineering")
+# LLM thấy: "Context (retrieved knowledge):\nDeploy via Docker + K8s...\n---\nQuery:\nWhat deploys our app?"
+# result.output = "Docker + Kubernetes on AWS"
+```
+
+**Scope isolation:** Different `domain=` per `.run()` → different scope_key → multi-tenant safe.
+
+**Internal flow:**
+1. `Agent.run(query, domain=X)` → scope_key = `X`
+2. `assembled = await backbone.assemble_context(query, scope_key, budget)`
+3. user_content = `"Context: {assembled.text}\n---\nQuery: {original}"`
+4. Normal LLM dispatch — LLM thấy augmented prompt và generate grounded answer
+
+**Composable** với mọi kwarg khác (thinking_mode, output_schema, adaptive_compute, audit). Tham khảo `examples/rag_agent_demo.py`.
+
+### 1.17 Structured Output — `Agent(output_schema=...)` ✅ (Phase 11.y)
+
+Strict JSON Schema enforcement. OpenAI gpt-4o+ dùng `json_schema` strict mode (refuses invalid output). Anthropic dùng tool-use trick. Auto-parses → `result.parsed` dict.
+
+```python
+PERSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "integer"},
+        "occupation": {"type": "string"},
+    },
+    "required": ["name"],
+    "additionalProperties": False,
+}
+
+agent = Agent(
+    model="gpt-4o-mini",                   # strict mode auto-detected
+    instructions="Extract person info from text",
+    output_schema=PERSON_SCHEMA,            # ← Phase 11.y
+)
+result = await agent.run("John is a 30-year-old engineer")
+print(result.output)   # Raw JSON: '{"name":"John","age":30,"occupation":"engineer"}'
+print(result.parsed)   # ✅ Auto-parsed dict: {"name": "John", "age": 30, ...}
+```
+
+**Provider behavior:**
+| Model | Mode | Schema Enforcement |
+|---|---|---|
+| OpenAI `gpt-4o`, `gpt-4o-mini`, `o1`, `o3`, `o4`, `gpt-5` | `json_schema` strict | ✅ Refuses invalid |
+| OpenAI `gpt-3.5`, `gpt-4` base | `json_object` basic | ⚠️ JSON only, không schema |
+| Anthropic `claude-*` | Tool-use trick | ✅ Strict |
+
+**Fallback:** Parse fail (e.g. invalid JSON từ basic mode) → `result.parsed = None`, raw text vẫn ở `result.output`.
+
+**Strip markdown fences:** Output wrapped trong ` ```json ... ``` ` → tự strip trước khi parse.
+
+### 1.18 Formal Verifier — `RuleVerifier` + `Z3Verifier` ✅ (Phase 14.7)
+
+Validate LLM output bằng declarative rules thay vì if-chain. Plug vào `Evaluator` cho self-correcting refine loop.
+
+```python
+from ryuu import Agent, Evaluator
+from ryuu_reasoning import Rule, RuleVerifier
+
+# Declarative rules
+COMPLIANCE_RULES = [
+    Rule(
+        name="positive_amount",
+        expression="amount > 0",
+        severity="critical",
+        message="Loan amount must be positive",
+    ),
+    Rule(
+        name="ratio_to_income",
+        expression="amount <= 0.3 * income",
+        severity="critical",
+        message="Loan exceeds 30% of income",
+    ),
+    Rule(
+        name="prefer_small",
+        expression="amount <= 50000",
+        severity="warning",       # warnings don't fail
+        message="Prefer loans under $50k",
+    ),
+]
+
+verifier = RuleVerifier(rules=COMPLIANCE_RULES)
+
+# Combine với Evaluator for self-correcting LLM
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Recommend loan amount as JSON {amount, income}",
+    output_schema={"type": "object", "properties": {
+        "amount": {"type": "number"},
+        "income": {"type": "number"},
+    }},
+)
+
+async def rule_check(output: str) -> tuple[bool, str]:
+    result = await verifier.verify(output, ctx)
+    return result.passed, result.feedback
+
+evaluator = Evaluator(
+    generator=agent,
+    verifier=rule_check,
+    max_refines=2,
+)
+result = await evaluator.run("Loan for $100k income borrower")
+# LLM generates → rules check → if violation, append feedback + retry up to 2×
+```
+
+**Z3 SMT-backed** (optional, install `pip install "ryuu-reasoning[z3]"`):
+```python
+from ryuu_reasoning import Z3Verifier
+
+def loan_constraint(data, z3):
+    return z3.And(data["amount"] <= 0.3 * data["income"], data["amount"] <= 100000)
+
+verifier = Z3Verifier(constraint_builder=loan_constraint)
+```
+
+**Use case matrix:**
+| Need | Verifier |
+|---|---|
+| Field comparison rules | `RuleVerifier` (no deps) |
+| Arithmetic constraints (LP, ILP) | `Z3Verifier` (z3-solver) |
+| Logical chains, knowledge base | PrologVerifier (future) |
+| Pattern queries over facts | SouffleVerifier (future) |
+
+**Anti-pattern avoided:** Đừng inline 13 if-chains validation trong worker code. Khai báo `Rule` list, dùng `RuleVerifier` — testable, reusable, severity-aware.
+
+---
+

@@ -89,10 +89,12 @@ Bạn cần `OPENAI_API_KEY` env var. Hết. Đó là 5-line agent với cost tr
 | `Agent(thinking_mode=True)` — `<thinking>`/`<answer>` parsing | ✅ | 14.1 | [01-factory](01-factory.md) |
 | `Agent(n_samples=N, vote=...)` — Best-of-N consensus | ✅ | 14.2 | [01-factory](01-factory.md) |
 | `Agent(adaptive_compute=True)` — difficulty → tier dispatch | ✅ | 14.3 | [01-factory](01-factory.md) |
+| `Agent(knowledge=RAGBackbone, ...)` — auto RAG context injection | ✅ | 11.x | [01-factory](01-factory.md) |
+| `Agent(output_schema=...)` — strict JSON Schema (OpenAI gpt-4o+ / Anthropic) | ✅ | 11.y | [01-factory](01-factory.md) |
 | `BatchRunner` — concurrent + OpenAI Batch API | ✅ | 12 + 12.1 | [06-batch](06-batch.md) |
 | `PromptOptimizer` — auto-tune via eval | ✅ | 13 | [07-prompt-optimizer](07-prompt-optimizer.md) |
-| `ryuu-knowledge-rag` | 🔲 | 11 | (planned) |
-| `ryuu-reasoning` (Z3/Prolog) | 🔲 | 14.7 | (planned) |
+| `ryuu-knowledge-rag` (chunker + vector store + RAGBackbone) | ✅ | 11 | [01-factory](01-factory.md) |
+| `ryuu-reasoning` (`RuleVerifier` + optional `Z3Verifier`) | ✅ | 14.7 | [01-factory](01-factory.md) |
 
 ---
 
@@ -320,6 +322,15 @@ from ryuu_cognitive.strategies import (
     ThinkingStrategy, BestOfNStrategy, AdaptiveStrategy,
     # plus DirectStrategy, ReActStrategy, EvaluatorOptimizerStrategy, ParallelFanoutStrategy
 )
+
+# Phase 11 — RAG pipeline (chunker + vector store + IKnowledgeBackbone impl)
+from ryuu_knowledge_rag import (
+    RecursiveChunker, InMemoryVectorStore, DenseRetriever,
+    RAGPipeline, RAGBackbone,
+)
+
+# Phase 14.7 — formal verifiers (rule-based + optional Z3 SMT)
+from ryuu_reasoning import Rule, RuleVerifier, Z3Verifier   # Z3 optional dep
 ```
 
 ---
