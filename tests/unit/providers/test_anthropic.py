@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from uaaf.observability.cost import Cost
-from uaaf.providers.adapters.anthropic import AnthropicProvider
-from uaaf.providers.llm import CompletionRequest, Message
+from ryuu.observability.cost import Cost
+from ryuu.providers.adapters.anthropic import AnthropicProvider
+from ryuu.providers.llm import CompletionRequest, Message
 
 
 def _make_request(content: str = "test") -> CompletionRequest:
@@ -26,7 +26,7 @@ def _make_request(content: str = "test") -> CompletionRequest:
 
 @pytest.mark.anyio
 async def test_complete_returns_response() -> None:
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_block = MagicMock()
         mock_block.type = "text"
@@ -51,14 +51,14 @@ async def test_complete_returns_response() -> None:
 
 @pytest.mark.anyio
 async def test_complete_maps_rate_limit_to_retryable() -> None:
-    from uaaf_workflow.errors import RetryableError
+    from ryuu_workflow.errors import RetryableError
 
     class FakeOverloadedError(Exception):
         __module__ = "anthropic"
 
     FakeOverloadedError.__name__ = "OverloadedError"
 
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.messages.create = AsyncMock(side_effect=FakeOverloadedError("overloaded"))
 
@@ -69,14 +69,14 @@ async def test_complete_maps_rate_limit_to_retryable() -> None:
 
 @pytest.mark.anyio
 async def test_complete_maps_auth_error_to_fatal() -> None:
-    from uaaf_workflow.errors import FatalError
+    from ryuu_workflow.errors import FatalError
 
     class FakeAuthError(Exception):
         __module__ = "anthropic"
 
     FakeAuthError.__name__ = "AuthenticationError"
 
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.messages.create = AsyncMock(side_effect=FakeAuthError("bad key"))
 
@@ -92,7 +92,7 @@ async def test_complete_maps_auth_error_to_fatal() -> None:
 
 @pytest.mark.anyio
 async def test_embed_raises_not_implemented() -> None:
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic"):
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic"):
         provider = AnthropicProvider(api_key="ak-test")
 
     with pytest.raises(NotImplementedError):
@@ -105,7 +105,7 @@ async def test_embed_raises_not_implemented() -> None:
 
 
 def test_estimate_cost_returns_cost_object() -> None:
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic"):
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic"):
         provider = AnthropicProvider(api_key="ak-test")
 
     cost = provider.estimate_cost(_make_request())
@@ -121,7 +121,7 @@ def test_estimate_cost_returns_cost_object() -> None:
 
 @pytest.mark.anyio
 async def test_complete_with_schema_uses_tool_result() -> None:
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_block = MagicMock()
         mock_block.type = "tool_use"

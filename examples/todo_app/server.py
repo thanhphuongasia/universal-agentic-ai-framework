@@ -1,7 +1,7 @@
 """
 FastAPI SSE server for the todo_app example.
 Exposes:
-  POST /chat       — streams UAAFEvents via SSE
+  POST /chat       — streams RYUUEvents via SSE
   GET  /portfolio  — returns mock goals + tasks as JSON
 
 Run:
@@ -32,16 +32,16 @@ from examples.todo_app.strategies import (
     TodoReActStrategy,
 )
 from examples.todo_app.tools import build_todo_registry
-from uaaf._testing.fakes import FakeVerifier
-from uaaf.execution.pool import AgentPool
-from uaaf.intent.selector import StrategySelector
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf.runtime.request_handler import RequestHandler
+from ryuu._testing.fakes import FakeVerifier
+from ryuu_execution.pool import AgentPool
+from ryuu.intent.selector import StrategySelector
+from ryuu_observability.audit import AuditLogger
+from ryuu_observability.cost import CostPolicy, CostTracker
+from ryuu_observability.rate_limit import RateLimiter, RatePolicy
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_runtime.request_handler import RequestHandler
 
-app = FastAPI(title="UAAF Todo App — SSE Chat")
+app = FastAPI(title="RYUU Todo App — SSE Chat")
 
 app.add_middleware(
     CORSMiddleware,

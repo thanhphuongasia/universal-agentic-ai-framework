@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.execution.llm_agent import BudgetSummary, LLMAgent
-from uaaf.observability._pricing import CONTEXT_WINDOW
-from uaaf.providers.llm import TokenUsage
+from ryuu.execution.llm_agent import BudgetSummary, LLMAgent
+from ryuu.observability._pricing import CONTEXT_WINDOW
+from ryuu.providers.llm import TokenUsage
 
 # ---------------------------------------------------------------------------
 # CONTEXT_WINDOW map in _pricing.py
@@ -51,13 +51,13 @@ def _make_agent() -> LLMAgent:
 
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.execution.agent import AgentResult, Task
-    from uaaf.observability.audit import AuditConfig, AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
-    from uaaf_workflow.context import ExecutionContext
+    from ryuu._testing.fakes import FakeLLMProvider
+    from ryuu.execution.agent import AgentResult, Task
+    from ryuu.observability.audit import AuditConfig, AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
+    from ryuu_workflow.context import ExecutionContext
 
     @dataclass
     class StubAgent(LLMAgent):

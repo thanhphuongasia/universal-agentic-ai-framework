@@ -1,14 +1,14 @@
 # Implementation Plan: Phase 7 — Workflow Engine + State Machine + Checkpoint
 
-> **Spec**: `docs/uaaf-framework-spec.md` §4 (project structure), §7.4 (batch workflow sequence), §11 (failure modes).
+> **Spec**: `docs/ryuu-framework-spec.md` §4 (project structure), §7.4 (batch workflow sequence), §11 (failure modes).
 > **CI gate đầu vào (Phase 6)**: 487 pass + 1 skipped, ruff ✓, mypy ✓, coverage 87.77%.
-> **Pattern reference**: `uaaf/knowledge/` — Protocol-at-top-level + impl-in-subdir.
+> **Pattern reference**: `ryuu/knowledge/` — Protocol-at-top-level + impl-in-subdir.
 
 ---
 
 ## Overview
 
-`uaaf/workflow/` đang trống. Spec §7.4 yêu cầu **batch mode** — 1 workflow = chuỗi states, mỗi state dispatch agent qua `AgentPool`, kết quả lưu checkpoint, **SIGKILL-safe resume** từ checkpoint mới nhất. 4/5 product cần feature này:
+`ryuu/workflow/` đang trống. Spec §7.4 yêu cầu **batch mode** — 1 workflow = chuỗi states, mỗi state dispatch agent qua `AgentPool`, kết quả lưu checkpoint, **SIGKILL-safe resume** từ checkpoint mới nhất. 4/5 product cần feature này:
 
 - **Code Analysis**: ingestion (PARSING → PHASE1_ENHANCEMENT → PHASE2_GOLD_DERIVATION).
 - **Flashcard**: scheduled batch cho spaced repetition.
@@ -18,7 +18,7 @@
 Phase 7 build **3 module + 2 store impl** theo pattern knowledge/:
 
 ```
-uaaf/workflow/
+ryuu/workflow/
 ├── __init__.py
 ├── engine.py            # IWorkflowEngine Protocol + WorkflowEngine + WorkflowResult + WorkflowStatus
 ├── state_machine.py     # IState Protocol + StateMachine + Workflow + StateTransition
@@ -64,7 +64,7 @@ class StateTransition:
 ```
 Lý do: state cần truyền output đến state kế (`PARSING.output → PHASE1.input`). Trả về tuple `(next, output)` qua dataclass có name rõ hơn.
 
-### AD-5. Retry logic dùng lại `uaaf.observability.errors.retry_policy()`
+### AD-5. Retry logic dùng lại `ryuu.observability.errors.retry_policy()`
 Spec §7.4 có `opt RetryableError → Engine→Engine: exponential backoff`. Không tự viết retry — gọi `retry_policy(exc, attempt)` đã có sẵn (exponential backoff + jitter). Mỗi state có `max_state_retries=3` (config-able trên Engine).
 
 ### AD-6. Tiered error handling
@@ -95,7 +95,7 @@ Product team dựng `Workflow` trực tiếp bằng dataclass + dict. Builder/DS
 
 **Gap hiện tại**: `ICognitiveStrategy`, `StrategySelector`, `AgentPool` đã tồn tại nhưng **không ai wire chúng lại**. Các example hiện tại (`todo_app`, `stock_advisory`) gọi `agent.execute(task, ctx)` trực tiếp → bỏ qua hoàn toàn `IntentAnalyzer`, `StrategySelector`, `ICognitiveStrategy`. `AgentPool` chỉ được dùng trong tests.
 
-**Decision**: Thêm `uaaf/runtime/request_handler.py` — `RequestHandler` dataclass là **single entry point** cho conversational mode. Product code gọi:
+**Decision**: Thêm `ryuu/runtime/request_handler.py` — `RequestHandler` dataclass là **single entry point** cho conversational mode. Product code gọi:
 ```python
 result = await handler.handle(message="...", context=ctx)  # → CognitiveResult
 ```
@@ -212,7 +212,7 @@ Build Phase A-D trước (T01→T08), sau đó Phase E (T09→T10). Phase E có 
 **Interface target:**
 
 ```python
-# uaaf/workflow/checkpoint.py
+# ryuu/workflow/checkpoint.py
 @dataclass(frozen=True)
 class Checkpoint:
     workflow_id: str
@@ -229,7 +229,7 @@ class ICheckpointStore(Protocol):
     async def load_history(self, workflow_id: str) -> list[Checkpoint]: ...
     async def delete(self, workflow_id: str) -> None: ...
 
-# uaaf/workflow/stores/in_memory.py
+# ryuu/workflow/stores/in_memory.py
 class InMemoryCheckpointStore:
     """Dict-backed checkpoint store — no persistence. Default cho test."""
 ```
@@ -245,15 +245,15 @@ class InMemoryCheckpointStore:
 
 **Verification:**
 - [ ] `pytest tests/unit/workflow/test_checkpoint.py` — 8+ tests pass
-- [ ] `mypy uaaf/workflow/checkpoint.py uaaf/workflow/stores/in_memory.py` — 0 errors
+- [ ] `mypy ryuu/workflow/checkpoint.py ryuu/workflow/stores/in_memory.py` — 0 errors
 
 **Dependencies:** None
 
 **Files:**
-- `uaaf/workflow/__init__.py` (new — empty, mirror `knowledge/__init__.py`)
-- `uaaf/workflow/checkpoint.py` (new — ~50 lines)
-- `uaaf/workflow/stores/__init__.py` (new — empty)
-- `uaaf/workflow/stores/in_memory.py` (new — ~50 lines)
+- `ryuu/workflow/__init__.py` (new — empty, mirror `knowledge/__init__.py`)
+- `ryuu/workflow/checkpoint.py` (new — ~50 lines)
+- `ryuu/workflow/stores/__init__.py` (new — empty)
+- `ryuu/workflow/stores/in_memory.py` (new — ~50 lines)
 - `tests/unit/workflow/__init__.py` (new — empty)
 - `tests/unit/workflow/test_checkpoint.py` (new — ~120 lines)
 
@@ -268,7 +268,7 @@ class InMemoryCheckpointStore:
 **Interface target:**
 
 ```python
-# uaaf/workflow/state_machine.py
+# ryuu/workflow/state_machine.py
 @dataclass
 class StateTransition:
     next_state: str | None    # None = terminal
@@ -306,12 +306,12 @@ class StateMachine:
 
 **Verification:**
 - [ ] `pytest tests/unit/workflow/test_state_machine.py` — 7+ tests pass
-- [ ] `mypy uaaf/workflow/state_machine.py` — 0 errors
+- [ ] `mypy ryuu/workflow/state_machine.py` — 0 errors
 
 **Dependencies:** None (`Workflow` đặt trong `state_machine.py` để tránh circular import; engine import từ state_machine.)
 
 **Files:**
-- `uaaf/workflow/state_machine.py` (new — ~100 lines)
+- `ryuu/workflow/state_machine.py` (new — ~100 lines)
 - `tests/unit/workflow/test_state_machine.py` (new — ~150 lines)
 
 **Estimated scope:** M (2 files)
@@ -322,8 +322,8 @@ class StateMachine:
 
 ```
 pytest tests/unit/workflow/                → all pass (15+ tests)
-mypy uaaf/workflow/                        → 0 errors
-ruff check uaaf/workflow/ tests/unit/workflow/  → 0 violations
+mypy ryuu/workflow/                        → 0 errors
+ruff check ryuu/workflow/ tests/unit/workflow/  → 0 violations
 ```
 
 Review: foundation Protocol + state machine usable trước khi engine.
@@ -341,7 +341,7 @@ Review: foundation Protocol + state machine usable trước khi engine.
 **Interface target:**
 
 ```python
-# uaaf/workflow/engine.py
+# ryuu/workflow/engine.py
 class WorkflowStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -406,12 +406,12 @@ class WorkflowEngine:
 **Verification:**
 - [ ] `pytest tests/unit/workflow/test_engine_run.py` — 12+ tests pass
 - [ ] Cover: happy path, RetryableError → retry → success, RetryableError exhausted → FAILED, FatalError → FAILED, DegradedError → continue, max_transitions cap, terminal-as-initial-state
-- [ ] `mypy uaaf/workflow/engine.py` — 0 errors
+- [ ] `mypy ryuu/workflow/engine.py` — 0 errors
 
 **Dependencies:** T01 (ICheckpointStore), T02 (StateMachine + IState + Workflow)
 
 **Files:**
-- `uaaf/workflow/engine.py` (new — ~200 lines, gồm `WorkflowStatus`, `WorkflowResult`, `IWorkflowEngine`, `WorkflowEngine`)
+- `ryuu/workflow/engine.py` (new — ~200 lines, gồm `WorkflowStatus`, `WorkflowResult`, `IWorkflowEngine`, `WorkflowEngine`)
 - `tests/unit/workflow/test_engine_run.py` (new — ~250 lines)
 
 **Estimated scope:** M (2 files)
@@ -454,12 +454,12 @@ async def resume(
 **Verification:**
 - [ ] `pytest tests/unit/workflow/test_engine_resume.py` — 8+ tests pass
 - [ ] Cover: resume from each state, resume on no-checkpoint, resume after terminal, resume on broken next_state, sequence continuity
-- [ ] `mypy uaaf/workflow/engine.py` — 0 errors
+- [ ] `mypy ryuu/workflow/engine.py` — 0 errors
 
 **Dependencies:** T03
 
 **Files:**
-- `uaaf/workflow/engine.py` (extend với resume + refactor run() để share inner loop)
+- `ryuu/workflow/engine.py` (extend với resume + refactor run() để share inner loop)
 - `tests/unit/workflow/test_engine_resume.py` (new — ~180 lines)
 
 **Estimated scope:** M (2 files; engine.py extend ~50 lines)
@@ -470,10 +470,10 @@ async def resume(
 
 ```
 pytest tests/unit/workflow/                → all pass (35+ tests)
-mypy uaaf/                                  → 0 errors
-ruff check uaaf/ tests/                    → 0 violations
-coverage uaaf/workflow/engine.py           → ≥ 90%
-coverage uaaf/workflow/state_machine.py    → ≥ 90%
+mypy ryuu/                                  → 0 errors
+ruff check ryuu/ tests/                    → 0 violations
+coverage ryuu/workflow/engine.py           → ≥ 90%
+coverage ryuu/workflow/state_machine.py    → ≥ 90%
 ```
 
 **Human review required**: API surface (`IWorkflowEngine`, `Workflow`, `IState`, `ICheckpointStore`) lock trước khi proceed Phase C — đây là stable contract product team sẽ depend.
@@ -491,7 +491,7 @@ coverage uaaf/workflow/state_machine.py    → ≥ 90%
 **Interface target:**
 
 ```python
-# uaaf/workflow/stores/file.py
+# ryuu/workflow/stores/file.py
 class FileCheckpointStore:
     """JSON-file-backed checkpoint store. Output must be JSON-serializable.
 
@@ -524,12 +524,12 @@ class FileCheckpointStore:
 
 **Verification:**
 - [ ] `pytest tests/unit/workflow/stores/test_file.py` — 10+ tests pass
-- [ ] `mypy uaaf/workflow/stores/file.py` — 0 errors
+- [ ] `mypy ryuu/workflow/stores/file.py` — 0 errors
 
 **Dependencies:** T01
 
 **Files:**
-- `uaaf/workflow/stores/file.py` (new — ~100 lines)
+- `ryuu/workflow/stores/file.py` (new — ~100 lines)
 - `tests/unit/workflow/stores/__init__.py` (new — empty)
 - `tests/unit/workflow/stores/test_file.py` (new — ~180 lines)
 
@@ -588,9 +588,9 @@ class TestWorkflowEngineContract:
 
 ```
 pytest tests/                              → all pass (525+ tests)
-mypy uaaf/ tests/                          → 0 errors
-ruff check uaaf/ tests/                    → 0 violations
-coverage uaaf/workflow/                    → ≥ 90%
+mypy ryuu/ tests/                          → 0 errors
+ruff check ryuu/ tests/                    → 0 violations
+coverage ryuu/workflow/                    → ≥ 90%
 ```
 
 ---
@@ -606,7 +606,7 @@ coverage uaaf/workflow/                    → ≥ 90%
 **Interface target:**
 
 ```python
-# uaaf/_testing/fakes.py (extend)
+# ryuu/_testing/fakes.py (extend)
 
 class FakeCheckpointStore:
     """Tracking wrapper around dict-backed store for tests."""
@@ -636,12 +636,12 @@ class FakeWorkflowEngine:
 
 **Verification:**
 - [ ] `pytest tests/unit/_testing/test_workflow_fakes.py` — 6+ tests pass
-- [ ] `mypy uaaf/_testing/fakes.py` — 0 errors
+- [ ] `mypy ryuu/_testing/fakes.py` — 0 errors
 
 **Dependencies:** T01, T03
 
 **Files:**
-- `uaaf/_testing/fakes.py` (extend ~60 lines)
+- `ryuu/_testing/fakes.py` (extend ~60 lines)
 - `tests/unit/_testing/test_workflow_fakes.py` (new — ~80 lines)
 
 **Estimated scope:** S (2 files)
@@ -650,31 +650,31 @@ class FakeWorkflowEngine:
 
 #### Task P7-T08: Integration smoke + public API exports + CHANGELOG + version bump
 
-**Description:** Integration test end-to-end (3-state workflow + FileCheckpointStore + simulate SIGKILL via fresh engine instance). Update `uaaf/__init__.py` re-exports. CHANGELOG entry + version bump 0.1.0b6 → 0.1.0b7. Project memory update.
+**Description:** Integration test end-to-end (3-state workflow + FileCheckpointStore + simulate SIGKILL via fresh engine instance). Update `ryuu/__init__.py` re-exports. CHANGELOG entry + version bump 0.1.0b6 → 0.1.0b7. Project memory update.
 
 **Acceptance criteria:**
 - [ ] `tests/integration/test_phase7_smoke.py`:
   - Workflow 3-state (PARSE → ENRICH → DERIVE), mỗi state là `IState` impl
   - Run full workflow → status=COMPLETED, 3 checkpoints saved
   - Simulate crash: tạo engine A, run đến state 2 (raise crash giả), tạo engine B fresh + same FileCheckpointStore, resume → completes
-- [ ] `uaaf/__init__.py` exports:
+- [ ] `ryuu/__init__.py` exports:
   - `Workflow`, `WorkflowEngine`, `IWorkflowEngine`, `WorkflowResult`, `WorkflowStatus`
   - `IState`, `StateMachine`, `StateTransition`
   - `Checkpoint`, `ICheckpointStore`, `InMemoryCheckpointStore`, `FileCheckpointStore`
-- [ ] Version bump `__version__` trong `uaaf/__init__.py`: `0.1.0b6` → `0.1.0b7` (pyproject hiện vẫn `0.1.0a1` — confirm path bump trong T08 thực tế)
+- [ ] Version bump `__version__` trong `ryuu/__init__.py`: `0.1.0b6` → `0.1.0b7` (pyproject hiện vẫn `0.1.0a1` — confirm path bump trong T08 thực tế)
 - [ ] CHANGELOG entry `[0.1.0b7] - 2026-05-08` mô tả Phase 7 changes
 - [ ] Update `memory/project_phase7_status.md` (mới)
-- [ ] `python -c "from uaaf import WorkflowEngine, Workflow, IState, ICheckpointStore"` — no ImportError
+- [ ] `python -c "from ryuu import WorkflowEngine, Workflow, IState, ICheckpointStore"` — no ImportError
 
 **Verification:**
 - [ ] `pytest tests/integration/test_phase7_smoke.py -v` — pass
-- [ ] `python -c "from uaaf import WorkflowEngine"` exits 0
+- [ ] `python -c "from ryuu import WorkflowEngine"` exits 0
 
 **Dependencies:** T01-T07 (all)
 
 **Files:**
 - `tests/integration/test_phase7_smoke.py` (new — ~150 lines)
-- `uaaf/__init__.py` (extend ~12 exports)
+- `ryuu/__init__.py` (extend ~12 exports)
 - `pyproject.toml` (confirm version)
 - `CHANGELOG.md` (extend)
 - `memory/project_phase7_status.md` (new — claude-mem)
@@ -698,7 +698,7 @@ class FakeWorkflowEngine:
 **Interface target:**
 
 ```python
-# uaaf/runtime/context.py — thay đổi
+# ryuu/runtime/context.py — thay đổi
 @dataclass(frozen=True)              # WAS: @dataclass (mutable)
 class ExecutionContext:
     scope: ContextScope
@@ -706,7 +706,7 @@ class ExecutionContext:
     budget_remaining_usd: float | None = None
     strategy_id: str | None = None   # NEW: populated by RequestHandler
 
-# uaaf/runtime/request_handler.py — mới
+# ryuu/runtime/request_handler.py — mới
 @dataclass
 class RequestHandler:
     """Single entry point for conversational mode.
@@ -749,14 +749,14 @@ class RequestHandler:
 **Verification:**
 - [ ] `pytest tests/unit/runtime/test_request_handler.py` — 8+ tests pass
 - [ ] `pytest tests/unit/runtime/test_context.py` — update + thêm frozen tests — all pass
-- [ ] `mypy uaaf/runtime/` — 0 errors
-- [ ] `grep -rn "ExecutionContext(" tests/ uaaf/ examples/` — audit không còn dùng mutate pattern
+- [ ] `mypy ryuu/runtime/` — 0 errors
+- [ ] `grep -rn "ExecutionContext(" tests/ ryuu/ examples/` — audit không còn dùng mutate pattern
 
 **Dependencies:** P1 (IIntentAnalyzer), P1 (StrategySelector), P6 (AgentPool), P2 (ICognitiveStrategy, IVerifier)
 
 **Files:**
-- `uaaf/runtime/context.py` (modify — frozen=True + strategy_id field, ~5 lines)
-- `uaaf/runtime/request_handler.py` (new — ~80 lines)
+- `ryuu/runtime/context.py` (modify — frozen=True + strategy_id field, ~5 lines)
+- `ryuu/runtime/request_handler.py` (new — ~80 lines)
 - `tests/unit/runtime/test_request_handler.py` (new — ~150 lines)
 - `tests/unit/runtime/test_context.py` (modify — add frozen assertions, ~+20 lines)
 - Scan + fix toàn bộ test files đang mutate `ExecutionContext`
@@ -775,7 +775,7 @@ class RequestHandler:
 **Interface target:**
 
 ```python
-# uaaf/execution/llm_agent.py
+# ryuu/execution/llm_agent.py
 class LLMAgent(BaseAgent):
     # ...
     async def _react_loop(          # WAS: react_loop (public)
@@ -786,7 +786,7 @@ class LLMAgent(BaseAgent):
         callbacks: ReActCallbacks | None = None,
     ) -> tuple[str, TokenUsage]: ...
 
-# uaaf/execution/agent.py
+# ryuu/execution/agent.py
 @dataclass
 class BaseAgent(ABC):
     # ...
@@ -836,15 +836,15 @@ result = await handler.handle(message=query, context=ctx)
 **Verification:**
 - [ ] `pytest tests/unit/execution/test_base_agent.py` — thêm 3+ test cho enforce flag — all pass
 - [ ] `pytest tests/` — toàn bộ existing tests pass sau `_react_loop` rename (không regression)
-- [ ] `grep -rn "\.react_loop(" uaaf/ examples/ tests/` → 0 kết quả (tất cả đã đổi sang `._react_loop(`)
-- [ ] `grep -rn "\._react_loop(" uaaf/execution/llm_agent.py` → có (đây là chỗ duy nhất được dùng)
-- [ ] `mypy uaaf/` — 0 errors
+- [ ] `grep -rn "\.react_loop(" ryuu/ examples/ tests/` → 0 kết quả (tất cả đã đổi sang `._react_loop(`)
+- [ ] `grep -rn "\._react_loop(" ryuu/execution/llm_agent.py` → có (đây là chỗ duy nhất được dùng)
+- [ ] `mypy ryuu/` — 0 errors
 
 **Dependencies:** T09 (ExecutionContext frozen + strategy_id)
 
 **Files:**
-- `uaaf/execution/llm_agent.py` (modify — rename react_loop → _react_loop, ~3 lines)
-- `uaaf/execution/agent.py` (modify — thêm enforce_cognitive_routing field + check, ~10 lines)
+- `ryuu/execution/llm_agent.py` (modify — rename react_loop → _react_loop, ~3 lines)
+- `ryuu/execution/agent.py` (modify — thêm enforce_cognitive_routing field + check, ~10 lines)
 - `examples/todo_app/agent.py` (modify — self.react_loop → self._react_loop)
 - `examples/stock_advisory/agent.py` (modify — self.react_loop → self._react_loop)
 - `examples/stock_advisory/main.py` (modify — thêm Path B demo dùng RequestHandler)
@@ -859,9 +859,9 @@ result = await handler.handle(message=query, context=ctx)
 
 ```
 pytest tests/                                      → all pass (550+ tests)
-mypy uaaf/                                         → 0 errors
-grep -rn "\.react_loop(" uaaf/ examples/ tests/   → 0 results (renamed)
-grep -rn "strategy_id" uaaf/runtime/              → có trong context.py + request_handler.py
+mypy ryuu/                                         → 0 errors
+grep -rn "\.react_loop(" ryuu/ examples/ tests/   → 0 results (renamed)
+grep -rn "strategy_id" ryuu/runtime/              → có trong context.py + request_handler.py
 python3 -m examples.stock_advisory.main --case 2  → chạy được (Path A direct + Path B routed)
 ```
 
@@ -870,14 +870,14 @@ python3 -m examples.stock_advisory.main --case 2  → chạy được (Path A di
 ### ✅ Final CI Gate — Phase 7 Complete
 
 ```bash
-ruff check uaaf/ tests/ examples/                              → 0 violations
-mypy uaaf/                                                     → 0 errors
-pytest tests/ --cov=uaaf --cov-fail-under=88                  → 550+ pass, ≥88% coverage ✅
-python -c "from uaaf import WorkflowEngine, Workflow, IState, ICheckpointStore, FileCheckpointStore, RequestHandler"   → no ImportError ✅
-grep -r "asyncio.gather" uaaf/                                 → no results ✅
-grep -r "import asyncio" uaaf/workflow/                        → no results ✅ (chỉ anyio)
-grep -rn "\.react_loop(" uaaf/ examples/ tests/               → 0 results ✅ (renamed to _react_loop)
-grep -rn "strategy_id" uaaf/runtime/context.py                → có ✅ (field tồn tại)
+ruff check ryuu/ tests/ examples/                              → 0 violations
+mypy ryuu/                                                     → 0 errors
+pytest tests/ --cov=ryuu --cov-fail-under=88                  → 550+ pass, ≥88% coverage ✅
+python -c "from ryuu import WorkflowEngine, Workflow, IState, ICheckpointStore, FileCheckpointStore, RequestHandler"   → no ImportError ✅
+grep -r "asyncio.gather" ryuu/                                 → no results ✅
+grep -r "import asyncio" ryuu/workflow/                        → no results ✅ (chỉ anyio)
+grep -rn "\.react_loop(" ryuu/ examples/ tests/               → 0 results ✅ (renamed to _react_loop)
+grep -rn "strategy_id" ryuu/runtime/context.py                → có ✅ (field tồn tại)
 ```
 
 ---
@@ -886,13 +886,13 @@ grep -rn "strategy_id" uaaf/runtime/context.py                → có ✅ (field
 
 | File | Type | Est. Lines |
 |------|------|-----------|
-| `uaaf/workflow/__init__.py` | new | 0 (empty) |
-| `uaaf/workflow/checkpoint.py` | new | ~50 |
-| `uaaf/workflow/state_machine.py` | new | ~100 |
-| `uaaf/workflow/engine.py` | new | ~200 |
-| `uaaf/workflow/stores/__init__.py` | new | 0 (empty) |
-| `uaaf/workflow/stores/in_memory.py` | new | ~50 |
-| `uaaf/workflow/stores/file.py` | new | ~100 |
+| `ryuu/workflow/__init__.py` | new | 0 (empty) |
+| `ryuu/workflow/checkpoint.py` | new | ~50 |
+| `ryuu/workflow/state_machine.py` | new | ~100 |
+| `ryuu/workflow/engine.py` | new | ~200 |
+| `ryuu/workflow/stores/__init__.py` | new | 0 (empty) |
+| `ryuu/workflow/stores/in_memory.py` | new | ~50 |
+| `ryuu/workflow/stores/file.py` | new | ~100 |
 | `tests/unit/workflow/__init__.py` | new | 0 |
 | `tests/unit/workflow/test_checkpoint.py` | new | ~120 |
 | `tests/unit/workflow/test_state_machine.py` | new | ~150 |
@@ -903,8 +903,8 @@ grep -rn "strategy_id" uaaf/runtime/context.py                → có ✅ (field
 | `tests/contract/test_workflow_contract.py` | new | ~200 |
 | `tests/unit/_testing/test_workflow_fakes.py` | new | ~80 |
 | `tests/integration/test_phase7_smoke.py` | new | ~150 |
-| `uaaf/_testing/fakes.py` | modify | +60 |
-| `uaaf/__init__.py` | modify | +12 exports |
+| `ryuu/_testing/fakes.py` | modify | +60 |
+| `ryuu/__init__.py` | modify | +12 exports |
 | `pyproject.toml` | modify | version bump |
 | `CHANGELOG.md` | modify | +1 entry |
 | `memory/project_phase7_status.md` | new (claude-mem) | small |
@@ -913,12 +913,12 @@ grep -rn "strategy_id" uaaf/runtime/context.py                → có ✅ (field
 
 | File | Type | Est. Lines |
 |------|------|-----------|
-| `uaaf/runtime/context.py` | modify | +5 (frozen + strategy_id) |
-| `uaaf/runtime/request_handler.py` | new | ~80 |
+| `ryuu/runtime/context.py` | modify | +5 (frozen + strategy_id) |
+| `ryuu/runtime/request_handler.py` | new | ~80 |
 | `tests/unit/runtime/test_request_handler.py` | new | ~150 |
 | `tests/unit/runtime/test_context.py` | modify | +20 (frozen tests) |
-| `uaaf/execution/agent.py` | modify | +10 (enforce_cognitive_routing) |
-| `uaaf/execution/llm_agent.py` | modify | ~3 (rename) |
+| `ryuu/execution/agent.py` | modify | +10 (enforce_cognitive_routing) |
+| `ryuu/execution/llm_agent.py` | modify | ~3 (rename) |
 | `examples/todo_app/agent.py` | modify | ~3 (rename call) |
 | `examples/stock_advisory/agent.py` | modify | ~3 (rename call) |
 | `examples/stock_advisory/main.py` | modify | +20 (Path B demo) |
@@ -940,7 +940,7 @@ grep -rn "strategy_id" uaaf/runtime/context.py                → có ✅ (field
 | `Workflow.states[id].next_state` ref đến state không tồn tại | Medium | Medium | `StateMachine.validate()` quét trước khi run; raise `FatalError` ngay |
 | Checkpoint sequence collision khi resume + run cùng workflow_id | Low | Low | Sequence từ `load_latest().sequence + 1` khi resume; test explicit cho continuity |
 | Test với `tmp_path` flake trên CI nếu cleanup không kịp | Low | Low | Pytest `tmp_path` fixture tự cleanup; không lưu state ngoài fixture scope |
-| Coverage giảm vì thêm 500 LOC mà test chưa kịp 90% | Low | Medium | Gate Checkpoint B + C explicit check coverage `uaaf/workflow/` ≥ 90% trước khi proceed |
+| Coverage giảm vì thêm 500 LOC mà test chưa kịp 90% | Low | Medium | Gate Checkpoint B + C explicit check coverage `ryuu/workflow/` ≥ 90% trước khi proceed |
 
 ---
 
@@ -956,7 +956,7 @@ grep -rn "strategy_id" uaaf/runtime/context.py                → có ✅ (field
 
 4. **`ICheckpointStore.save()` thread/async safety** — InMemoryCheckpointStore dùng plain dict. Concurrent saves từ multiple workflows OK vì keyed by workflow_id; same workflow_id concurrent saves là user error. **Default**: không lock; document "single-writer per workflow_id".
 
-5. **`UAAFRuntime.run_workflow()` façade** — Có nên thêm vào `runtime/runtime.py` không? **Decision**: defer Phase 8 — runtime façade chưa có form rõ; product hiện gọi `WorkflowEngine` trực tiếp. `RequestHandler` (T09) lấp gap conversational mode trước.
+5. **`RYUURuntime.run_workflow()` façade** — Có nên thêm vào `runtime/runtime.py` không? **Decision**: defer Phase 8 — runtime façade chưa có form rõ; product hiện gọi `WorkflowEngine` trực tiếp. `RequestHandler` (T09) lấp gap conversational mode trước.
 
 7. **`RequestHandler` — clarification flow** — Khi `intent.ambiguous == True`, `RequestHandler` có nên tự trigger clarification (gọi `IIntentAnalyzer` lần 2 với clarification questions) không? **Default v0.1**: không — `RequestHandler.handle()` trả về `CognitiveResult` với content từ strategy, kể cả khi intent mơ hồ. Clarification auto-trigger là Phase 8 (spec §intent/clarification.py đã có skeleton nhưng chưa wire).
 

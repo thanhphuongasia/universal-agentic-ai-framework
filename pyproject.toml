@@ -3,18 +3,27 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "uaaf"
-version = "0.2.0a1"
+name = "ryuu"
+version = "0.3.0a8"
 description = "Universal Agentic AI Framework — pluggable foundation for AI agent products"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
-    "uaaf-workflow>=0.2.0a1",
-    "opentelemetry-api>=1.20",
-    "opentelemetry-sdk>=1.20",
+    "ryuu-core>=0.2.0a1",
+    "ryuu-workflow>=0.2.0a1",
+    "ryuu-providers>=0.2.0a1",
+    "ryuu-observability>=0.2.0a1",
+    "ryuu-cognitive>=0.2.0a1",
+    "ryuu-execution>=0.2.0a1",
+    "ryuu-runtime>=0.2.0a1",
+    "ryuu-knowledge-base>=0.2.0a1",
+    "ryuu-knowledge-memory>=0.2.0a1",
+    "ryuu-knowledge-graph>=0.2.0a1",
+    "ryuu-knowledge>=0.2.0a1",
+    "ryuu-guardrail>=0.2.0a1",
+    "ryuu-eval>=0.2.0a1",
     "pydantic>=2.0",
-    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +43,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["uaaf"]
+packages = ["ryuu"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -57,8 +66,8 @@ strict = true
 ignore_missing_imports = true
 
 [tool.coverage.run]
-source = ["uaaf", "packages/uaaf-workflow/src"]
-omit = ["uaaf/_testing/*"]
+source = ["ryuu", "packages/ryuu-workflow/src", "packages/ryuu-core/src"]
+omit = ["ryuu/_testing/*"]
 
 [tool.coverage.report]
 fail_under = 85

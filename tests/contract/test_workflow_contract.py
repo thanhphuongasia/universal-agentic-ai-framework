@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf_workflow.errors import FatalError
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf_workflow.checkpoint import ICheckpointStore, make_checkpoint
-from uaaf_workflow.engine import IWorkflowEngine, WorkflowEngine, WorkflowStatus
-from uaaf_workflow.state_machine import StateTransition, Workflow
-from uaaf_workflow.stores.file import FileCheckpointStore
-from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
+from ryuu_workflow.errors import FatalError
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.checkpoint import ICheckpointStore, make_checkpoint
+from ryuu_workflow.engine import IWorkflowEngine, WorkflowEngine, WorkflowStatus
+from ryuu_workflow.state_machine import StateTransition, Workflow
+from ryuu_workflow.stores.file import FileCheckpointStore
+from ryuu_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def _ctx() -> ExecutionContext:

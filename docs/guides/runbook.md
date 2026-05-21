@@ -1,4 +1,4 @@
-# Runbook — UAAF Operations
+# Runbook — RYUU Operations
 
 Hướng dẫn vận hành cho các tình huống phổ biến: thêm model, cập nhật giá, thêm tool, debug, rollback.
 
@@ -28,17 +28,17 @@ context_window:
 
 ```python
 # 2. Reload trong long-running service (không cần restart)
-from uaaf.observability._pricing import reload_pricing
+from ryuu.observability._pricing import reload_pricing
 reload_pricing()
 
 # Hoặc reload từ custom path
-reload_pricing(path=Path("/etc/uaaf/pricing.yaml"))
+reload_pricing(path=Path("/etc/ryuu/pricing.yaml"))
 ```
 
 ### Verify
 
 ```python
-from uaaf.observability._pricing import PRICING, CONTEXT_WINDOW, calculate_usd
+from ryuu.observability._pricing import PRICING, CONTEXT_WINDOW, calculate_usd
 
 assert "my-new-model" in PRICING
 cost = calculate_usd("my-new-model", 100_000, 50_000)  # input=100k, output=50k tokens
@@ -48,7 +48,7 @@ print(f"Cost: ${cost:.4f}")
 ### Override via env var (production)
 
 ```bash
-UAAF_PRICING_FILE=/etc/uaaf/custom_pricing.yaml python -m myapp
+RYUU_PRICING_FILE=/etc/ryuu/custom_pricing.yaml python -m myapp
 ```
 
 ---
@@ -58,7 +58,7 @@ UAAF_PRICING_FILE=/etc/uaaf/custom_pricing.yaml python -m myapp
 ### Bare async function (đơn giản)
 
 ```python
-from uaaf.execution.tool_registry import ToolRegistry
+from ryuu.execution.tool_registry import ToolRegistry
 
 registry = ToolRegistry()
 
@@ -76,7 +76,7 @@ registry.register(
 ### ITool class (với schema)
 
 ```python
-from uaaf.execution.tool_registry import ITool
+from ryuu.execution.tool_registry import ITool
 from typing import Any
 
 class SearchTool:
@@ -103,14 +103,19 @@ registry.register("search_web", SearchTool(), allowed_domains={"research"})
 ### Verify domain restriction
 
 ```python
-# finance domain — OK
-await registry.run({"id": "c1", "function": {"name": "buy_stock", "arguments": {}}}, domain="finance")
+import asyncio
 
-# wrong domain — raises PermissionError
-try:
-    await registry.run(..., domain="chat")
-except PermissionError as e:
-    print(e)  # Tool 'buy_stock' not allowed in domain 'chat'
+async def verify_domain_restriction():
+    # finance domain — OK
+    await registry.run({"id": "c1", "function": {"name": "buy_stock", "arguments": {}}}, domain="finance")
+
+    # wrong domain — raises PermissionError
+    try:
+        await registry.run(..., domain="chat")
+    except PermissionError as e:
+        print(e)  # Tool 'buy_stock' not allowed in domain 'chat'
+
+asyncio.run(verify_domain_restriction())
 ```
 
 ---
@@ -120,7 +125,7 @@ except PermissionError as e:
 Implement `ILLMProvider` Protocol:
 
 ```python
-from uaaf.providers.llm import ILLMProvider, CompletionRequest, Response, TokenUsage, Embedding
+from ryuu.providers.llm import ILLMProvider, CompletionRequest, Response, TokenUsage, Embedding
 
 
 class MyCustomProvider:
@@ -149,7 +154,7 @@ Inject vào agent như mọi provider khác.
 ## 4. Điều chỉnh CostPolicy (budget)
 
 ```python
-from uaaf.observability.cost import CostPolicy, CostTracker
+from ryuu.observability.cost import CostPolicy, CostTracker
 
 # Tight budget cho demo
 tracker = CostTracker(CostPolicy(
@@ -173,7 +178,7 @@ tracker = CostTracker(CostPolicy(
 ## 5. Điều chỉnh RatePolicy
 
 ```python
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
 
 # 10 requests/second, burst up to 50
 limiter = RateLimiter(RatePolicy(rps=10.0, burst=50))
@@ -191,9 +196,9 @@ Rate limit áp dụng per `scope_key` (= `user_id:session_id:domain`). Các user
 ### Xem từng bước Thought/Action/Observation
 
 ```python
-from uaaf.execution.llm_agent import PrintCallbacks
+from ryuu.execution.llm_agent import PrintCallbacks
 
-text, usage = await agent.react_loop(request, callbacks=PrintCallbacks())
+# text, usage = await agent.react_loop(request, callbacks=PrintCallbacks())
 # Output:
 #   💭 Thought: I need to check the weather...
 #   🔧 Action:  get_weather({"city": "Tokyo"})
@@ -214,14 +219,14 @@ class LogCallbacks:
     async def on_observation(self, name, result): logger.info("obs: %s -> %s", name, result[:50])
     async def on_final(self, text): logger.info("final: %s", text[:100])
 
-text, usage = await agent.react_loop(request, callbacks=LogCallbacks())
+# text, usage = await agent.react_loop(request, callbacks=LogCallbacks())
 ```
 
 ### Tăng max_rounds khi agent bị cut off
 
 ```python
 # Default max_rounds=3 — tăng cho complex multi-step tasks
-text, usage = await agent.react_loop(request, max_rounds=8)
+# text, usage = await agent.react_loop(request, max_rounds=8)
 ```
 
 ---
@@ -229,12 +234,12 @@ text, usage = await agent.react_loop(request, max_rounds=8)
 ## 7. Token budget summary
 
 ```python
-text, usage = await agent.react_loop(request)
-summary = agent.budget_summary(usage, model="gpt-4o")
+# text, usage = await agent.react_loop(request)
+# summary = agent.budget_summary(usage, model="gpt-4o")
 
-print(f"Input:  {summary.input_tokens:,} tokens")
-print(f"Output: {summary.output_tokens:,} tokens")
-print(f"Total:  {summary.total_tokens:,} / {summary.window_size:,} ({summary.pct_used:.1f}% used)")
+# print(f"Input:  {summary.input_tokens:,} tokens")
+# print(f"Output: {summary.output_tokens:,} tokens")
+# print(f"Total:  {summary.total_tokens:,} / {summary.window_size:,} ({summary.pct_used:.1f}% used)")
 ```
 
 ---
@@ -265,8 +270,8 @@ print('Chain OK')
 ## 9. Thêm KnowledgeBackbone vào agent
 
 ```python
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.memory.backbone import MemoryBackbone
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.memory.backbone import MemoryBackbone
 
 assembler = ContextAssembler(MemoryBackbone())
 
@@ -308,8 +313,8 @@ async def _execute(self, task, context):
 [ ] Tất cả tools register đúng allowed_domains
 [ ] max_rounds đặt hợp lý (3 cho simple, 6+ cho complex)
 [ ] test suite xanh: pytest tests/ -q
-[ ] type check: mypy uaaf/
-[ ] lint: ruff check uaaf/
+[ ] type check: mypy ryuu/
+[ ] lint: ruff check ryuu/
 ```
 
 ---
@@ -334,7 +339,7 @@ message
 
 ```python
 from dataclasses import dataclass
-from uaaf.intent.models import DIRECT, ComplexityLevel, ModelTier, StructuredIntent
+from ryuu.intent.models import DIRECT, ComplexityLevel, ModelTier, StructuredIntent
 
 @dataclass
 class MyIntentAnalyzer:
@@ -367,11 +372,11 @@ class MyIntentAnalyzer:
 Domain strategy cần bridge `StructuredIntent` → `Task` payload hiểu được bởi agent.
 
 ```python
-from uaaf.cognitive.strategy import IAgentPool, IVerifier
-from uaaf.execution.agent import Task
-from uaaf.execution.pool import AgentPool
-from uaaf.intent.models import DIRECT, CognitiveResult, CostEstimate, StructuredIntent
-from uaaf_workflow.context import ExecutionContext
+from ryuu.cognitive.strategy import IAgentPool, IVerifier
+from ryuu.execution.agent import Task
+from ryuu.execution.pool import AgentPool
+from ryuu.intent.models import DIRECT, CognitiveResult, CostEstimate, StructuredIntent
+from ryuu_workflow.context import ExecutionContext
 
 class MyDirectStrategy:
     strategy_id = DIRECT
@@ -401,10 +406,10 @@ class MyDirectStrategy:
 ### Bước 3 — Wire RequestHandler
 
 ```python
-from uaaf._testing.fakes import FakeVerifier   # hoặc domain verifier thật
-from uaaf.execution.pool import AgentPool
-from uaaf.intent.selector import StrategySelector
-from uaaf.runtime.request_handler import RequestHandler
+from ryuu._testing.fakes import FakeVerifier   # hoặc domain verifier thật
+from ryuu.execution.pool import AgentPool
+from ryuu.intent.selector import StrategySelector
+from ryuu.runtime.request_handler import RequestHandler
 
 pool = AgentPool()
 pool.register(my_agent)   # agent đã build + ingest data
@@ -420,16 +425,16 @@ handler = RequestHandler(
 ### Bước 4 — Handle request
 
 ```python
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 ctx = ExecutionContext(
     scope=ContextScope(user_id="u1", session_id="s1", domain="my-app"),
     correlation_id="req-001",
 )
 
-result = await handler.handle("Give me a report of completed tasks", ctx)
-print(result.content)        # LLM output
-print(result.strategy_id)    # "direct" — routing proof
+# result = await handler.handle("Give me a report of completed tasks", ctx)
+# print(result.content)        # LLM output
+# print(result.strategy_id)    # "direct" — routing proof
 ```
 
 ### So sánh với direct agent.execute()
@@ -456,5 +461,5 @@ python -m examples.todo_app.main    # chạy cả direct + RequestHandler, có c
 |---|---|---|---|
 | `OPENAI_API_KEY` | Nếu dùng OpenAI | — | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Nếu dùng Anthropic | — | Anthropic API key |
-| `UAAF_PRICING_FILE` | Không | `pricing.yaml` ở project root | Override pricing config |
+| `RYUU_PRICING_FILE` | Không | `pricing.yaml` ở project root | Override pricing config |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Không | — | OpenTelemetry collector endpoint |

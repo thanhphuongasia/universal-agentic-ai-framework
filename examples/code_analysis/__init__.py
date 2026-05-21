@@ -1,1 +1,1 @@
-"""Code Analysis — UAAF example: multi-agent parallel class analysis with GraphBackbone."""
+"""Code Analysis — RYUU example: multi-agent parallel class analysis with GraphBackbone."""

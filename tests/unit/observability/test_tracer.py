@@ -1,10 +1,10 @@
-"""Tests for uaaf.observability.tracer — T03."""
+"""Tests for ryuu.observability.tracer — T03."""
 
 from __future__ import annotations
 
 import pytest
 
-from uaaf.observability.tracer import Tracer, get_current_correlation_id
+from ryuu.observability.tracer import Tracer, get_current_correlation_id
 
 
 def _make_tracer() -> Tracer:

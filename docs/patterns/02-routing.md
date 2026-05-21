@@ -2,7 +2,7 @@
 
 ## Pattern là gì?
 
-Routing phân luồng request đến handler phù hợp nhất. UAAF có hai lớp routing độc lập:
+Routing phân luồng request đến handler phù hợp nhất. RYUU có hai lớp routing độc lập:
 
 1. **Strategy Routing** (`StrategySelector`): chọn `ICognitiveStrategy` đầu tiên mà `applicable()` trả `True`. Thứ tự đăng ký = thứ tự ưu tiên.
 2. **Model Routing** (`ModelRouter`): chọn LLM provider theo `ModelTier` (CHEAP / STANDARD / POWERFUL). Nếu provider lỗi, `CircuitBreaker` tự chuyển sang fallback.
@@ -15,13 +15,13 @@ Hai lớp tách biệt: `StrategySelector` chọn *cách xử lý*, `ModelRouter
 - Cần kiểm soát chi phí: request đơn giản dùng model rẻ (`CHEAP`), phức tạp dùng model mạnh (`POWERFUL`).
 - Muốn thêm strategy mới mà không sửa code cũ.
 
-## UAAF triển khai như thế nào?
+## RYUU triển khai như thế nào?
 
 | Thành phần | Vị trí |
 |-----------|--------|
-| `StrategySelector` | `uaaf/intent/selector.py` |
-| `ModelRouter` | `uaaf/providers/router.py` |
-| `CircuitBreaker` | `uaaf/providers/circuit_breaker.py` |
+| `StrategySelector` | `ryuu/intent/selector.py` |
+| `ModelRouter` | `ryuu/providers/router.py` |
+| `CircuitBreaker` | `ryuu/providers/circuit_breaker.py` |
 
 **Luồng Strategy Routing:**
 ```
@@ -45,18 +45,18 @@ ModelTier.CHEAP → ModelRouter.route() → gpt-4o-mini (nếu circuit CLOSED)
 Todo Pro nhận đủ loại request: "Thêm task mua sữa" (đơn giản, rẻ) đến "Phân tích pattern trễ deadline của tôi" (phức tạp, cần model mạnh). Routing tự chọn strategy + model tier đúng.
 
 ```python
-from uaaf import (
+from ryuu import (
     ExecutionContext, ContextScope,
     StructuredIntent, ComplexityLevel, ModelTier,
 )
-from uaaf.intent.selector import StrategySelector
-from uaaf.cognitive.strategies import (
+from ryuu.intent.selector import StrategySelector
+from ryuu.cognitive.strategies import (
     DirectStrategy,
     ReActStrategy,
     EvaluatorOptimizerStrategy,
     ParallelFanoutStrategy,
 )
-from uaaf.intent.models import DIRECT, REACT, EVALUATOR_OPTIMIZER, PARALLEL_FANOUT
+from ryuu.intent.models import DIRECT, REACT, EVALUATOR_OPTIMIZER, PARALLEL_FANOUT
 
 
 # --- Khởi tạo StrategySelector: thứ tự = ưu tiên ---
@@ -115,8 +115,8 @@ strategy = selector.select(analysis_intent, ctx)
 print(type(strategy).__name__)          # EvaluatorOptimizerStrategy
 
 # --- Model Routing: chọn LLM provider theo tier ---
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.providers.router import ModelRouter
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.providers.router import ModelRouter
 
 router = ModelRouter(
     providers={

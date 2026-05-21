@@ -11,15 +11,15 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.observability.audit import AuditConfig, AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf_workflow.errors import BudgetExceededError, RetryableError
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer, get_current_correlation_id
-from uaaf.providers.llm import CompletionRequest, Message
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.observability.audit import AuditConfig, AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu_workflow.errors import BudgetExceededError, RetryableError
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer, get_current_correlation_id
+from ryuu.providers.llm import CompletionRequest, Message
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Agent under test

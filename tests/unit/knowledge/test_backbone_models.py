@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uaaf.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone, QueryResult
+from ryuu.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone, QueryResult
 
 
 class TestBackboneType:

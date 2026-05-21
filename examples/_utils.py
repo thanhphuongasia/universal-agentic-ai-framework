@@ -1,4 +1,4 @@
-"""Shared utilities for all UAAF examples."""
+"""Shared utilities for all RYUU examples."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-from uaaf.observability.tracer import Tracer
+from ryuu.observability.tracer import Tracer
 
 
 class _SilentExporter(SpanExporter):

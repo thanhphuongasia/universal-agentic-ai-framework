@@ -6,11 +6,11 @@ import dataclasses
 
 import pytest
 
-from uaaf._testing.fakes import FakeAgentPool, FakeIntentAnalyzer, FakeVerifier
-from uaaf.intent.models import CognitiveResult, CostEstimate, StructuredIntent
-from uaaf.intent.selector import StrategySelector
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf.runtime.request_handler import RequestHandler
+from ryuu._testing.fakes import FakeAgentPool, FakeIntentAnalyzer, FakeVerifier
+from ryuu.intent.models import CognitiveResult, CostEstimate, StructuredIntent
+from ryuu.intent.selector import StrategySelector
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu.runtime.request_handler import RequestHandler
 
 
 def _ctx(strategy_id: str | None = None) -> ExecutionContext:

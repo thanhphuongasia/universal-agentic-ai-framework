@@ -1,4 +1,4 @@
-# UAAF — Phase 2 (Verifier first-class) — Task Breakdown
+# RYUU — Phase 2 (Verifier first-class) — Task Breakdown
 
 > Phase 2 goal: `IVerifier` Protocol + concrete implementations (`SchemaVerifier`, `LLMJudgeVerifier`, `GroundTruthVerifier`) + `VerifierPipeline`. Replace Phase 1's stub IVerifier with full implementations. `EvaluatorOptimizerStrategy` now gets real verification.
 
@@ -11,7 +11,7 @@
 ## Task graph
 
 ```
-P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
+P2-T01 Relocate IVerifier+VerificationResult → ryuu/cognitive/verifier.py
          │
          ├──→ P2-T02 SchemaVerifier
          ├──→ P2-T03 LLMJudgeVerifier
@@ -25,18 +25,18 @@ P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
 
 ---
 
-## P2-T01. Relocate IVerifier (`uaaf/cognitive/verifier.py`)
+## P2-T01. Relocate IVerifier (`ryuu/cognitive/verifier.py`)
 
 **Acceptance**:
-- Move `IVerifier` and `VerificationResult` out of `strategy.py` into `uaaf/cognitive/verifier.py`
-- `strategy.py` re-exports them for backward compatibility: `from uaaf.cognitive.verifier import IVerifier, VerificationResult`
+- Move `IVerifier` and `VerificationResult` out of `strategy.py` into `ryuu/cognitive/verifier.py`
+- `strategy.py` re-exports them for backward compatibility: `from ryuu.cognitive.verifier import IVerifier, VerificationResult`
 - All existing imports still work — 192 tests still pass
 
-**Files**: `uaaf/cognitive/verifier.py` (new), `uaaf/cognitive/strategy.py` (update)
+**Files**: `ryuu/cognitive/verifier.py` (new), `ryuu/cognitive/strategy.py` (update)
 
 ---
 
-## P2-T02. SchemaVerifier (`uaaf/cognitive/verifiers/schema.py`)
+## P2-T02. SchemaVerifier (`ryuu/cognitive/verifiers/schema.py`)
 
 **Acceptance**:
 - `SchemaVerifier(required_keys: list[str], output_must_be_json: bool = True)`
@@ -49,11 +49,11 @@ P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
   - `feedback` describes the first failure
 - Non-JSON mode: just checks required substrings exist in raw output string
 
-**Files**: `uaaf/cognitive/verifiers/__init__.py`, `uaaf/cognitive/verifiers/schema.py`
+**Files**: `ryuu/cognitive/verifiers/__init__.py`, `ryuu/cognitive/verifiers/schema.py`
 
 ---
 
-## P2-T03. LLMJudgeVerifier (`uaaf/cognitive/verifiers/llm_judge.py`)
+## P2-T03. LLMJudgeVerifier (`ryuu/cognitive/verifiers/llm_judge.py`)
 
 **Acceptance**:
 - `LLMJudgeVerifier(provider: ILLMProvider, model: str | None = None, threshold: float = 0.7)`
@@ -65,11 +65,11 @@ P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
   4. On parse failure: `passed=False, confidence=0.0, feedback="Judge response unparseable"`
 - Response format expected from LLM: `SCORE:0.85\nVERDICT:PASS\nREASON:<text>`
 
-**Files**: `uaaf/cognitive/verifiers/llm_judge.py`
+**Files**: `ryuu/cognitive/verifiers/llm_judge.py`
 
 ---
 
-## P2-T04. GroundTruthVerifier (`uaaf/cognitive/verifiers/ground_truth.py`)
+## P2-T04. GroundTruthVerifier (`ryuu/cognitive/verifiers/ground_truth.py`)
 
 **Acceptance**:
 - `GroundTruthVerifier(reference: str, mode: Literal["exact", "substring", "word_overlap"] = "substring", threshold: float = 0.5)`
@@ -80,11 +80,11 @@ P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
   - `word_overlap`: Jaccard similarity of word sets; passed if similarity >= threshold
 - `passed` determined by mode; `confidence` = similarity score
 
-**Files**: `uaaf/cognitive/verifiers/ground_truth.py`
+**Files**: `ryuu/cognitive/verifiers/ground_truth.py`
 
 ---
 
-## P2-T05. VerifierPipeline (`uaaf/cognitive/verifiers/pipeline.py`)
+## P2-T05. VerifierPipeline (`ryuu/cognitive/verifiers/pipeline.py`)
 
 **Acceptance**:
 - `class PipelineMode(StrEnum): ALL_PASS = "all_pass"; ANY_PASS = "any_pass"; THRESHOLD = "threshold"`
@@ -97,7 +97,7 @@ P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
   - `THRESHOLD`: passed if `sum(results where passed) >= threshold_count`; confidence = mean
   - `feedback` = joined feedbacks of failed verifiers
 
-**Files**: `uaaf/cognitive/verifiers/pipeline.py`
+**Files**: `ryuu/cognitive/verifiers/pipeline.py`
 
 ---
 
@@ -119,9 +119,9 @@ P2-T01 Relocate IVerifier+VerificationResult → uaaf/cognitive/verifier.py
 
 ## P2-T07. CI gate
 
-- [x] `ruff check uaaf/ tests/` → 0 violations (2026-05-07)
-- [x] `mypy uaaf/ --ignore-missing-imports` → 0 errors, 39 source files (2026-05-07)
-- [x] `pytest --cov=uaaf` → 245 passed, 90.21% coverage (2026-05-07)
+- [x] `ruff check ryuu/ tests/` → 0 violations (2026-05-07)
+- [x] `mypy ryuu/ --ignore-missing-imports` → 0 errors, 39 source files (2026-05-07)
+- [x] `pytest --cov=ryuu` → 245 passed, 90.21% coverage (2026-05-07)
 - [ ] User review + approve
 - [ ] Tag v0.1.0b2
 

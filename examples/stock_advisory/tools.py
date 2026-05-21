@@ -22,7 +22,7 @@ from examples.stock_advisory.models import (
     SIGNALS_DATA,
     Portfolio,
 )
-from uaaf.execution import ToolRegistry
+from ryuu.execution import ToolRegistry
 
 
 def build_stock_registry(portfolio: Portfolio) -> ToolRegistry:

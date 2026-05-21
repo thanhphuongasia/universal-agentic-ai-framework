@@ -1,4 +1,4 @@
-# UAAF — Phase 3 (Knowledge Backbone) — Task Breakdown
+# RYUU — Phase 3 (Knowledge Backbone) — Task Breakdown
 
 > Phase 3 goal: `IKnowledgeBackbone` Protocol + `MemoryBackbone` (working + episodic layers) + `GraphBackbone` (in-memory graph store) + `HybridBackbone` + `ContextAssembler` (token-budget assembly). `FakeKnowledgeBackbone` upgraded to satisfy the Protocol.
 
@@ -37,7 +37,7 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 
 ---
 
-## P3-T01. IKnowledgeBackbone Protocol (`uaaf/knowledge/backbone.py`)
+## P3-T01. IKnowledgeBackbone Protocol (`ryuu/knowledge/backbone.py`)
 
 **Acceptance**:
 - `BackboneType(StrEnum)`: `MEMORY = "memory"`, `GRAPH = "graph"`, `HYBRID = "hybrid"`
@@ -49,11 +49,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
   - `async def query(query: str, scope_key: str, top_k: int = 5) -> QueryResult`
   - `async def assemble_context(query: str, scope_key: str, budget_tokens: int = 2000) -> AssembledContext`
 
-**Files**: `uaaf/knowledge/__init__.py`, `uaaf/knowledge/backbone.py`
+**Files**: `ryuu/knowledge/__init__.py`, `ryuu/knowledge/backbone.py`
 
 ---
 
-## P3-T02. IMemoryStore Protocol (`uaaf/knowledge/memory/store.py`)
+## P3-T02. IMemoryStore Protocol (`ryuu/knowledge/memory/store.py`)
 
 **Acceptance**:
 - `MemoryLayer(StrEnum)`: `WORKING = "working"`, `EPISODIC = "episodic"`
@@ -64,11 +64,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
   - `async def retrieve(query: str, scope_key: str, top_k: int = 5) -> list[MemoryEntry]`
   - `async def clear(scope_key: str) -> None`
 
-**Files**: `uaaf/knowledge/memory/__init__.py`, `uaaf/knowledge/memory/store.py`
+**Files**: `ryuu/knowledge/memory/__init__.py`, `ryuu/knowledge/memory/store.py`
 
 ---
 
-## P3-T03. WorkingMemoryStore (`uaaf/knowledge/memory/working.py`)
+## P3-T03. WorkingMemoryStore (`ryuu/knowledge/memory/working.py`)
 
 **Acceptance**:
 - `WorkingMemoryStore(max_entries: int = 50)`
@@ -76,11 +76,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - Stores entries in a bounded FIFO deque per scope_key; oldest evicted when full
 - `retrieve()`: returns last `top_k` entries (most-recent-first), score = 1.0 for all
 
-**Files**: `uaaf/knowledge/memory/working.py`
+**Files**: `ryuu/knowledge/memory/working.py`
 
 ---
 
-## P3-T04. EpisodicMemoryStore (`uaaf/knowledge/memory/episodic.py`)
+## P3-T04. EpisodicMemoryStore (`ryuu/knowledge/memory/episodic.py`)
 
 **Acceptance**:
 - `EpisodicMemoryStore(max_entries: int = 500)`
@@ -88,11 +88,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - Stores entries time-ordered; no eviction (up to max_entries)
 - `retrieve()`: keyword match (`query` words appear in `content`); score = overlap ratio; returns top_k by score descending
 
-**Files**: `uaaf/knowledge/memory/episodic.py`
+**Files**: `ryuu/knowledge/memory/episodic.py`
 
 ---
 
-## P3-T05. MemoryBackbone (`uaaf/knowledge/memory/backbone.py`)
+## P3-T05. MemoryBackbone (`ryuu/knowledge/memory/backbone.py`)
 
 **Acceptance**:
 - `MemoryBackbone(layers: list[IMemoryStore] | None = None)`
@@ -105,11 +105,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
   - Token estimate: `len(text.split())`
   - Returns `AssembledContext`
 
-**Files**: `uaaf/knowledge/memory/backbone.py`
+**Files**: `ryuu/knowledge/memory/backbone.py`
 
 ---
 
-## P3-T06. IGraphStore Protocol + models (`uaaf/knowledge/graph/store.py`)
+## P3-T06. IGraphStore Protocol + models (`ryuu/knowledge/graph/store.py`)
 
 **Acceptance**:
 - `Node` dataclass: `node_id: str`, `labels: list[str]`, `properties: dict[str, Any]`
@@ -121,11 +121,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
   - `async def get_neighbors(node_id: str, max_hops: int = 1) -> list[Node]`
   - `async def text_search(query: str, top_k: int = 5) -> list[Node]`
 
-**Files**: `uaaf/knowledge/graph/__init__.py`, `uaaf/knowledge/graph/store.py`
+**Files**: `ryuu/knowledge/graph/__init__.py`, `ryuu/knowledge/graph/store.py`
 
 ---
 
-## P3-T07. InMemoryGraphStore (`uaaf/knowledge/graph/in_memory.py`)
+## P3-T07. InMemoryGraphStore (`ryuu/knowledge/graph/in_memory.py`)
 
 **Acceptance**:
 - `InMemoryGraphStore()`
@@ -134,11 +134,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - `get_neighbors(node_id, max_hops)`: BFS traversal up to `max_hops` edges (both directions)
 - `text_search`: substring match against `node_id` + all string values in `properties`; returns up to `top_k`
 
-**Files**: `uaaf/knowledge/graph/in_memory.py`
+**Files**: `ryuu/knowledge/graph/in_memory.py`
 
 ---
 
-## P3-T08. GraphBackbone (`uaaf/knowledge/graph/backbone.py`)
+## P3-T08. GraphBackbone (`ryuu/knowledge/graph/backbone.py`)
 
 **Acceptance**:
 - `GraphBackbone(store: IGraphStore | None = None)`
@@ -148,11 +148,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - `query(query, scope_key, top_k)`: calls `store.text_search(query, top_k)`; returns `QueryResult`
 - `assemble_context(query, scope_key, budget_tokens)`: text_search + get_neighbors for top result; assembles until budget reached
 
-**Files**: `uaaf/knowledge/graph/backbone.py`
+**Files**: `ryuu/knowledge/graph/backbone.py`
 
 ---
 
-## P3-T09. HybridBackbone (`uaaf/knowledge/hybrid.py`)
+## P3-T09. HybridBackbone (`ryuu/knowledge/hybrid.py`)
 
 **Acceptance**:
 - `HybridBackbone(primary: IKnowledgeBackbone | None, secondary: IKnowledgeBackbone | None)`
@@ -162,11 +162,11 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - `query(query, scope_key, top_k)` → queries both, merges results (dedup), top_k by score
 - `assemble_context(query, scope_key, budget_tokens)` → 60% budget to primary, 40% to secondary; merges
 
-**Files**: `uaaf/knowledge/hybrid.py`
+**Files**: `ryuu/knowledge/hybrid.py`
 
 ---
 
-## P3-T10. ContextAssembler (`uaaf/knowledge/context_assembler.py`)
+## P3-T10. ContextAssembler (`ryuu/knowledge/context_assembler.py`)
 
 **Acceptance**:
 - `ContextAssembler(backbone: IKnowledgeBackbone)`
@@ -175,7 +175,7 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - `async def write(observation: str, scope_key: str, metadata: dict | None = None) -> None`
   - Delegates to `backbone.write(observation, scope_key, metadata)`
 
-**Files**: `uaaf/knowledge/context_assembler.py`
+**Files**: `ryuu/knowledge/context_assembler.py`
 
 ---
 
@@ -188,7 +188,7 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 - `written: list[dict]` still tracks writes
 - `query_responses: list[QueryResult]` pops next response (default empty `QueryResult`)
 
-**Files**: `uaaf/_testing/fakes.py`
+**Files**: `ryuu/_testing/fakes.py`
 
 ---
 
@@ -213,9 +213,9 @@ P3-T01 IKnowledgeBackbone Protocol + models (backbone.py)
 
 ## P3-T13. CI gate
 
-- [x] `ruff check uaaf/ tests/` → 0 violations
-- [x] `mypy uaaf/ --ignore-missing-imports` → 0 errors
-- [x] `pytest --cov=uaaf` → coverage ≥85%
+- [x] `ruff check ryuu/ tests/` → 0 violations
+- [x] `mypy ryuu/ --ignore-missing-imports` → 0 errors
+- [x] `pytest --cov=ryuu` → coverage ≥85%
 - [ ] User review + approve
 - [ ] Tag v0.1.0b3
 

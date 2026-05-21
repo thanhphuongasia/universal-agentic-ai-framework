@@ -1,8 +1,8 @@
-"""Tests for uaaf.observability.errors — T02."""
+"""Tests for ryuu.observability.errors — T02."""
 
 from __future__ import annotations
 
-from uaaf_workflow.errors import (
+from ryuu_workflow.errors import (
     BudgetExceededError,
     DegradedError,
     FatalError,

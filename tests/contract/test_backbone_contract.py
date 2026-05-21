@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeKnowledgeBackbone
-from uaaf.knowledge.backbone import AssembledContext, IKnowledgeBackbone, QueryResult
-from uaaf.knowledge.graph.backbone import GraphBackbone
-from uaaf.knowledge.hybrid import HybridBackbone
-from uaaf.knowledge.memory.backbone import MemoryBackbone
+from ryuu._testing.fakes import FakeKnowledgeBackbone
+from ryuu.knowledge.backbone import AssembledContext, IKnowledgeBackbone, QueryResult
+from ryuu.knowledge.graph.backbone import GraphBackbone
+from ryuu.knowledge.hybrid import HybridBackbone
+from ryuu.knowledge.memory.backbone import MemoryBackbone
 
 
 @pytest.fixture(

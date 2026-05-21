@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.llm_agent import LLMAgent, ModelPolicy
-from uaaf.intent.models import ModelTier
-from uaaf.providers.router import ModelRouter
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.llm_agent import LLMAgent, ModelPolicy
+from ryuu.intent.models import ModelTier
+from ryuu.providers.router import ModelRouter
 
 # ---------------------------------------------------------------------------
 # ModelPolicy defaults
@@ -30,12 +30,12 @@ def _make_fake_agent() -> LLMAgent:
 
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    from uaaf.execution.agent import AgentResult, Task
-    from uaaf.observability.audit import AuditConfig, AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
-    from uaaf_workflow.context import ExecutionContext
+    from ryuu.execution.agent import AgentResult, Task
+    from ryuu.observability.audit import AuditConfig, AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
+    from ryuu_workflow.context import ExecutionContext
 
     @dataclass
     class StubAgent(LLMAgent):

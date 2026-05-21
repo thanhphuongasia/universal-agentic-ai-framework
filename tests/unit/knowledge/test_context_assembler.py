@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.knowledge.backbone import AssembledContext
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.memory.backbone import MemoryBackbone
+from ryuu.knowledge.backbone import AssembledContext
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.memory.backbone import MemoryBackbone
 
 
 class TestContextAssembler:

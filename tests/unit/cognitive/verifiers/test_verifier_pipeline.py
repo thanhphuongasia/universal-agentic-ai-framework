@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeVerifier
-from uaaf.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeVerifier
+from ryuu.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.intent.models import ModelTier
-from uaaf_workflow.errors import DegradedError
-from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
-from uaaf.providers.router import ModelRouter
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.intent.models import ModelTier
+from ryuu_workflow.errors import DegradedError
+from ryuu.providers.llm import CompletionRequest, Message, Response, TokenUsage
+from ryuu.providers.router import ModelRouter
 
 
 def _resp(text: str = "ok") -> Response:
@@ -62,7 +62,7 @@ class TestModelRouterRouting:
 class TestModelRouterCircuitBreaker:
     @pytest.mark.asyncio
     async def test_falls_back_when_circuit_open(self):
-        from uaaf.providers.router import ModelRouter
+        from ryuu.providers.router import ModelRouter
         cheap = FakeLLMProvider(raise_on_call=Exception("provider down"))
         fallback = FakeLLMProvider(responses=[_resp("fallback ok")])
         router = ModelRouter(

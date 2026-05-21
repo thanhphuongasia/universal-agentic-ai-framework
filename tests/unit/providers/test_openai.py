@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from uaaf.observability.cost import Cost
-from uaaf.providers.adapters.openai import OpenAIProvider
-from uaaf.providers.llm import CompletionRequest, Message
+from ryuu.observability.cost import Cost
+from ryuu.providers.adapters.openai import OpenAIProvider
+from ryuu.providers.llm import CompletionRequest, Message
 
 
 def _make_provider() -> OpenAIProvider:
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI", autospec=True):
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI", autospec=True):
         provider = OpenAIProvider(api_key="sk-test")
     return provider
 
@@ -34,7 +34,7 @@ def _make_request(content: str = "test", model: str = "gpt-4o-mini") -> Completi
 async def test_complete_returns_response() -> None:
     from unittest.mock import MagicMock
 
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_choice = MagicMock()
         mock_choice.message.content = "AI response"
@@ -58,14 +58,14 @@ async def test_complete_returns_response() -> None:
 
 @pytest.mark.anyio
 async def test_complete_maps_rate_limit_to_retryable() -> None:
-    from uaaf_workflow.errors import RetryableError
+    from ryuu_workflow.errors import RetryableError
 
     class FakeRateLimitError(Exception):
         __module__ = "openai"
 
     FakeRateLimitError.__name__ = "RateLimitError"
 
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.chat.completions.create = AsyncMock(side_effect=FakeRateLimitError("limit"))
 
@@ -76,14 +76,14 @@ async def test_complete_maps_rate_limit_to_retryable() -> None:
 
 @pytest.mark.anyio
 async def test_complete_maps_auth_error_to_fatal() -> None:
-    from uaaf_workflow.errors import FatalError
+    from ryuu_workflow.errors import FatalError
 
     class FakeAuthError(Exception):
         __module__ = "openai"
 
     FakeAuthError.__name__ = "AuthenticationError"
 
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.chat.completions.create = AsyncMock(side_effect=FakeAuthError("bad key"))
 
@@ -98,7 +98,7 @@ async def test_complete_maps_auth_error_to_fatal() -> None:
 
 
 def test_estimate_cost_returns_cost_object() -> None:
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI"):
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI"):
         provider = OpenAIProvider(api_key="sk-test")
 
     cost = provider.estimate_cost(_make_request())
@@ -117,7 +117,7 @@ def test_estimate_cost_returns_cost_object() -> None:
 
 @pytest.mark.anyio
 async def test_embed_returns_embedding() -> None:
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_embed_data = MagicMock()
         mock_embed_data.embedding = [0.1, 0.2, 0.3]

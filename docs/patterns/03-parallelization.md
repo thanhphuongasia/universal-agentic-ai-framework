@@ -18,7 +18,7 @@ Hai chế độ lỗi:
 
 **Pattern này khác Pattern 4**: fan_out là primitive thuần túy — không phân rã, không tổng hợp. Pattern 4 (Orchestrator-Worker) dùng fan_out ở tầng trên và thêm decompose + aggregate.
 
-## UAAF triển khai như thế nào?
+## RYUU triển khai như thế nào?
 
 ```
 fan_out([t0, t1, t2, t3], on_error="collect")
@@ -46,11 +46,11 @@ import os
 import anyio
 from dataclasses import dataclass, field
 
-from uaaf import (
+from ryuu import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
 )
-from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
+from ryuu.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
 _SYSTEM_PROMPT = """\
@@ -62,10 +62,10 @@ Chỉ trả JSON, không thêm text khác."""
 def build_provider() -> ILLMProvider:
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
-        from uaaf.providers.adapters.openai import OpenAIProvider
+        from ryuu.providers.adapters.openai import OpenAIProvider
         return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.providers.llm import Response, TokenUsage
+    from ryuu._testing.fakes import FakeLLMProvider
+    from ryuu.providers.llm import Response, TokenUsage
     fake_report = json.dumps({"file": "?", "classes": 3, "methods": 12,
                               "docstring_coverage": 0.75, "complexity": "MEDIUM", "issues": []})
     return FakeLLMProvider(default_content=fake_report)  # type: ignore[return-value]
@@ -106,10 +106,10 @@ class FileAnalysisAgent(BaseAgent):
 
 async def main():
     from pathlib import Path
-    from uaaf.observability.audit import AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
+    from ryuu.observability.audit import AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     provider = build_provider()  # dùng chung 1 provider (stateless HTTP calls)
@@ -131,10 +131,10 @@ async def main():
 
     # Đọc source thật và nhét vào payload để agent forward vào prompt
     files = [
-        "uaaf/execution/agent.py",
-        "uaaf/execution/pool.py",
-        "uaaf/cognitive/strategies/react.py",
-        "uaaf/observability/cost.py",
+        "ryuu/execution/agent.py",
+        "ryuu/execution/pool.py",
+        "ryuu/cognitive/strategies/react.py",
+        "ryuu/observability/cost.py",
     ]
     tasks = [
         Task(

@@ -1,4 +1,4 @@
-"""Tests for uaaf.execution.pool — P6-T01 + P6-T02."""
+"""Tests for ryuu.execution.pool — P6-T01 + P6-T02."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from dataclasses import dataclass
 import anyio
 import pytest
 
-from uaaf.cognitive.strategy import IAgentPool
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.execution.pool import AgentPool
-from uaaf.observability.audit import AuditConfig, AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.cognitive.strategy import IAgentPool
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.execution.pool import AgentPool
+from ryuu.observability.audit import AuditConfig, AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -1,14 +1,14 @@
-# Handoff: Chat Frontend — UAAF Chat Shell
+# Handoff: Chat Frontend — RYUU Chat Shell
 
 > **Dành cho**: Claude Code
-> **Mục tiêu**: Lên implementation plan cho shared chat frontend component dùng chung giữa các UAAF product
-> **Context**: Đây là frontend layer của hệ thống UAAF (Universal Agentic AI Framework). Backend đã có spec đầy đủ tại `uaaf-framework-spec.md`.
+> **Mục tiêu**: Lên implementation plan cho shared chat frontend component dùng chung giữa các RYUU product
+> **Context**: Đây là frontend layer của hệ thống RYUU (Universal Agentic AI Framework). Backend đã có spec đầy đủ tại `ryuu-framework-spec.md`.
 
 ---
 
 ## 1. Bối cảnh — tại sao cần Chat Shell
 
-UAAF có nhiều product: Todo App, Study Buddy, Stock Trading, Code Analysis. Mỗi product là một app end-user riêng biệt, deploy độc lập. Tất cả đều có giao diện chat là interaction chính.
+RYUU có nhiều product: Todo App, Study Buddy, Stock Trading, Code Analysis. Mỗi product là một app end-user riêng biệt, deploy độc lập. Tất cả đều có giao diện chat là interaction chính.
 
 Phần chat của mỗi product **giống nhau về cấu trúc**, **khác nhau về cách render output**:
 
@@ -27,12 +27,12 @@ Phần chat của mỗi product **giống nhau về cấu trúc**, **khác nhau 
 ## 2. Quyết định kiến trúc đã được confirm
 
 ### 2.1 Deployment model
-Mỗi product deploy riêng — UAAF Python runtime riêng, Next.js app riêng. Không có shared runtime instance.
+Mỗi product deploy riêng — RYUU Python runtime riêng, Next.js app riêng. Không có shared runtime instance.
 
 ### 2.2 Tech stack
 - **Frontend**: React / Next.js (App Router)
 - **Monorepo**: Turborepo hoặc nx
-- **Shared package**: `@uaaf/chat-shell` — npm package nội bộ, không publish public
+- **Shared package**: `@ryuu/chat-shell` — npm package nội bộ, không publish public
 - **Streaming protocol**: SSE (Server-Sent Events) cho chat stream, WebSocket cho Stock Trading price feed
 
 ### 2.3 Pattern: Slot pattern
@@ -50,12 +50,12 @@ interface ChatShellProps {
 
 ---
 
-## 3. Event schema — contract giữa UAAF backend và frontend
+## 3. Event schema — contract giữa RYUU backend và frontend
 
-UAAF backend phát ra các event qua SSE stream. Frontend consume và render tương ứng:
+RYUU backend phát ra các event qua SSE stream. Frontend consume và render tương ứng:
 
 ```typescript
-type UAAFEvent =
+type RYUUEvent =
   | { type: 'intent_classified'; intent_type: string; confidence: number }
   | { type: 'strategy_selected'; strategy: string }
   | { type: 'thought'; content: string }
@@ -85,7 +85,7 @@ type UAAFEvent =
 ## 4. Repo structure mong muốn
 
 ```
-uaaf-frontend/
+ryuu-frontend/
 ├── packages/
 │   └── chat-shell/
 │       ├── src/
@@ -102,14 +102,14 @@ uaaf-frontend/
 │       │   │   ├── useChat.ts          # SSE stream logic chính
 │       │   │   ├── useSession.ts       # session management
 │       │   │   └── useScrollAnchor.ts  # auto scroll to bottom
-│       │   └── types.ts               # UAAFEvent types, Message types
+│       │   └── types.ts               # RYUUEvent types, Message types
 │       ├── package.json
 │       └── tsconfig.json
 │
 └── apps/
     ├── todo/
     │   └── src/
-    │       ├── app/api/chat/route.ts   # Next.js API route → UAAF backend
+    │       ├── app/api/chat/route.ts   # Next.js API route → RYUU backend
     │       └── components/
     │           └── TodoMessageRenderer.tsx
     ├── stock-trading/
@@ -135,7 +135,7 @@ uaaf-frontend/
 ## 5. Luồng data end-to-end
 
 ```
-Browser                    Next.js API Route         UAAF Python Runtime
+Browser                    Next.js API Route         RYUU Python Runtime
    │                              │                          │
    │── POST /api/chat ───────────▶│                          │
    │   { message, session_id }    │── HTTP POST ────────────▶│
@@ -151,19 +151,19 @@ Browser                    Next.js API Route         UAAF Python Runtime
    │◀── event: done ──────────────│◀── SSE forward ──────────│
 ```
 
-**Next.js API Route** chỉ là thin proxy — nhận SSE từ UAAF Python, forward ra browser. Không có business logic ở đây.
+**Next.js API Route** chỉ là thin proxy — nhận SSE từ RYUU Python, forward ra browser. Không có business logic ở đây.
 
 ```typescript
 // Pattern cho tất cả apps
 export async function POST(req: Request) {
   const body = await req.json()
-  const uaafResponse = await fetch(process.env.UAAF_BACKEND_URL + '/chat/stream', {
+  const ryuuResponse = await fetch(process.env.RYUU_BACKEND_URL + '/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   })
   // forward stream thẳng ra
-  return new Response(uaafResponse.body, {
+  return new Response(ryuuResponse.body, {
     headers: { 'Content-Type': 'text/event-stream' }
   })
 }
@@ -177,7 +177,7 @@ Claude Code cần lên plan cho các phần sau, theo thứ tự ưu tiên:
 
 ### Phase A — Foundation (làm trước)
 1. **Monorepo setup**: Turborepo config, workspace linking, shared tsconfig
-2. **`types.ts`**: Định nghĩa đầy đủ `UAAFEvent`, `Message`, `ChatConfig` types
+2. **`types.ts`**: Định nghĩa đầy đủ `RYUUEvent`, `Message`, `ChatConfig` types
 3. **`useChat.ts` hook**: SSE connection, parse event stream, state management
 4. **`ChatShell.tsx`**: Root component với slot pattern, wire tất cả sub-components
 5. **`InputBox.tsx`**: Text input, submit, loading state, disable khi streaming
@@ -202,8 +202,8 @@ Claude Code cần lên plan cho các phần sau, theo thứ tự ưu tiên:
 |---|---|---|
 | Q1 | Session storage ở đâu? Cookie, localStorage, hay server-side? | `useSession.ts` design |
 | Q2 | Có cần conversation history (multi-turn) không? Nếu có, send full history hay summary? | `useChat.ts` payload |
-| Q3 | File upload (Code Analysis) — upload trực tiếp lên UAAF hay qua presigned S3? | `FileUpload.tsx` + API route |
-| Q4 | Auth: JWT hay session cookie? UAAF backend expect header gì? | API route middleware |
+| Q3 | File upload (Code Analysis) — upload trực tiếp lên RYUU hay qua presigned S3? | `FileUpload.tsx` + API route |
+| Q4 | Auth: JWT hay session cookie? RYUU backend expect header gì? | API route middleware |
 | Q5 | Stock Trading price feed — WebSocket URL là gì, reconnect strategy thế nào? | `usePriceFeed.ts` |
 | Q6 | Error retry: auto retry hay manual? Sau bao nhiêu lần thì stop? | `ErrorBanner.tsx` + `useChat.ts` |
 

@@ -8,7 +8,7 @@ Phase 6 xây **2 framework components**: `AgentPool` (registry + routing + bound
 
 > **Note — OrchestratorAgent removed (Fix #5):** Expert review xác định `OrchestratorAgent` duplicate với `ParallelFanoutStrategy` (cùng flow: decompose → fan_out → aggregate) và không có use case framework cụ thể để justify. Không thêm vào framework core. Nếu product cần supervisor pattern, viết ở `examples/` level như `CodebaseAnalysisOrchestrator` hiện tại. Xem [Resolved Decisions](#resolved-decisions).
 
-Scope KHÔNG bao gồm: `uaaf/workflow/` (WorkflowEngine + StateMachine + Checkpoint) — để lại Phase 7.
+Scope KHÔNG bao gồm: `ryuu/workflow/` (WorkflowEngine + StateMachine + Checkpoint) — để lại Phase 7.
 
 **CI gate đầu vào (Phase 5):** ruff ✓, mypy ✓, 383 tests pass, 91.48% coverage.
 
@@ -16,7 +16,7 @@ Scope KHÔNG bao gồm: `uaaf/workflow/` (WorkflowEngine + StateMachine + Checkp
 
 ## Architecture Decisions
 
-- **anyio task group, KHÔNG asyncio.gather** — spec tại §5 cấm `import asyncio` trong `uaaf/`; `anyio.create_task_group()` là primitive đúng.
+- **anyio task group, KHÔNG asyncio.gather** — spec tại §5 cấm `import asyncio` trong `ryuu/`; `anyio.create_task_group()` là primitive đúng.
 - **AgentPool là dataclass, không phải singleton** — caller tự quản lý lifecycle; testable, injectable.
 - **`dispatch()` dùng round_robin routing, KHÔNG "first registered"** — "first registered" là silent bug magnet: 10 agents trong pool, luôn chọn 1 agent không có fail. Round_robin predictable hơn dưới load, random là option thứ 2. Caller cần default routing explicit, hoặc dùng `dispatch_to()` (exact) / `fan_out()` (broadcast). Fix #7 từ expert review.
 - **`fan_out` có `on_error` mode — fail_fast vs collect** — `anyio.create_task_group()` mặc định cancel tất cả task khi 1 task fail (fail_fast). `collect` mode dùng per-task `CancelScope` để giữ partial results — phù hợp cho `ParallelFanoutStrategy` cần aggregate kết quả từ N workers. Fix #6 từ expert review.
@@ -50,7 +50,7 @@ Build từ bottom: T01 → T02 → T03 → Checkpoint B → T06 → T07 → T08.
 
 ---
 
-#### Task P6-T01: Concrete AgentPool in `uaaf/execution/pool.py`
+#### Task P6-T01: Concrete AgentPool in `ryuu/execution/pool.py`
 
 **Description:** Implement `AgentPool` — registry của `BaseAgent` instances với capability tags, bounded concurrency qua anyio Semaphore, và `fan_out` để dispatch N tasks song song. `dispatch()` dùng routing strategy thay vì hardcode "first registered". `fan_out()` có `on_error` mode để handle partial failure theo 2 semantics khác nhau.
 
@@ -117,14 +117,14 @@ class AgentPool:
 
 **Verification:**
 - [ ] `pytest tests/unit/execution/test_pool.py` — 20+ tests pass
-- [ ] `mypy uaaf/execution/pool.py` — 0 errors
-- [ ] `ruff check uaaf/execution/pool.py` — 0 violations
+- [ ] `mypy ryuu/execution/pool.py` — 0 errors
+- [ ] `ruff check ryuu/execution/pool.py` — 0 violations
 
 **Dependencies:** None (IAgentPool Protocol đã có)
 
 **Files:**
-- `uaaf/execution/pool.py` (new — ~100 lines)
-- `uaaf/execution/__init__.py` (update exports)
+- `ryuu/execution/pool.py` (new — ~100 lines)
+- `ryuu/execution/__init__.py` (update exports)
 - `tests/unit/execution/test_pool.py` (new — ~140 lines)
 
 **Estimated scope:** M (3 files)
@@ -147,7 +147,7 @@ class AgentPool:
 
 **Verification:**
 - [ ] `pytest tests/unit/execution/test_pool.py -v` — tất cả pass
-- [ ] Coverage `uaaf/execution/pool.py` ≥ 90%
+- [ ] Coverage `ryuu/execution/pool.py` ≥ 90%
 
 **Dependencies:** T01
 
@@ -162,8 +162,8 @@ class AgentPool:
 
 ```
 pytest tests/unit/execution/test_pool.py   → all pass
-mypy uaaf/                                  → 0 errors
-ruff check uaaf/ tests/                    → 0 violations
+mypy ryuu/                                  → 0 errors
+ruff check ryuu/ tests/                    → 0 violations
 ```
 
 Review: AgentPool usable như building block trước khi tiếp tục.
@@ -174,7 +174,7 @@ Review: AgentPool usable như building block trước khi tiếp tục.
 
 ---
 
-#### Task P6-T03: `ParallelFanoutStrategy` in `uaaf/cognitive/strategies/parallel.py`
+#### Task P6-T03: `ParallelFanoutStrategy` in `ryuu/cognitive/strategies/parallel.py`
 
 **Description:** ICognitiveStrategy thứ 4 — nhận `StructuredIntent` với complexity HIGH, decompose thành N subtasks (deterministic hoặc via `ISubtaskBuilder`), dispatch qua `pool.fan_out(on_error="collect")`, aggregate kết quả thành `CognitiveResult`.
 
@@ -232,13 +232,13 @@ class ParallelFanoutStrategy:
 **Verification:**
 - [ ] `pytest tests/unit/cognitive/test_parallel.py` — 12+ tests pass
 - [ ] `pytest tests/contract/test_strategy_contract.py` — ParallelFanoutStrategy pass contract
-- [ ] `mypy uaaf/cognitive/strategies/parallel.py` — 0 errors
+- [ ] `mypy ryuu/cognitive/strategies/parallel.py` — 0 errors
 
 **Dependencies:** T01 (dùng AgentPool.fan_out)
 
 **Files:**
-- `uaaf/cognitive/strategies/parallel.py` (new — ~90 lines, gồm `ISubtaskBuilder` Protocol + `EntitySubtaskBuilder` default impl + `ParallelFanoutStrategy`)
-- `uaaf/cognitive/strategies/__init__.py` (update exports)
+- `ryuu/cognitive/strategies/parallel.py` (new — ~90 lines, gồm `ISubtaskBuilder` Protocol + `EntitySubtaskBuilder` default impl + `ParallelFanoutStrategy`)
+- `ryuu/cognitive/strategies/__init__.py` (update exports)
 - `tests/unit/cognitive/test_parallel.py` (new — ~110 lines, test cả custom và default SubtaskBuilder, test partial failure aggregation)
 - `tests/contract/test_strategy_contract.py` (add ParallelFanoutStrategy to parametrize)
 
@@ -251,10 +251,10 @@ class ParallelFanoutStrategy:
 ```
 pytest tests/unit/cognitive/ tests/contract/test_strategy_contract.py  → all pass
 pytest tests/                                                            → no regression (395+ pass)
-mypy uaaf/                                                              → 0 errors
-ruff check uaaf/ tests/                                                 → 0 violations
-coverage uaaf/execution/pool.py                                         → ≥ 90%
-coverage uaaf/cognitive/strategies/parallel.py                          → ≥ 85%
+mypy ryuu/                                                              → 0 errors
+ruff check ryuu/ tests/                                                 → 0 violations
+coverage ryuu/execution/pool.py                                         → ≥ 90%
+coverage ryuu/cognitive/strategies/parallel.py                          → ≥ 85%
 ```
 
 Human review trước khi tiếp tục Phase C.
@@ -309,12 +309,12 @@ Human review trước khi tiếp tục Phase C.
 
 **Verification:**
 - [ ] `pytest tests/unit/_testing/` — pass
-- [ ] `mypy uaaf/_testing/fakes.py` — 0 errors
+- [ ] `mypy ryuu/_testing/fakes.py` — 0 errors
 
 **Dependencies:** T01
 
 **Files:**
-- `uaaf/_testing/fakes.py` (modify — add `fan_out` method, ~15 lines)
+- `ryuu/_testing/fakes.py` (modify — add `fan_out` method, ~15 lines)
 
 **Estimated scope:** XS (1 file)
 
@@ -322,25 +322,25 @@ Human review trước khi tiếp tục Phase C.
 
 #### Task P6-T08: CHANGELOG + public API exports + project memory
 
-**Description:** Housekeeping: CHANGELOG v0.1.0b6 entry, update `uaaf/__init__.py` exports cho `AgentPool` + `ParallelFanoutStrategy` + `ISubtaskBuilder`, update project memory.
+**Description:** Housekeeping: CHANGELOG v0.1.0b6 entry, update `ryuu/__init__.py` exports cho `AgentPool` + `ParallelFanoutStrategy` + `ISubtaskBuilder`, update project memory.
 
 **Acceptance criteria:**
 - [ ] `CHANGELOG.md` có entry `v0.1.0b6` với list components mới
-- [ ] `from uaaf import AgentPool` hoạt động
-- [ ] `from uaaf.cognitive.strategies import ParallelFanoutStrategy, ISubtaskBuilder` hoạt động
-- [ ] `from uaaf.execution import ToolRegistry, ITool` hoạt động (sau khi LLMAgent plan merge)
+- [ ] `from ryuu import AgentPool` hoạt động
+- [ ] `from ryuu.cognitive.strategies import ParallelFanoutStrategy, ISubtaskBuilder` hoạt động
+- [ ] `from ryuu.execution import ToolRegistry, ITool` hoạt động (sau khi LLMAgent plan merge)
 - [ ] Project memory updated: Phase 6 status
 
 **Verification:**
-- [ ] `python -c "from uaaf import AgentPool"` — no ImportError
-- [ ] `python -c "from uaaf.cognitive.strategies import ParallelFanoutStrategy"` — no ImportError
+- [ ] `python -c "from ryuu import AgentPool"` — no ImportError
+- [ ] `python -c "from ryuu.cognitive.strategies import ParallelFanoutStrategy"` — no ImportError
 - [ ] CI gate cuối: `ruff + mypy + pytest` — all green
 
 **Dependencies:** T01–T07
 
 **Files:**
 - `CHANGELOG.md`
-- `uaaf/__init__.py`
+- `ryuu/__init__.py`
 - project memory file
 
 **Estimated scope:** XS (3 files)
@@ -350,13 +350,13 @@ Human review trước khi tiếp tục Phase C.
 ### ✅ Final Checkpoint — Phase 6 Complete
 
 ```
-ruff check uaaf/ tests/ examples/                      → 0 violations
-mypy uaaf/ examples/                                   → 0 errors
-pytest tests/ --cov=uaaf --cov-fail-under=88           → ≥ 395 tests pass, ≥ 88% coverage
-grep -r "asyncio.gather" uaaf/                         → no results (spec compliance)
+ruff check ryuu/ tests/ examples/                      → 0 violations
+mypy ryuu/ examples/                                   → 0 errors
+pytest tests/ --cov=ryuu --cov-fail-under=88           → ≥ 395 tests pass, ≥ 88% coverage
+grep -r "asyncio.gather" ryuu/                         → no results (spec compliance)
 grep -r "asyncio.gather" examples/code_analysis/       → no results
-python -c "from uaaf import AgentPool"                 → no ImportError
-python -c "from uaaf.cognitive.strategies import ParallelFanoutStrategy"  → no ImportError
+python -c "from ryuu import AgentPool"                 → no ImportError
+python -c "from ryuu.cognitive.strategies import ParallelFanoutStrategy"  → no ImportError
 ```
 
 ---
@@ -377,7 +377,7 @@ python -c "from uaaf.cognitive.strategies import ParallelFanoutStrategy"  → no
 ## Resolved Decisions
 
 - **SubtaskBuilder**: dùng `ISubtaskBuilder` Protocol (structural typing, testable, injectable) — không dùng bare callable.
-- **Phase 7 scope**: `uaaf/workflow/` — WorkflowEngine + StateMachine + ICheckpointStore (batch mode, SIGKILL-safe resume). Implement sau khi Phase 6 CI gate green.
+- **Phase 7 scope**: `ryuu/workflow/` — WorkflowEngine + StateMachine + ICheckpointStore (batch mode, SIGKILL-safe resume). Implement sau khi Phase 6 CI gate green.
 - **OrchestratorAgent — deferred (Fix #5)**: Expert review xác định nó duplicate với `ParallelFanoutStrategy`. Cả hai thực hiện cùng flow (decompose → fan_out → aggregate) mà không có use case framework cụ thể để justify 2 implementations. Option A được chọn: bỏ khỏi framework core. Nếu product cần supervisor pattern, viết ở `examples/` như `CodebaseAnalysisOrchestrator` hiện tại, hoặc xem xét lại khi có concrete use case đủ để abstract.
 - **dispatch() routing (Fix #7)**: `"round_robin"` là default thay vì "first registered". Caller muốn exact routing dùng `dispatch_to(agent_id, ...)`.
 - **fan_out partial failure (Fix #6)**: `"fail_fast"` là default (anyio semantic, all-or-nothing). `"collect"` mode cho use cases cần partial results (như `ParallelFanoutStrategy`).

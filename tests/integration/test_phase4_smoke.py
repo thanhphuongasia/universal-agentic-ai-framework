@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.intent.models import ModelTier
-from uaaf_workflow.errors import RetryableError
-from uaaf.providers.fallback import ProviderFallbackChain
-from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
-from uaaf.providers.router import ModelRouter
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.intent.models import ModelTier
+from ryuu_workflow.errors import RetryableError
+from ryuu.providers.fallback import ProviderFallbackChain
+from ryuu.providers.llm import CompletionRequest, Message, Response, TokenUsage
+from ryuu.providers.router import ModelRouter
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _resp(text: str) -> Response:

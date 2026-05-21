@@ -1,6 +1,6 @@
-# Tổng quan: 5 Design Patterns trong UAAF
+# Tổng quan: 5 Design Patterns trong RYUU
 
-UAAF triển khai 5 pattern thiết kế AI agent cổ điển. Mỗi pattern giải quyết một bài toán cụ thể
+RYUU triển khai 5 pattern thiết kế AI agent cổ điển. Mỗi pattern giải quyết một bài toán cụ thể
 về cách tổ chức luồng xử lý LLM.
 
 ## Bảng so sánh
@@ -18,16 +18,16 @@ về cách tổ chức luồng xử lý LLM.
 Hầu hết ví dụ chỉ cần 2 import:
 
 ```python
-# Các type hay dùng nhất — đã export sẵn từ uaaf
-from uaaf import (
+# Các type hay dùng nhất — đã export sẵn từ ryuu
+from ryuu import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
     StructuredIntent, ComplexityLevel, ModelTier,
 )
 
 # Strategy cụ thể — import từ module tương ứng
-from uaaf.cognitive.strategies.react import ReActStrategy
-from uaaf.cognitive.strategies import ParallelFanoutStrategy, EvaluatorOptimizerStrategy
+from ryuu.cognitive.strategies.react import ReActStrategy
+from ryuu.cognitive.strategies import ParallelFanoutStrategy, EvaluatorOptimizerStrategy
 ```
 
 ## Luồng dữ liệu tổng quát
@@ -88,13 +88,13 @@ Request đến
 
 | Class | File |
 |-------|------|
-| `ReActStrategy` | `uaaf/cognitive/strategies/react.py` |
-| `StrategySelector` | `uaaf/intent/selector.py` |
-| `ModelRouter` | `uaaf/providers/router.py` |
-| `AgentPool` | `uaaf/execution/pool.py` |
-| `ParallelFanoutStrategy` | `uaaf/cognitive/strategies/parallel.py` |
-| `ISubtaskBuilder` / `EntitySubtaskBuilder` | `uaaf/cognitive/strategies/parallel.py` |
-| `EvaluatorOptimizerStrategy` | `uaaf/cognitive/strategies/evaluator_optimizer.py` |
-| `VerifierPipeline` | `uaaf/cognitive/verifiers/pipeline.py` |
-| `BaseAgent` / `AgentResult` / `Task` | `uaaf/execution/agent.py` (re-exported từ `uaaf`) |
-| `ExecutionContext` / `ContextScope` | `uaaf/runtime/context.py` (re-exported từ `uaaf`) |
+| `ReActStrategy` | `ryuu/cognitive/strategies/react.py` |
+| `StrategySelector` | `ryuu/intent/selector.py` |
+| `ModelRouter` | `ryuu/providers/router.py` |
+| `AgentPool` | `ryuu/execution/pool.py` |
+| `ParallelFanoutStrategy` | `ryuu/cognitive/strategies/parallel.py` |
+| `ISubtaskBuilder` / `EntitySubtaskBuilder` | `ryuu/cognitive/strategies/parallel.py` |
+| `EvaluatorOptimizerStrategy` | `ryuu/cognitive/strategies/evaluator_optimizer.py` |
+| `VerifierPipeline` | `ryuu/cognitive/verifiers/pipeline.py` |
+| `BaseAgent` / `AgentResult` / `Task` | `ryuu/execution/agent.py` (re-exported từ `ryuu`) |
+| `ExecutionContext` / `ContextScope` | `ryuu/runtime/context.py` (re-exported từ `ryuu`) |

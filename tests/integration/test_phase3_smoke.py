@@ -6,15 +6,15 @@ import json
 
 import pytest
 
-from uaaf._testing.fakes import FakeAgentPool
-from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
-from uaaf.execution.agent import AgentResult
-from uaaf.intent.models import ComplexityLevel, StructuredIntent
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.hybrid import HybridBackbone
-from uaaf.knowledge.memory.backbone import MemoryBackbone
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeAgentPool
+from ryuu.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
+from ryuu.execution.agent import AgentResult
+from ryuu.intent.models import ComplexityLevel, StructuredIntent
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.hybrid import HybridBackbone
+from ryuu.knowledge.memory.backbone import MemoryBackbone
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

@@ -1,11 +1,11 @@
-"""Tests for uaaf._testing.fakes — T12."""
+"""Tests for ryuu._testing.fakes — T12."""
 
 from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeKnowledgeBackbone, FakeLLMProvider
-from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
+from ryuu._testing.fakes import FakeKnowledgeBackbone, FakeLLMProvider
+from ryuu.providers.llm import CompletionRequest, Message, Response, TokenUsage
 
 
 def _req() -> CompletionRequest:
@@ -41,7 +41,7 @@ async def test_fake_llm_pops_queue_in_order() -> None:
 
 @pytest.mark.anyio
 async def test_fake_llm_raises_configured_exception() -> None:
-    from uaaf_workflow.errors import RetryableError
+    from ryuu_workflow.errors import RetryableError
 
     fake = FakeLLMProvider(raise_on_call=RetryableError("forced"))
     with pytest.raises(RetryableError):
@@ -97,7 +97,7 @@ async def test_fake_backbone_records_writes() -> None:
 
 @pytest.mark.asyncio
 async def test_fake_backbone_returns_configured_query_result() -> None:
-    from uaaf.knowledge.backbone import QueryResult
+    from ryuu.knowledge.backbone import QueryResult
     qr = QueryResult(results=["node1"], scores=[0.9])
     backbone = FakeKnowledgeBackbone(query_responses=[qr])
     result = await backbone.query("SELECT *", scope_key="s")
@@ -106,6 +106,6 @@ async def test_fake_backbone_returns_configured_query_result() -> None:
 
 @pytest.mark.asyncio
 async def test_fake_backbone_satisfies_protocol() -> None:
-    from uaaf.knowledge.backbone import IKnowledgeBackbone
+    from ryuu.knowledge.backbone import IKnowledgeBackbone
     backbone = FakeKnowledgeBackbone()
     assert isinstance(backbone, IKnowledgeBackbone)

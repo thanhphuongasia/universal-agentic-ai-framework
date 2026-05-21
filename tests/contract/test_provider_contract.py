@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.intent.models import ModelTier
-from uaaf.observability.cost import Cost
-from uaaf.providers.fallback import ProviderFallbackChain
-from uaaf.providers.llm import CompletionRequest, ILLMProvider, Message, Response, TokenUsage
-from uaaf.providers.router import ModelRouter
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.intent.models import ModelTier
+from ryuu.observability.cost import Cost
+from ryuu.providers.fallback import ProviderFallbackChain
+from ryuu.providers.llm import CompletionRequest, ILLMProvider, Message, Response, TokenUsage
+from ryuu.providers.router import ModelRouter
 
 
 def _resp(text: str = "ok") -> Response:

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.cognitive.verifier import IVerifier, VerificationResult
-from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
-from uaaf.cognitive.verifiers.llm_judge import LLMJudgeVerifier
-from uaaf.cognitive.verifiers.pipeline import VerifierPipeline
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
-from uaaf.providers.llm import Response, TokenUsage
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.cognitive.verifier import IVerifier, VerificationResult
+from ryuu.cognitive.verifiers.ground_truth import GroundTruthVerifier
+from ryuu.cognitive.verifiers.llm_judge import LLMJudgeVerifier
+from ryuu.cognitive.verifiers.pipeline import VerifierPipeline
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
+from ryuu.providers.llm import Response, TokenUsage
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

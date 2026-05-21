@@ -1,6 +1,6 @@
 # Architecture Overview
 
-High-level tier diagram of the UAAF framework. Each tier has a single responsibility; tiers communicate through Protocols (interfaces), not concrete types.
+High-level tier diagram of the RYUU framework. Each tier has a single responsibility; tiers communicate through Protocols (interfaces), not concrete types.
 
 ```mermaid
 graph TB
@@ -8,7 +8,7 @@ graph TB
         REQ[Request / Task]
     end
 
-    subgraph Intent["Intent Tier  uaaf/intent/"]
+    subgraph Intent["Intent Tier  ryuu/intent/"]
         IA[IIntentAnalyzer\nProtocol]
         SS[StrategySelector]
         IM[StructuredIntent\nComplexityLevel · ModelTier]
@@ -18,7 +18,7 @@ graph TB
         SS --> IM
     end
 
-    subgraph Cognitive["Cognitive Tier  uaaf/cognitive/"]
+    subgraph Cognitive["Cognitive Tier  ryuu/cognitive/"]
         ICS[ICognitiveStrategy\nProtocol]
         DS[DirectStrategy]
         RS[ReActStrategy]
@@ -33,7 +33,7 @@ graph TB
         SV & LJ & GT & VP -.implements.-> IV
     end
 
-    subgraph Execution["Execution Tier  uaaf/execution/"]
+    subgraph Execution["Execution Tier  ryuu/execution/"]
         BA[BaseAgent\nABC · template method]
         LA[LLMAgent\nextends BaseAgent]
         AP[AgentPool\nfan_out / fan_in]
@@ -46,7 +46,7 @@ graph TB
         TR --> IT
     end
 
-    subgraph Providers["Providers Tier  uaaf/providers/"]
+    subgraph Providers["Providers Tier  ryuu/providers/"]
         ILLM[ILLMProvider\nProtocol]
         OAI[OpenAIProvider]
         ANT[AnthropicProvider]
@@ -59,7 +59,7 @@ graph TB
         FB --> ILLM
     end
 
-    subgraph Knowledge["Knowledge Tier  uaaf/knowledge/"]
+    subgraph Knowledge["Knowledge Tier  ryuu/knowledge/"]
         IKB[IKnowledgeBackbone\nProtocol]
         MB[MemoryBackbone\nworking + episodic]
         GB[GraphBackbone\nnode + edge store]
@@ -69,7 +69,7 @@ graph TB
         CA --> IKB
     end
 
-    subgraph Observability["Observability  uaaf/observability/"]
+    subgraph Observability["Observability  ryuu/observability/"]
         CT[CostTracker\nbudget per scope]
         TR2[Tracer\nOpenTelemetry]
         AL[AuditLogger\nJSONL hash chain]
@@ -78,13 +78,13 @@ graph TB
         CT --> PRC
     end
 
-    subgraph Runtime["Runtime  uaaf/runtime/"]
+    subgraph Runtime["Runtime  ryuu/runtime/"]
         EC[ExecutionContext]
         CS[ContextScope\nuser_id · session_id · domain]
         EC --> CS
     end
 
-    subgraph Prompts["Prompts  uaaf/prompts/"]
+    subgraph Prompts["Prompts  ryuu/prompts/"]
         PR[PromptRegistry\nYAML versioned]
         PC[PromptConfig\nversioned templates]
         PR --> PC

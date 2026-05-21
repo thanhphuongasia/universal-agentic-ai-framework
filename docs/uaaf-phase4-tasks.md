@@ -1,4 +1,4 @@
-# UAAF — Phase 4 (Provider Router + Circuit Breaker) — Task Breakdown
+# RYUU — Phase 4 (Provider Router + Circuit Breaker) — Task Breakdown
 
 > Phase 4 goal: `ModelRouter` (routing matrix: intent_type × complexity → ILLMProvider) + `CircuitBreaker` (failure counting, half-open recovery) + `ProviderFallbackChain` (tries providers in order). Strategies can route through `ModelRouter` instead of receiving a hard-coded provider.
 
@@ -11,13 +11,13 @@
 ## Task graph
 
 ```
-P4-T01 CircuitBreaker (uaaf/providers/circuit_breaker.py)
+P4-T01 CircuitBreaker (ryuu/providers/circuit_breaker.py)
          │
-P4-T02 RoutingKey + RoutingMatrix models (uaaf/providers/router.py)
+P4-T02 RoutingKey + RoutingMatrix models (ryuu/providers/router.py)
          │
-P4-T03 ModelRouter — wraps ILLMProvider + CircuitBreaker (uaaf/providers/router.py)
+P4-T03 ModelRouter — wraps ILLMProvider + CircuitBreaker (ryuu/providers/router.py)
          │
-P4-T04 ProviderFallbackChain (uaaf/providers/fallback.py)
+P4-T04 ProviderFallbackChain (ryuu/providers/fallback.py)
          │
 P4-T05 Tests (unit + contract + integration)
          │
@@ -26,7 +26,7 @@ P4-T06 CI gate
 
 ---
 
-## P4-T01. CircuitBreaker (`uaaf/providers/circuit_breaker.py`)
+## P4-T01. CircuitBreaker (`ryuu/providers/circuit_breaker.py`)
 
 **Acceptance**:
 - `CircuitState(StrEnum)`: `CLOSED = "closed"`, `OPEN = "open"`, `HALF_OPEN = "half_open"`
@@ -40,11 +40,11 @@ P4-T06 CI gate
   - `state: CircuitState` property
 - Thread-safe via `threading.Lock`
 
-**Files**: `uaaf/providers/circuit_breaker.py`
+**Files**: `ryuu/providers/circuit_breaker.py`
 
 ---
 
-## P4-T02 + P4-T03. ModelRouter (`uaaf/providers/router.py`)
+## P4-T02 + P4-T03. ModelRouter (`ryuu/providers/router.py`)
 
 **Acceptance**:
 - `RoutingKey` frozen dataclass: `model_tier: ModelTier`
@@ -61,11 +61,11 @@ P4-T06 CI gate
     - contains "opus" → `POWERFUL`
     - default → `STANDARD`
 
-**Files**: `uaaf/providers/router.py`
+**Files**: `ryuu/providers/router.py`
 
 ---
 
-## P4-T04. ProviderFallbackChain (`uaaf/providers/fallback.py`)
+## P4-T04. ProviderFallbackChain (`ryuu/providers/fallback.py`)
 
 **Acceptance**:
 - `ProviderFallbackChain(providers: list[ILLMProvider])`
@@ -74,7 +74,7 @@ P4-T06 CI gate
   - `complete(request)`: tries providers in order; on `DegradedError` or `RetryableError` from provider → try next; if all fail → raise `DegradedError("All providers failed")`
   - `estimate_cost`: returns estimate from first provider
 
-**Files**: `uaaf/providers/fallback.py`
+**Files**: `ryuu/providers/fallback.py`
 
 ---
 
@@ -95,9 +95,9 @@ P4-T06 CI gate
 
 ## P4-T06. CI gate
 
-- [ ] `ruff check uaaf/ tests/` → 0 violations
-- [ ] `mypy uaaf/ --ignore-missing-imports` → 0 errors
-- [ ] `pytest --cov=uaaf` → coverage ≥85%
+- [ ] `ruff check ryuu/ tests/` → 0 violations
+- [ ] `mypy ryuu/ --ignore-missing-imports` → 0 errors
+- [ ] `pytest --cov=ryuu` → coverage ≥85%
 - [ ] User review + approve
 - [ ] Tag v0.1.0b4
 

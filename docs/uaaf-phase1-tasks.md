@@ -1,10 +1,10 @@
-# UAAF — Phase 1 (Intent + Strategy) — Task Breakdown
+# RYUU — Phase 1 (Intent + Strategy) — Task Breakdown
 
 > Phase 1 goal: `StructuredIntent` schema + `IIntentAnalyzer` + `StrategySelector` + 3 strategies (Direct, ReAct, EvaluatorOptimizer) + `LLMIntentAnalyzer`. Product teams có thể subclass `IIntentAnalyzer` và register strategy để route requests.
 
 **Status**: In progress
 **Last Updated**: 2026-05-07
-**Predecessors**: Phase 0 complete (v0.1.0a1), spec `uaaf-framework-spec.md`
+**Predecessors**: Phase 0 complete (v0.1.0a1), spec `ryuu-framework-spec.md`
 
 ---
 
@@ -32,7 +32,7 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
 
 ---
 
-## P1-T01. Intent models (`uaaf/intent/models.py`)
+## P1-T01. Intent models (`ryuu/intent/models.py`)
 
 **Acceptance**:
 - `ComplexityLevel` enum: `LOW`, `MEDIUM`, `HIGH`
@@ -60,11 +60,11 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
   - `usd_est: float`
   - `steps_est: int = 1`
 
-**Files**: `uaaf/intent/__init__.py`, `uaaf/intent/models.py`
+**Files**: `ryuu/intent/__init__.py`, `ryuu/intent/models.py`
 
 ---
 
-## P1-T02. Protocols (`uaaf/intent/analyzer.py`, `uaaf/cognitive/strategy.py`)
+## P1-T02. Protocols (`ryuu/intent/analyzer.py`, `ryuu/cognitive/strategy.py`)
 
 **Acceptance**:
 - `IIntentAnalyzer` `@runtime_checkable` Protocol:
@@ -81,22 +81,22 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
   - `def estimate_cost(self, intent: StructuredIntent, context: ExecutionContext) -> CostEstimate`
   - `async def execute(self, intent: StructuredIntent, context: ExecutionContext, agent_pool: IAgentPool, verifier: IVerifier) -> CognitiveResult`
 
-**Files**: `uaaf/intent/analyzer.py`, `uaaf/cognitive/__init__.py`, `uaaf/cognitive/strategy.py`
+**Files**: `ryuu/intent/analyzer.py`, `ryuu/cognitive/__init__.py`, `ryuu/cognitive/strategy.py`
 
 ---
 
-## P1-T03. StrategySelector (`uaaf/intent/selector.py`)
+## P1-T03. StrategySelector (`ryuu/intent/selector.py`)
 
 **Acceptance**:
 - `StrategySelector(strategies: list[ICognitiveStrategy])`: ordered list, first match wins
 - `select(intent, context) -> ICognitiveStrategy`: returns first strategy where `applicable()` is True
 - Raises `ValueError` if no strategy matches (should not happen when `DirectStrategy` is always last)
 
-**Files**: `uaaf/intent/selector.py`
+**Files**: `ryuu/intent/selector.py`
 
 ---
 
-## P1-T04. DirectStrategy (`uaaf/cognitive/strategies/direct.py`)
+## P1-T04. DirectStrategy (`ryuu/cognitive/strategies/direct.py`)
 
 **Acceptance**:
 - `strategy_id = "direct"`
@@ -104,11 +104,11 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
 - `estimate_cost`: returns `CostEstimate(input_tokens_est=500, output_tokens_est=200, usd_est=0.0001, steps_est=1)`
 - `execute`: `await agent_pool.dispatch(Task(...))`, return `CognitiveResult(content=result.output, confidence=1.0, strategy_id="direct")`
 
-**Files**: `uaaf/cognitive/strategies/__init__.py`, `uaaf/cognitive/strategies/direct.py`
+**Files**: `ryuu/cognitive/strategies/__init__.py`, `ryuu/cognitive/strategies/direct.py`
 
 ---
 
-## P1-T05. ReActStrategy (`uaaf/cognitive/strategies/react.py`)
+## P1-T05. ReActStrategy (`ryuu/cognitive/strategies/react.py`)
 
 **Acceptance**:
 - `strategy_id = "react"`
@@ -120,11 +120,11 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
   4. Otherwise treat as observation, continue
 - Returns `CognitiveResult` with `strategy_id="react"`, `reasoning` = accumulated observations
 
-**Files**: `uaaf/cognitive/strategies/react.py`
+**Files**: `ryuu/cognitive/strategies/react.py`
 
 ---
 
-## P1-T06. EvaluatorOptimizerStrategy (`uaaf/cognitive/strategies/evaluator_optimizer.py`)
+## P1-T06. EvaluatorOptimizerStrategy (`ryuu/cognitive/strategies/evaluator_optimizer.py`)
 
 **Acceptance**:
 - `strategy_id = "evaluator_optimizer"`
@@ -136,11 +136,11 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
   4. Else add `result.feedback` to next generate prompt, continue
 - After `max_rounds` without pass: return best result so far
 
-**Files**: `uaaf/cognitive/strategies/evaluator_optimizer.py`
+**Files**: `ryuu/cognitive/strategies/evaluator_optimizer.py`
 
 ---
 
-## P1-T07. LLMIntentAnalyzer (`uaaf/intent/llm_analyzer.py`)
+## P1-T07. LLMIntentAnalyzer (`ryuu/intent/llm_analyzer.py`)
 
 **Acceptance**:
 - `LLMIntentAnalyzer(provider: ILLMProvider, model: str | None = None, system_prompt: str | None = None)`
@@ -151,18 +151,18 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
   4. On parse error: return `StructuredIntent(intent_type="unknown", action="clarify", complexity=LOW, confidence=0.3, ambiguous=True, clarification_questions=["Could you clarify your request?"])`
 - `INTENT_SYSTEM_PROMPT` constant: instructs LLM to output JSON matching StructuredIntent schema
 
-**Files**: `uaaf/intent/llm_analyzer.py`
+**Files**: `ryuu/intent/llm_analyzer.py`
 
 ---
 
-## P1-T08. Test utilities (`uaaf/_testing/fakes.py` update)
+## P1-T08. Test utilities (`ryuu/_testing/fakes.py` update)
 
 **Acceptance**:
 - `FakeIntentAnalyzer(default_intent: StructuredIntent | None)`: returns preset intent, tracks `call_count`
 - `FakeAgentPool(responses: list[AgentResult] | None)`: pops next response, tracks `dispatch_count`
 - `FakeVerifier(pass_sequence: list[bool])`: iterates through pass sequence, `verifier_id = "fake"`
 
-**Files**: `uaaf/_testing/fakes.py`
+**Files**: `ryuu/_testing/fakes.py`
 
 ---
 
@@ -187,9 +187,9 @@ P1-T02 Protocols (IIntentAnalyzer, ICognitiveStrategy, IAgentPool, IVerifier)
 
 ## P1-T10. CI gate
 
-- [x] `ruff check uaaf/ tests/` → 0 violations (2026-05-07)
-- [x] `mypy uaaf/ --ignore-missing-imports` → 0 errors, 33 source files (2026-05-07)
-- [x] `pytest --cov=uaaf` → 192 passed, 88.77% coverage (2026-05-07)
+- [x] `ruff check ryuu/ tests/` → 0 violations (2026-05-07)
+- [x] `mypy ryuu/ --ignore-missing-imports` → 0 errors, 33 source files (2026-05-07)
+- [x] `pytest --cov=ryuu` → 192 passed, 88.77% coverage (2026-05-07)
 - [ ] User review + approve
 - [ ] Tag v0.1.0b1
 

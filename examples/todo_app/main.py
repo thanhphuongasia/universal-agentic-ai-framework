@@ -1,5 +1,5 @@
 """
-Todo App — UAAF Example
+Todo App — RYUU Example
 ========================
 Demonstrates two equivalent dispatch paths:
 
@@ -39,17 +39,17 @@ from examples.todo_app.strategies import (
     TodoReActStrategy,
 )
 from examples.todo_app.tools import build_todo_registry
-from uaaf._testing.fakes import FakeVerifier
-from uaaf.execution import PrintCallbacks
-from uaaf.execution.agent import Task as AgentTask
-from uaaf.execution.pool import AgentPool
-from uaaf.intent.analyzer import IIntentAnalyzer
-from uaaf.intent.selector import StrategySelector
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf.runtime.request_handler import RequestHandler
+from ryuu._testing.fakes import FakeVerifier
+from ryuu_execution import PrintCallbacks
+from ryuu_execution.agent import Task as AgentTask
+from ryuu_execution.pool import AgentPool
+from ryuu.intent.analyzer import IIntentAnalyzer
+from ryuu.intent.selector import StrategySelector
+from ryuu_observability.audit import AuditLogger
+from ryuu_observability.cost import CostPolicy, CostTracker
+from ryuu_observability.rate_limit import RateLimiter, RatePolicy
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_runtime.request_handler import RequestHandler
 
 # ---------------------------------------------------------------------------
 # Query presets — picked interactively at runtime (simple → complex)
@@ -192,7 +192,7 @@ def _configure_strategy_logging() -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(_EmojiFormatter())
     for name in (
-        "uaaf.cognitive.strategies.evaluator_optimizer",
+        "ryuu.cognitive.strategies.evaluator_optimizer",
         "examples.todo_app.strategies",
     ):
         log = logging.getLogger(name)
@@ -395,7 +395,7 @@ async def main(mode: str = "both") -> None:
 
     _configure_strategy_logging()
 
-    print_separator("UAAF Todo App")
+    print_separator("RYUU Todo App")
     print(f"\n  Mode: {mode}")
 
     goals, tasks = build_mock_data()

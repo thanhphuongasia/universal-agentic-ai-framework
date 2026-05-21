@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeCheckpointStore, FakeWorkflowEngine
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf_workflow.checkpoint import ICheckpointStore, make_checkpoint
-from uaaf_workflow.engine import IWorkflowEngine, WorkflowResult, WorkflowStatus
-from uaaf_workflow.state_machine import Workflow
+from ryuu._testing.fakes import FakeCheckpointStore, FakeWorkflowEngine
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.checkpoint import ICheckpointStore, make_checkpoint
+from ryuu_workflow.engine import IWorkflowEngine, WorkflowResult, WorkflowStatus
+from ryuu_workflow.state_machine import Workflow
 
 
 def _ctx() -> ExecutionContext:

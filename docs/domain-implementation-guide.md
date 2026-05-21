@@ -1,4 +1,4 @@
-# UAAF Domain Implementation Guide
+# RYUU Domain Implementation Guide
 
 > **Reference implementation**: `examples/code_analysis/` — runs end-to-end in demo mode with no API key.
 > **Pattern**: Ingest → Analyse (multi-agent) → Summarize → (optional) Verify
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Every UAAF domain follows the same 5-file layout + 1 YAML prompt file:
+Every RYUU domain follows the same 5-file layout + 1 YAML prompt file:
 
 ```
 examples/my_domain/
@@ -140,7 +140,7 @@ from __future__ import annotations
 import json
 from typing import Any
 from examples.my_domain.ingestion import ItemInfo
-from uaaf.execution.tool_registry import ToolRegistry  # or copy tools.py pattern
+from ryuu.execution.tool_registry import ToolRegistry  # or copy tools.py pattern
 
 
 def build_registry(items: list[ItemInfo], reports: list[dict[str, Any]]) -> ToolRegistry:
@@ -191,15 +191,15 @@ from pathlib import Path
 from typing import Any
 
 from examples.my_domain.ingestion import ItemInfo
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.execution.pool import AgentPool
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.graph.backbone import GraphBackbone
-from uaaf.observability.cost import Cost
-from uaaf.prompts.registry import PromptRegistry
-from uaaf.providers.llm import ILLMProvider, Response, TokenUsage
-from uaaf_workflow.context import ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.execution.pool import AgentPool
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.graph.backbone import GraphBackbone
+from ryuu.observability.cost import Cost
+from ryuu.prompts.registry import PromptRegistry
+from ryuu.providers.llm import ILLMProvider, Response, TokenUsage
+from ryuu_workflow.context import ExecutionContext
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 _registry = PromptRegistry(prompts_root=_PROMPTS_ROOT)
@@ -359,14 +359,14 @@ class AgentFactory:
     def __post_init__(self) -> None:
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
-            from uaaf.providers.adapters.openai import OpenAIProvider
+            from ryuu.providers.adapters.openai import OpenAIProvider
             self._shared_llm = OpenAIProvider(api_key=api_key)  # type: ignore[assignment]
 
     def build(self, item: ItemInfo, shared_backbone: GraphBackbone) -> ItemAnalysisAgent:
         from examples._utils import silent_tracer
-        from uaaf.observability.audit import AuditLogger
-        from uaaf.observability.cost import CostPolicy, CostTracker
-        from uaaf.observability.rate_limit import RateLimiter, RatePolicy
+        from ryuu.observability.audit import AuditLogger
+        from ryuu.observability.cost import CostPolicy, CostTracker
+        from ryuu.observability.rate_limit import RateLimiter, RatePolicy
 
         llm: ILLMProvider = (
             self._shared_llm if self._shared_llm is not None
@@ -406,10 +406,10 @@ from typing import Any
 
 from examples.my_domain.agents import AgentFactory, DomainOrchestrator, DomainReport, build_provider
 from examples.my_domain.ingestion import MyIngester
-from uaaf.knowledge.graph.backbone import GraphBackbone
-from uaaf.prompts.registry import PromptRegistry
-from uaaf_workflow.context import ExecutionContext
-from uaaf_workflow.state_machine import StateTransition
+from ryuu.knowledge.graph.backbone import GraphBackbone
+from ryuu.prompts.registry import PromptRegistry
+from ryuu_workflow.context import ExecutionContext
+from ryuu_workflow.state_machine import StateTransition
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 
@@ -489,10 +489,10 @@ from typing import Any
 
 from examples.my_domain.workflow import AnalyseState, IngestState, SummarizeState
 from examples.my_domain.tools import build_registry
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf_workflow.engine import WorkflowEngine
-from uaaf_workflow.state_machine import Workflow
-from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.engine import WorkflowEngine
+from ryuu_workflow.state_machine import Workflow
+from ryuu_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 async def main(source: str | None = None) -> None:

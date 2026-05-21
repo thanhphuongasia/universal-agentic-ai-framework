@@ -52,7 +52,7 @@ Hành động: xóa block "Architecture Decisions (đã chốt)" về `ModelPoli
 
 #### Fix #2 — [CRITICAL] `ToolRegistry` thiếu domain whitelist — vi phạm spec §9
 
-Spec `uaaf-framework-spec.md` §9 "Always":
+Spec `ryuu-framework-spec.md` §9 "Always":
 > Mọi tool register trong `ToolRegistry` với domain whitelist — không hardcode tool list trong agent.
 
 Class diagram spec có `allowlist_per_domain: Dict` trên `ToolRegistry`.
@@ -224,7 +224,7 @@ Lý do hợp lý:
 
 Caveat: `examples/code_analysis` Phase 6 T06 chỉ refactor pool layer, chưa đụng vào individual workers. Cần track item: "workers extend `LLMAgent`" sau khi `plan.md` xong.
 
-### Overlap ở `uaaf/execution/__init__.py`
+### Overlap ở `ryuu/execution/__init__.py`
 
 Cả 2 plan đều update file này (exports). Nếu có merge conflict:
 - `plan.md` thêm: `LLMAgent`, `ToolRegistry`, `PrintCallbacks`, `SilentCallbacks`
@@ -239,9 +239,9 @@ Phase 6 có explicit: "383+ tests pass, coverage ≥ 88%". `plan.md` không có.
 Thêm checkpoint cuối `plan.md`:
 ```
 pytest tests/ -q                    → tất cả existing tests pass
-pytest --cov=uaaf --cov-fail-under=85
-ruff check uaaf/ examples/          → 0 violations  
-mypy uaaf/ examples/                → 0 errors
+pytest --cov=ryuu --cov-fail-under=85
+ruff check ryuu/ examples/          → 0 violations  
+mypy ryuu/ examples/                → 0 errors
 ```
 
 ---
@@ -295,14 +295,14 @@ mypy uaaf/ examples/                → 0 errors
 
 ### CI gate sau `plan.md`
 - [ ] `pytest tests/ -q` — all pass
-- [ ] `pytest --cov=uaaf --cov-fail-under=85`
-- [ ] `ruff check uaaf/ examples/` — 0 violations
-- [ ] `mypy uaaf/ examples/` — 0 errors
+- [ ] `pytest --cov=ryuu --cov-fail-under=85`
+- [ ] `ruff check ryuu/ examples/` — 0 violations
+- [ ] `mypy ryuu/ examples/` — 0 errors
 - [ ] `python -m examples.todo_app.main` — output giống y chang trước refactor
 
 ### CI gate sau Phase 6
-- [ ] `pytest tests/ --cov=uaaf --cov-fail-under=88` — ≥ 420 tests
-- [ ] `ruff check uaaf/ tests/ examples/` — 0 violations
-- [ ] `mypy uaaf/ examples/` — 0 errors
-- [ ] `grep -r "asyncio.gather" uaaf/` — no results
-- [ ] `python -c "from uaaf import AgentPool"` — no ImportError
+- [ ] `pytest tests/ --cov=ryuu --cov-fail-under=88` — ≥ 420 tests
+- [ ] `ruff check ryuu/ tests/ examples/` — 0 violations
+- [ ] `mypy ryuu/ examples/` — 0 errors
+- [ ] `grep -r "asyncio.gather" ryuu/` — no results
+- [ ] `python -c "from ryuu import AgentPool"` — no ImportError

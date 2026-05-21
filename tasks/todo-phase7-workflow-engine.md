@@ -17,7 +17,7 @@
 
 ## Phase D — Fakes + Integration Smoke
 
-- [x] **T07** — `FakeCheckpointStore` + `FakeWorkflowEngine` in `uaaf/_testing/fakes.py` + 12 unit tests (GREEN)
+- [x] **T07** — `FakeCheckpointStore` + `FakeWorkflowEngine` in `ryuu/_testing/fakes.py` + 12 unit tests (GREEN)
 - [x] **T08** — Integration smoke test: 3-state pipeline + SIGKILL resume + public API assertions (GREEN)
 
 ## Phase E — Cognitive Pipeline Wiring
@@ -33,6 +33,6 @@
 - [x] Coverage 89.25% ≥ 88% threshold
 - [x] mypy: no issues in 70 source files
 - [x] ruff: 0 new errors (2 pre-existing unrelated)
-- [x] `from uaaf import WorkflowEngine, Workflow, IState, ICheckpointStore, FileCheckpointStore` → OK
+- [x] `from ryuu import WorkflowEngine, Workflow, IState, ICheckpointStore, FileCheckpointStore` → OK
 - [x] `grep -rn "\.react_loop("` → 0 results
 - [x] `strategy_id` field in `ExecutionContext` ✓

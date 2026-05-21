@@ -1,13 +1,13 @@
 # Migration Guide — Strangler Pattern
 
-> Cách migrate từ legacy AI code sang UAAF mà không big-bang rewrite.
+> Cách migrate từ legacy AI code sang RYUU mà không big-bang rewrite.
 
 ---
 
 ## Nguyên tắc
 
-1. **Strangler Fig pattern** — chạy UAAF song song legacy, không thay thế ngay
-2. **Feature flag** — `USE_UAAF=true` để switch từng request sang UAAF path
+1. **Strangler Fig pattern** — chạy RYUU song song legacy, không thay thế ngay
+2. **Feature flag** — `USE_RYUU=true` để switch từng request sang RYUU path
 3. **Metric equivalence** — verify output quality tương đương trước khi tắt legacy
 4. **Rollback < 5 phút** — flip flag, không cần deploy
 
@@ -15,10 +15,10 @@
 
 ## Phase 1: Cài đặt và Feature Flag
 
-### Install UAAF vào project hiện tại
+### Install RYUU vào project hiện tại
 
 ```bash
-pip install "uaaf[openai]"
+pip install "ryuu[openai]"
 ```
 
 ### Thêm feature flag
@@ -26,15 +26,15 @@ pip install "uaaf[openai]"
 ```python
 import os
 
-USE_UAAF = os.getenv("USE_UAAF", "false").lower() == "true"
+USE_RYUU = os.getenv("USE_RYUU", "false").lower() == "true"
 ```
 
 ### Router pattern
 
 ```python
 async def process_request(user_input: str, context: dict) -> str:
-    if USE_UAAF:
-        return await uaaf_handler(user_input, context)
+    if USE_RYUU:
+        return await ryuu_handler(user_input, context)
     return await legacy_handler(user_input, context)
 ```
 
@@ -42,7 +42,7 @@ async def process_request(user_input: str, context: dict) -> str:
 
 ## Phase 2: Shadow Mode (chạy cả hai, so sánh output)
 
-Trước khi commit sang UAAF path, chạy cả hai và compare. Không trả kết quả UAAF cho user — chỉ log để analyze:
+Trước khi commit sang RYUU path, chạy cả hai và compare. Không trả kết quả RYUU cho user — chỉ log để analyze:
 
 ```python
 import asyncio
@@ -53,19 +53,19 @@ logger = logging.getLogger(__name__)
 
 async def shadow_mode(user_input: str, context: dict) -> str:
     # Chạy song song, lấy kết quả legacy cho user
-    legacy_result, uaaf_result = await asyncio.gather(
+    legacy_result, ryuu_result = await asyncio.gather(
         legacy_handler(user_input, context),
-        uaaf_handler(user_input, context),
+        ryuu_handler(user_input, context),
         return_exceptions=True,
     )
 
-    # Log để compare (không expose uaaf_result cho user)
-    if not isinstance(uaaf_result, Exception):
+    # Log để compare (không expose ryuu_result cho user)
+    if not isinstance(ryuu_result, Exception):
         logger.info(
             "shadow_comparison",
             extra={
                 "legacy_output": legacy_result,
-                "uaaf_output": uaaf_result,
+                "ryuu_output": ryuu_result,
                 "input_hash": hash(user_input),
             },
         )
@@ -77,22 +77,22 @@ async def shadow_mode(user_input: str, context: dict) -> str:
 
 ## Phase 3: Canary Release (5% traffic)
 
-Khi shadow mode cho thấy UAAF output tương đương:
+Khi shadow mode cho thấy RYUU output tương đương:
 
 ```python
 import random
 
 
-def should_use_uaaf(user_id: str, canary_percent: int = 5) -> bool:
-    if not USE_UAAF:
+def should_use_ryuu(user_id: str, canary_percent: int = 5) -> bool:
+    if not USE_RYUU:
         return False
     # Deterministic per user (không flicker giữa requests)
     return (hash(user_id) % 100) < canary_percent
 
 
 async def process_request(user_input: str, user_id: str, context: dict) -> str:
-    if should_use_uaaf(user_id):
-        return await uaaf_handler(user_input, context)
+    if should_use_ryuu(user_id):
+        return await ryuu_handler(user_input, context)
     return await legacy_handler(user_input, context)
 ```
 
@@ -102,11 +102,11 @@ Tăng dần: 5% → 25% → 50% → 100%. Monitor error rate và latency ở m�
 
 ## Phase 4: Full Cutover
 
-Khi 100% traffic đã stable trên UAAF ≥ 1 tuần:
+Khi 100% traffic đã stable trên RYUU ≥ 1 tuần:
 
 ```bash
 # Tắt legacy path
-USE_UAAF=true
+USE_RYUU=true
 # Sau đó xóa legacy code trong sprint tiếp theo
 ```
 
@@ -132,8 +132,8 @@ async def call_llm(prompt: str) -> str:
 
 **After** (qua ILLMProvider):
 ```python
-from uaaf.providers.adapters.openai import OpenAIProvider
-from uaaf.providers.llm import CompletionRequest, Message
+from ryuu.providers.adapters.openai import OpenAIProvider
+from ryuu.providers.llm import CompletionRequest, Message
 
 provider = OpenAIProvider(api_key=os.environ["OPENAI_API_KEY"])
 
@@ -163,7 +163,7 @@ async def handle_before(prompt: str) -> str:
 
 **After**:
 ```python
-from uaaf_workflow.errors import DegradedError, RetryableError, retry_policy
+from ryuu_workflow.errors import DegradedError, RetryableError, retry_policy
 
 async def call_with_retry(prompt: str) -> str:
     async for attempt in retry_policy(max_attempts=3):
@@ -184,8 +184,8 @@ def remember(session_id: str, text: str) -> None:
 
 **After** (`MemoryBackbone`):
 ```python
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.memory.backbone import MemoryBackbone
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.memory.backbone import MemoryBackbone
 
 assembler = ContextAssembler(MemoryBackbone())
 
@@ -202,12 +202,12 @@ Rollback < 5 phút — chỉ cần flip env var:
 
 ```bash
 # Emergency rollback
-USE_UAAF=false
+USE_RYUU=false
 
 # Hoặc nếu dùng Kubernetes / ECS
-kubectl set env deployment/my-service USE_UAAF=false
+kubectl set env deployment/my-service USE_RYUU=false
 # hoặc
-aws ecs update-service --environment name=USE_UAAF,value=false
+aws ecs update-service --environment name=USE_RYUU,value=false
 ```
 
 Không cần redeploy, không downtime.
@@ -238,7 +238,7 @@ import anthropic
 client = anthropic.Anthropic()
 
 # RIGHT — luôn qua ILLMProvider
-from uaaf.providers.adapters.anthropic import AnthropicProvider
+from ryuu.providers.adapters.anthropic import AnthropicProvider
 ```
 
 ### Pitfall 2: Skip verifier "cho nhanh"
@@ -264,7 +264,7 @@ class MyAgent:
     async def run(self, prompt): ...
 
 # RIGHT
-from uaaf.execution.agent import BaseAgent
+from ryuu.execution.agent import BaseAgent
 class MyAgent(BaseAgent):
     async def _execute(self, task, context): ...
 ```

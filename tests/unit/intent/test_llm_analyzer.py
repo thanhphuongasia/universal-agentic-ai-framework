@@ -6,10 +6,10 @@ import json
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.intent.llm_analyzer import LLMIntentAnalyzer
-from uaaf.intent.models import DIRECT, REACT, ComplexityLevel, StructuredIntent
-from uaaf.providers.llm import Response, TokenUsage
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.intent.llm_analyzer import LLMIntentAnalyzer
+from ryuu.intent.models import DIRECT, REACT, ComplexityLevel, StructuredIntent
+from ryuu.providers.llm import Response, TokenUsage
 
 
 def _resp(content: str) -> Response:

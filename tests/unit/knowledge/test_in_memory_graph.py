@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.knowledge.graph.in_memory import InMemoryGraphStore
-from uaaf.knowledge.graph.store import Edge, Node
+from ryuu.knowledge.graph.in_memory import InMemoryGraphStore
+from ryuu.knowledge.graph.store import Edge, Node
 
 
 class TestInMemoryGraphStore:

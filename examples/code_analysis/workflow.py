@@ -21,10 +21,10 @@ from examples.code_analysis.agents import (
     build_provider,
 )
 from examples.code_analysis.ingestion import PythonIngester
-from uaaf.knowledge.graph.backbone import GraphBackbone
-from uaaf.prompts.registry import PromptRegistry
-from uaaf_workflow.context import ExecutionContext
-from uaaf_workflow.state_machine import StateTransition
+from ryuu.knowledge.graph.backbone import GraphBackbone
+from ryuu.prompts.registry import PromptRegistry
+from ryuu_workflow.context import ExecutionContext
+from ryuu_workflow.state_machine import StateTransition
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 
@@ -43,7 +43,7 @@ class IngestState:
             classes = ingester.ingest_directory(target, max_files=self.max_files)
         else:
             repo_root = Path(__file__).parent.parent.parent
-            classes = ingester.ingest_directory(repo_root / "uaaf")
+            classes = ingester.ingest_directory(repo_root / "ryuu")
         print(f"  [ingest]    {len(classes)} classes extracted")
         return StateTransition(next_state="analyse", output=classes)
 

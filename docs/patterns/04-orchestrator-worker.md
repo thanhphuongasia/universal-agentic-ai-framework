@@ -5,7 +5,7 @@
 Orchestrator-Worker gồm một thành phần trung tâm (orchestrator) phân rã nhiệm vụ phức tạp
 thành subtask, phân phối cho nhiều worker xử lý song song, rồi tổng hợp kết quả.
 
-UAAF triển khai qua `ParallelFanoutStrategy`:
+RYUU triển khai qua `ParallelFanoutStrategy`:
 1. **Phân rã** (`ISubtaskBuilder`): tạo 1 `Task` cho mỗi entity trong `intent.entities`.
 2. **Dispatch song song** (`fan_out(on_error="collect")`): worker thất bại không hủy các worker khác.
 3. **Tổng hợp**: lấy output từ `result.success == True`.
@@ -20,13 +20,13 @@ UAAF triển khai qua `ParallelFanoutStrategy`:
 - Cần tổng hợp kết quả thành một output thống nhất.
 - Chấp nhận partial success (một vài worker lỗi, kết quả vẫn được trả).
 
-## UAAF triển khai như thế nào?
+## RYUU triển khai như thế nào?
 
 | Thành phần | Vị trí |
 |-----------|--------|
-| `ParallelFanoutStrategy` | `uaaf/cognitive/strategies/parallel.py` |
-| `ISubtaskBuilder` (protocol) | `uaaf/cognitive/strategies/parallel.py` |
-| `EntitySubtaskBuilder` (default) | `uaaf/cognitive/strategies/parallel.py` |
+| `ParallelFanoutStrategy` | `ryuu/cognitive/strategies/parallel.py` |
+| `ISubtaskBuilder` (protocol) | `ryuu/cognitive/strategies/parallel.py` |
+| `EntitySubtaskBuilder` (default) | `ryuu/cognitive/strategies/parallel.py` |
 
 **Luồng thực thi:**
 ```
@@ -52,7 +52,7 @@ intent.entities = {"auth": "...", "payment": "...", "user": "..."}
 intent.complexity == ComplexityLevel.HIGH  AND  len(intent.entities) > 1
 ```
 
-## Ví dụ: Code Analysis — Phân tích toàn bộ codebase UAAF
+## Ví dụ: Code Analysis — Phân tích toàn bộ codebase RYUU
 
 Đây chính là use case của `examples/code_analysis/`: orchestrate phân tích song song cho
 từng Python class, mỗi class là một entity trong intent.
@@ -67,14 +67,14 @@ import os
 import anyio
 from dataclasses import dataclass, field
 
-from uaaf import (
+from ryuu import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
     StructuredIntent, ComplexityLevel,
 )
-from uaaf.cognitive.strategies.parallel import ParallelFanoutStrategy, ISubtaskBuilder
-from uaaf.cognitive.verifier import VerificationResult
-from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
+from ryuu.cognitive.strategies.parallel import ParallelFanoutStrategy, ISubtaskBuilder
+from ryuu.cognitive.verifier import VerificationResult
+from ryuu.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
 _SYSTEM_PROMPT = """\
@@ -88,10 +88,10 @@ Chỉ trả JSON, không thêm text khác."""
 def build_provider() -> ILLMProvider:
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
-        from uaaf.providers.adapters.openai import OpenAIProvider
+        from ryuu.providers.adapters.openai import OpenAIProvider
         return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.providers.llm import Response, TokenUsage
+    from ryuu._testing.fakes import FakeLLMProvider
+    from ryuu.providers.llm import Response, TokenUsage
     def _fake(name: str, module: str) -> Response:
         return Response(
             json.dumps({"class": name, "module": module, "complexity": "MEDIUM",
@@ -101,11 +101,11 @@ def build_provider() -> ILLMProvider:
         )
     # FakeLLMProvider trả responses theo thứ tự — đủ cho 5 entity
     return FakeLLMProvider(responses=[  # type: ignore[return-value]
-        _fake("AgentPool", "uaaf/execution/pool.py"),
-        _fake("BaseAgent", "uaaf/execution/agent.py"),
-        _fake("ReActStrategy", "uaaf/cognitive/strategies/react.py"),
-        _fake("EvaluatorOptimizerStrategy", "uaaf/cognitive/strategies/evaluator_optimizer.py"),
-        _fake("ModelRouter", "uaaf/providers/router.py"),
+        _fake("AgentPool", "ryuu/execution/pool.py"),
+        _fake("BaseAgent", "ryuu/execution/agent.py"),
+        _fake("ReActStrategy", "ryuu/cognitive/strategies/react.py"),
+        _fake("EvaluatorOptimizerStrategy", "ryuu/cognitive/strategies/evaluator_optimizer.py"),
+        _fake("ModelRouter", "ryuu/providers/router.py"),
     ])
 
 
@@ -176,10 +176,10 @@ class ReportVerifier:
 
 
 async def main():
-    from uaaf.observability.audit import AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
+    from ryuu.observability.audit import AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     provider = build_provider()  # 1 provider dùng chung — stateless, thread-safe
@@ -202,19 +202,19 @@ async def main():
 
     intent = StructuredIntent(
         intent_type="code_analysis",
-        action="Phân tích toàn bộ class trong codebase UAAF",
+        action="Phân tích toàn bộ class trong codebase RYUU",
         entities={
-            "AgentPool":                  "uaaf/execution/pool.py",
-            "BaseAgent":                  "uaaf/execution/agent.py",
-            "ReActStrategy":              "uaaf/cognitive/strategies/react.py",
-            "EvaluatorOptimizerStrategy": "uaaf/cognitive/strategies/evaluator_optimizer.py",
-            "ModelRouter":                "uaaf/providers/router.py",
+            "AgentPool":                  "ryuu/execution/pool.py",
+            "BaseAgent":                  "ryuu/execution/agent.py",
+            "ReActStrategy":              "ryuu/cognitive/strategies/react.py",
+            "EvaluatorOptimizerStrategy": "ryuu/cognitive/strategies/evaluator_optimizer.py",
+            "ModelRouter":                "ryuu/providers/router.py",
         },
         complexity=ComplexityLevel.HIGH,
         confidence=0.95,
     )
     ctx = ExecutionContext(
-        scope=ContextScope(user_id="ci-bot", session_id="s1", domain="uaaf"),
+        scope=ContextScope(user_id="ci-bot", session_id="s1", domain="ryuu"),
         correlation_id="codebase-analysis-run-01",
     )
 

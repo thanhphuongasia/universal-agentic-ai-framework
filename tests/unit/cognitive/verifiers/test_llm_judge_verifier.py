@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.cognitive.verifiers.llm_judge import LLMJudgeVerifier
-from uaaf.providers.llm import Response, TokenUsage
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.cognitive.verifiers.llm_judge import LLMJudgeVerifier
+from ryuu.providers.llm import Response, TokenUsage
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _resp(text: str) -> Response:

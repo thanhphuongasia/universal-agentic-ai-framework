@@ -1,4 +1,4 @@
-# Getting Started with UAAF
+# Getting Started with RYUU
 
 > **Goal**: Agent đầu tiên chạy trong < 5 phút.
 
@@ -7,24 +7,24 @@
 ## 1. Install
 
 ```bash
-pip install uaaf                        # core only
-pip install "uaaf[openai]"              # + OpenAI adapter
-pip install "uaaf[anthropic]"           # + Anthropic adapter
-pip install "uaaf[openai,anthropic]"    # cả hai
+pip install ryuu                        # core only
+pip install "ryuu[openai]"              # + OpenAI adapter
+pip install "ryuu[anthropic]"           # + Anthropic adapter
+pip install "ryuu[openai,anthropic]"    # cả hai
 ```
 
 For development (clone + editable install):
 
 ```bash
 git clone <your-repo>
-cd uaaf-framework
+cd ryuu-framework
 pip install -e ".[dev]"
 ```
 
 Verify:
 
 ```bash
-python -c "import uaaf; print(uaaf.__version__)"
+python -c "import ryuu; print(ryuu.__version__)"
 ```
 
 ---
@@ -56,14 +56,14 @@ Snippet này không cần API key — dùng `FakeLLMProvider` để chạy ngay:
 import anyio
 from dataclasses import dataclass, field
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import BaseAgent, Task, AgentResult
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import BaseAgent, Task, AgentResult
+from ryuu.observability.audit import AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @dataclass
@@ -96,7 +96,7 @@ async def main() -> None:
     )
 
     result = await agent.execute(
-        Task(task_id="t1", payload={"message": "Hello UAAF!"}),
+        Task(task_id="t1", payload={"message": "Hello RYUU!"}),
         ctx,
     )
     print(result.output)
@@ -113,7 +113,7 @@ Thay `FakeLLMProvider` bằng `OpenAIProvider`:
 
 ```python
 import os
-from uaaf.providers.adapters.openai import OpenAIProvider
+from ryuu.providers.adapters.openai import OpenAIProvider
 
 provider = OpenAIProvider(api_key=os.environ["OPENAI_API_KEY"])
 ```
@@ -122,7 +122,7 @@ Hoặc Anthropic:
 
 ```python
 import os
-from uaaf.providers.adapters.anthropic import AnthropicProvider
+from ryuu.providers.adapters.anthropic import AnthropicProvider
 
 provider = AnthropicProvider(api_key=os.environ["ANTHROPIC_API_KEY"])
 ```
@@ -136,8 +136,8 @@ Inject vào agent thay `FakeLLMProvider` — interface giống hệt nhau, khôn
 Khi cần route request theo cost tier và tự động fallback khi provider down:
 
 ```python
-from uaaf.intent.models import ModelTier
-from uaaf.providers.router import ModelRouter
+from ryuu.intent.models import ModelTier
+from ryuu.providers.router import ModelRouter
 
 router = ModelRouter(
     providers={

@@ -1,6 +1,6 @@
 # Intent & Cognitive Tier — Class Diagram
 
-`uaaf/intent/` + `uaaf/cognitive/` — understand the request, select a reasoning strategy, verify the output.
+`ryuu/intent/` + `ryuu/cognitive/` — understand the request, select a reasoning strategy, verify the output.
 
 ```mermaid
 classDiagram

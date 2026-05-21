@@ -1,6 +1,6 @@
 # Providers & Observability — Class Diagram
 
-`uaaf/providers/` + `uaaf/observability/` + `uaaf/runtime/` — LLM abstraction, routing, cost, tracing.
+`ryuu/providers/` + `ryuu/observability/` + `ryuu/runtime/` — LLM abstraction, routing, cost, tracing.
 
 ```mermaid
 classDiagram
@@ -188,9 +188,9 @@ Cost data lives in `pricing.yaml` at the project root. Loaded once at import tim
 
 ```
 pricing.yaml resolution order:
-  1. $UAAF_PRICING_FILE env var (explicit override)
+  1. $RYUU_PRICING_FILE env var (explicit override)
   2. project_root/pricing.yaml  (running from source)
-  3. uaaf/observability/pricing.yaml  (pip-installed, bundled fallback)
+  3. ryuu/observability/pricing.yaml  (pip-installed, bundled fallback)
 ```
 
 Add a new model — no redeploy needed, just edit `pricing.yaml`:

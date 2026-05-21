@@ -9,15 +9,15 @@ from typing import Any
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import AgentResult, Task
-from uaaf.execution.llm_agent import LLMAgent, PrintCallbacks, ReActCallbacks, SilentCallbacks
-from uaaf.observability.audit import AuditConfig, AuditLogger
-from uaaf.observability.cost import CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
-from uaaf_workflow.context import ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import AgentResult, Task
+from ryuu.execution.llm_agent import LLMAgent, PrintCallbacks, ReActCallbacks, SilentCallbacks
+from ryuu.observability.audit import AuditConfig, AuditLogger
+from ryuu.observability.cost import CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message, Response, TokenUsage
+from ryuu_workflow.context import ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -122,7 +122,7 @@ async def test_react_loop_print_callbacks_final_answer_output(capsys: Any) -> No
 
 @pytest.mark.anyio
 async def test_react_loop_print_callbacks_tool_round_output(capsys: Any) -> None:
-    from uaaf.execution.tool_registry import ToolRegistry
+    from ryuu.execution.tool_registry import ToolRegistry
 
     reg = ToolRegistry()
 
@@ -150,7 +150,7 @@ async def test_react_loop_print_callbacks_tool_round_output(capsys: Any) -> None
 @pytest.mark.anyio
 async def test_react_loop_custom_callbacks_hooks_called() -> None:
     """Custom ReActCallbacks implementation receives hook calls."""
-    from uaaf.execution.tool_registry import ToolRegistry
+    from ryuu.execution.tool_registry import ToolRegistry
 
     events: list[str] = []
 

@@ -34,16 +34,16 @@ Không cần `IntentAnalyzer` hay `StrategySelector` — `DirectStrategy` đủ 
 import anyio
 from dataclasses import dataclass, field
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.memory.backbone import MemoryBackbone
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.memory.backbone import MemoryBackbone
+from ryuu.observability.audit import AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @dataclass
@@ -134,7 +134,7 @@ Todo app trust = LOW (không ảnh hưởng tài chính/bảo mật). Bỏ qua v
 Nếu cần validate format (JSON checklist), thêm `SchemaVerifier`:
 
 ```python
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
 
 verifier = SchemaVerifier(required_keys=["items", "done"], output_must_be_json=True)
 ```
@@ -144,7 +144,7 @@ verifier = SchemaVerifier(required_keys=["items", "done"], output_must_be_json=T
 ## Cost Budget
 
 ```python
-from uaaf.observability.cost import CostPolicy
+from ryuu.observability.cost import CostPolicy
 
 policy = CostPolicy(
     per_user_per_day_usd=0.10,    # user không tiêu quá $0.10/ngày

@@ -1,5 +1,5 @@
 """
-Code Analysis — UAAF Example (WorkflowEngine edition)
+Code Analysis — RYUU Example (WorkflowEngine edition)
 ======================================================
 Demonstrates:
   • WorkflowEngine: 3-state pipeline  ingest → analyse → summarize
@@ -12,7 +12,7 @@ Demonstrates:
 Run:
     OPENAI_API_KEY=sk-... python -m examples.code_analysis.main
     python -m examples.code_analysis.main                       # demo mode
-    python -m examples.code_analysis.main --target uaaf/        # analyse the framework
+    python -m examples.code_analysis.main --target ryuu/        # analyse the framework
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ from typing import Any
 
 from examples.code_analysis.tools import build_code_registry
 from examples.code_analysis.workflow import AnalyseState, IngestState, SummarizeState
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf_workflow.engine import WorkflowEngine
-from uaaf_workflow.state_machine import Workflow
-from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.engine import WorkflowEngine
+from ryuu_workflow.state_machine import Workflow
+from ryuu_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def print_separator(title: str = "") -> None:
@@ -47,7 +47,7 @@ def print_separator(title: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 async def main(target_dir: Path | None = None) -> None:
-    print_separator("UAAF Code Analysis — WorkflowEngine + Multi-Agent")
+    print_separator("RYUU Code Analysis — WorkflowEngine + Multi-Agent")
     print("\n  Pipeline : ingest → analyse → summarize")
     print("  Engine   : WorkflowEngine (checkpoint-per-state, SIGKILL-safe)")
     print("  Prompts  : examples/code_analysis/prompts/code_analysis/v1.yaml\n")

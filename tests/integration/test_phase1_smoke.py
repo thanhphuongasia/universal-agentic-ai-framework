@@ -6,17 +6,17 @@ import json
 
 import pytest
 
-from uaaf._testing.fakes import FakeAgentPool, FakeLLMProvider, FakeVerifier
-from uaaf.cognitive.strategies.direct import DirectStrategy
-from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
-from uaaf.cognitive.strategies.react import ReActStrategy
-from uaaf.execution.agent import AgentResult
-from uaaf.intent.llm_analyzer import LLMIntentAnalyzer
-from uaaf.intent.models import DIRECT, EVALUATOR_OPTIMIZER, REACT, ComplexityLevel
-from uaaf.intent.selector import StrategySelector
-from uaaf.observability.cost import Cost
-from uaaf.providers.llm import Response, TokenUsage
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeAgentPool, FakeLLMProvider, FakeVerifier
+from ryuu.cognitive.strategies.direct import DirectStrategy
+from ryuu.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
+from ryuu.cognitive.strategies.react import ReActStrategy
+from ryuu.execution.agent import AgentResult
+from ryuu.intent.llm_analyzer import LLMIntentAnalyzer
+from ryuu.intent.models import DIRECT, EVALUATOR_OPTIMIZER, REACT, ComplexityLevel
+from ryuu.intent.selector import StrategySelector
+from ryuu.observability.cost import Cost
+from ryuu.providers.llm import Response, TokenUsage
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _ctx() -> ExecutionContext:

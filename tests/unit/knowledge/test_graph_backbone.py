@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone
-from uaaf.knowledge.graph.backbone import GraphBackbone
+from ryuu.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone
+from ryuu.knowledge.graph.backbone import GraphBackbone
 
 
 class TestGraphBackbone:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.cognitive.strategies.react import ReActStrategy
-from uaaf.intent.models import REACT, CognitiveResult, ComplexityLevel, StructuredIntent
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.cognitive.strategies.react import ReActStrategy
+from ryuu.intent.models import REACT, CognitiveResult, ComplexityLevel, StructuredIntent
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _intent(complexity: ComplexityLevel = ComplexityLevel.MEDIUM) -> StructuredIntent:
@@ -54,9 +54,9 @@ def test_react_strategy_id() -> None:
 
 @pytest.mark.anyio
 async def test_react_terminates_on_done_signal() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="DONE:UserService depends on OrderService", cost=Cost.zero()),
@@ -70,9 +70,9 @@ async def test_react_terminates_on_done_signal() -> None:
 
 @pytest.mark.anyio
 async def test_react_loops_until_done() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="ACTION:query(UserService)", cost=Cost.zero()),
@@ -86,9 +86,9 @@ async def test_react_loops_until_done() -> None:
 
 @pytest.mark.anyio
 async def test_react_stops_at_max_steps() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     # Never sends DONE — should stop at max_steps
     responses = [
@@ -103,9 +103,9 @@ async def test_react_stops_at_max_steps() -> None:
 
 @pytest.mark.anyio
 async def test_react_accumulates_reasoning() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="ACTION:step1", cost=Cost.zero()),

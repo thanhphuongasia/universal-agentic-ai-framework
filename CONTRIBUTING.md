@@ -1,10 +1,10 @@
-# Contributing to UAAF
+# Contributing to RYUU
 
 ## Development setup
 
 ```bash
 git clone <repo>
-cd uaaf-framework
+cd ryuu-framework
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
@@ -14,9 +14,9 @@ pip install -e ".[dev]"
 ```bash
 pytest                              # all tests
 pytest tests/unit                   # unit only
-pytest --cov=uaaf --cov-report=html # coverage
-ruff check uaaf/ tests/
-mypy uaaf/
+pytest --cov=ryuu --cov-report=html # coverage
+ruff check ryuu/ tests/
+mypy ryuu/
 ```
 
 ## Code rules
@@ -24,7 +24,7 @@ mypy uaaf/
 - All agent classes must extend `BaseAgent` — never bypass cross-cutting.
 - All LLM calls go through `ILLMProvider` — never call SDK directly in domain code.
 - All errors must be typed (`RetryableError` / `DegradedError` / `FatalError`). No `except Exception: pass`.
-- Use `anyio` primitives — never `asyncio` directly in `uaaf/` code.
+- Use `anyio` primitives — never `asyncio` directly in `ryuu/` code.
 - Add a contract test when adding a new Protocol implementation.
 - Update `CHANGELOG.md` on any public API change.
 

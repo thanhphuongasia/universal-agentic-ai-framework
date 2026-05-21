@@ -9,36 +9,36 @@ from collections.abc import Callable
 
 import pytest
 
-from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-from uaaf.cognitive.strategy import ICognitiveStrategy
-from uaaf.execution.agent import AgentResult
-from uaaf.intent.models import (
+from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+from ryuu.cognitive.strategy import ICognitiveStrategy
+from ryuu.execution.agent import AgentResult
+from ryuu.intent.models import (
     CognitiveResult,
     ComplexityLevel,
     CostEstimate,
     StructuredIntent,
 )
-from uaaf.observability.cost import Cost
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.observability.cost import Cost
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _make_direct():
-    from uaaf.cognitive.strategies.direct import DirectStrategy
+    from ryuu.cognitive.strategies.direct import DirectStrategy
     return DirectStrategy()
 
 
 def _make_react():
-    from uaaf.cognitive.strategies.react import ReActStrategy
+    from ryuu.cognitive.strategies.react import ReActStrategy
     return ReActStrategy()
 
 
 def _make_evaluator_optimizer():
-    from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
+    from ryuu.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
     return EvaluatorOptimizerStrategy()
 
 
 def _make_parallel_fanout():
-    from uaaf.cognitive.strategies.parallel import ParallelFanoutStrategy
+    from ryuu.cognitive.strategies.parallel import ParallelFanoutStrategy
     return ParallelFanoutStrategy()
 
 

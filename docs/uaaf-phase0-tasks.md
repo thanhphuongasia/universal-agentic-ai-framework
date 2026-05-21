@@ -1,13 +1,13 @@
-# UAAF — Phase 0 (Foundation) — Task Breakdown
+# RYUU — Phase 0 (Foundation) — Task Breakdown
 
 > Output của planning skill cho Phase 0. Mỗi task discrete, có acceptance + verification + files touched. Ordered by dependency.
 >
-> **Phase 0 goal**: bootstrapped `uaaf-framework` repo có thể `pip install -e .` và wrap 1 LLM call qua `BaseAgent` với full cross-cutting (cost + trace + audit + retry tier). Đây là smoke test cho Phase 1.
+> **Phase 0 goal**: bootstrapped `ryuu-framework` repo có thể `pip install -e .` và wrap 1 LLM call qua `BaseAgent` với full cross-cutting (cost + trace + audit + retry tier). Đây là smoke test cho Phase 1.
 
 **Status**: Ready for review
 **Last Updated**: 2026-05-07
 **Estimated**: ~5-7 working days (1 dev focus, hoặc 2 dev parallel cho task song song)
-**Predecessors**: Spec `uaaf-framework-spec.md`, ADR 005
+**Predecessors**: Spec `ryuu-framework-spec.md`, ADR 005
 
 ---
 
@@ -42,13 +42,13 @@ T01 Repo bootstrap ─────┐
 
 ## T01. Repo bootstrap
 
-**Description**: Tạo private GitHub repo `uaaf-framework`, config Python project + CI + license + contribution guide. Chuẩn bị OSS-ready từ đầu.
+**Description**: Tạo private GitHub repo `ryuu-framework`, config Python project + CI + license + contribution guide. Chuẩn bị OSS-ready từ đầu.
 
 **Acceptance**:
 - Repo public/private trên GitHub (private trong dev, public trước v1.0).
-- `pip install -e ".[dev]"` thành công, import `uaaf` không error.
+- `pip install -e ".[dev]"` thành công, import `ryuu` không error.
 - `pytest` chạy được (kể cả 0 test).
-- `ruff check uaaf/` và `mypy uaaf/` chạy được.
+- `ruff check ryuu/` và `mypy ryuu/` chạy được.
 - CI workflow GitHub Actions: lint + type + test + build wheel — pass trên empty test suite.
 - README có install instructions + 1-paragraph project description.
 - LICENSE = Apache 2.0.
@@ -56,26 +56,26 @@ T01 Repo bootstrap ─────┐
 
 **Verify**:
 ```bash
-git clone <uaaf-framework>
-cd uaaf-framework
+git clone <ryuu-framework>
+cd ryuu-framework
 pip install -e ".[dev]"
-python -c "import uaaf; print(uaaf.__version__)"     # → 0.1.0a1
+python -c "import ryuu; print(ryuu.__version__)"     # → 0.1.0a1
 pytest
-ruff check uaaf/
-mypy uaaf/
+ruff check ryuu/
+mypy ryuu/
 ```
 
 **Files**:
-- `uaaf-framework/pyproject.toml`
-- `uaaf-framework/uaaf/__init__.py` (exports `__version__`)
-- `uaaf-framework/uaaf/_internal/__init__.py`
-- `uaaf-framework/tests/__init__.py`
-- `uaaf-framework/README.md`
-- `uaaf-framework/LICENSE`
-- `uaaf-framework/CONTRIBUTING.md`
-- `uaaf-framework/.github/workflows/ci.yml`
-- `uaaf-framework/.gitignore`
-- `uaaf-framework/CHANGELOG.md`
+- `ryuu-framework/pyproject.toml`
+- `ryuu-framework/ryuu/__init__.py` (exports `__version__`)
+- `ryuu-framework/ryuu/_internal/__init__.py`
+- `ryuu-framework/tests/__init__.py`
+- `ryuu-framework/README.md`
+- `ryuu-framework/LICENSE`
+- `ryuu-framework/CONTRIBUTING.md`
+- `ryuu-framework/.github/workflows/ci.yml`
+- `ryuu-framework/.gitignore`
+- `ryuu-framework/CHANGELOG.md`
 
 **Effort**: 0.5 day
 **Depends on**: nothing
@@ -83,7 +83,7 @@ mypy uaaf/
 
 ---
 
-## T02. Errors tier (`uaaf.observability.errors`)
+## T02. Errors tier (`ryuu.observability.errors`)
 
 **Description**: Define exception tier — `RetryableError`, `DegradedError`, `FatalError` — với retry policy mặc định. Replace pattern `try/except: pass` của codebase Code Analysis hiện tại.
 
@@ -101,7 +101,7 @@ pytest tests/unit/observability/test_errors.py -v
 ```
 
 **Files**:
-- `uaaf/observability/errors.py`
+- `ryuu/observability/errors.py`
 - `tests/unit/observability/test_errors.py`
 
 **Effort**: 0.5 day
@@ -110,7 +110,7 @@ pytest tests/unit/observability/test_errors.py -v
 
 ---
 
-## T03. Tracer (`uaaf.observability.tracer`)
+## T03. Tracer (`ryuu.observability.tracer`)
 
 **Description**: OpenTelemetry-backed tracer với correlation_id propagation. Replace ad-hoc `event_callback` pattern của Code Analysis chat.
 
@@ -129,7 +129,7 @@ pytest tests/unit/observability/test_tracer.py -v
 ```
 
 **Files**:
-- `uaaf/observability/tracer.py`
+- `ryuu/observability/tracer.py`
 - `tests/unit/observability/test_tracer.py`
 
 **Effort**: 1 day
@@ -138,7 +138,7 @@ pytest tests/unit/observability/test_tracer.py -v
 
 ---
 
-## T04. CostTracker (`uaaf.observability.cost`)
+## T04. CostTracker (`ryuu.observability.cost`)
 
 **Description**: Track LLM token cost per scope (user_id / session_id / domain). Hard cap enforcement.
 
@@ -158,8 +158,8 @@ pytest tests/unit/observability/test_cost.py -v
 ```
 
 **Files**:
-- `uaaf/observability/cost.py`
-- `uaaf/observability/_pricing.py` (pricing table)
+- `ryuu/observability/cost.py`
+- `ryuu/observability/_pricing.py` (pricing table)
 - `tests/unit/observability/test_cost.py`
 
 **Effort**: 1 day
@@ -168,7 +168,7 @@ pytest tests/unit/observability/test_cost.py -v
 
 ---
 
-## T05. AuditLogger (`uaaf.observability.audit`)
+## T05. AuditLogger (`ryuu.observability.audit`)
 
 **Description**: Immutable structured log cho compliance (Stock trading 7y retention). Append-only.
 
@@ -187,7 +187,7 @@ pytest tests/unit/observability/test_audit.py -v
 ```
 
 **Files**:
-- `uaaf/observability/audit.py`
+- `ryuu/observability/audit.py`
 - `tests/unit/observability/test_audit.py`
 
 **Effort**: 1 day
@@ -196,7 +196,7 @@ pytest tests/unit/observability/test_audit.py -v
 
 ---
 
-## T06. RateLimiter (`uaaf.observability.rate_limit`)
+## T06. RateLimiter (`ryuu.observability.rate_limit`)
 
 **Description**: Token-bucket rate limit per scope + per provider.
 
@@ -215,7 +215,7 @@ pytest tests/unit/observability/test_rate_limit.py -v
 ```
 
 **Files**:
-- `uaaf/observability/rate_limit.py`
+- `ryuu/observability/rate_limit.py`
 - `tests/unit/observability/test_rate_limit.py`
 
 **Effort**: 1 day
@@ -224,7 +224,7 @@ pytest tests/unit/observability/test_rate_limit.py -v
 
 ---
 
-## T07. ILLMProvider Protocol (`uaaf.providers.llm`)
+## T07. ILLMProvider Protocol (`ryuu.providers.llm`)
 
 **Description**: Protocol cho LLM provider. Define common interface trước khi viết adapters.
 
@@ -242,8 +242,8 @@ pytest tests/contract/test_llm_provider_contract.py -v
 ```
 
 **Files**:
-- `uaaf/providers/llm.py` (Protocol + dataclass)
-- `uaaf/providers/__init__.py`
+- `ryuu/providers/llm.py` (Protocol + dataclass)
+- `ryuu/providers/__init__.py`
 - `tests/contract/test_llm_provider_contract.py`
 
 **Effort**: 0.5 day
@@ -252,7 +252,7 @@ pytest tests/contract/test_llm_provider_contract.py -v
 
 ---
 
-## T08. BaseAgent template method (`uaaf.execution.agent`)
+## T08. BaseAgent template method (`ryuu.execution.agent`)
 
 **Description**: Abstract class với template `execute()` ép cross-cutting (tracer, cost, audit, rate limit, error handling). Subclass chỉ implement `_execute()`.
 
@@ -277,8 +277,8 @@ pytest tests/unit/execution/test_agent.py -v
 ```
 
 **Files**:
-- `uaaf/execution/agent.py`
-- `uaaf/execution/__init__.py`
+- `ryuu/execution/agent.py`
+- `ryuu/execution/__init__.py`
 - `tests/unit/execution/test_agent.py`
 
 **Effort**: 1 day
@@ -287,7 +287,7 @@ pytest tests/unit/execution/test_agent.py -v
 
 ---
 
-## T09. OpenAIProvider adapter (`uaaf.providers.adapters.openai`)
+## T09. OpenAIProvider adapter (`ryuu.providers.adapters.openai`)
 
 **Description**: Implement `ILLMProvider` qua OpenAI SDK. Adapt từ `src/llm/openai_adapter.py` hiện tại.
 
@@ -306,7 +306,7 @@ pytest tests/contract/test_llm_provider_contract.py::test_openai -v
 ```
 
 **Files**:
-- `uaaf/providers/adapters/openai.py`
+- `ryuu/providers/adapters/openai.py`
 - `tests/unit/providers/test_openai.py`
 
 **Effort**: 0.5 day
@@ -315,7 +315,7 @@ pytest tests/contract/test_llm_provider_contract.py::test_openai -v
 
 ---
 
-## T10. AnthropicProvider adapter (`uaaf.providers.adapters.anthropic`)
+## T10. AnthropicProvider adapter (`ryuu.providers.adapters.anthropic`)
 
 **Description**: Implement `ILLMProvider` qua Anthropic SDK. Adapt từ `src/llm/anthropic_adapter.py`.
 
@@ -333,7 +333,7 @@ pytest tests/contract/test_llm_provider_contract.py::test_anthropic -v
 ```
 
 **Files**:
-- `uaaf/providers/adapters/anthropic.py`
+- `ryuu/providers/adapters/anthropic.py`
 - `tests/unit/providers/test_anthropic.py`
 
 **Effort**: 0.5 day
@@ -342,7 +342,7 @@ pytest tests/contract/test_llm_provider_contract.py::test_anthropic -v
 
 ---
 
-## T11. SandboxManager v0.1 (`uaaf.execution.sandbox`)
+## T11. SandboxManager v0.1 (`ryuu.execution.sandbox`)
 
 **Description**: Subprocess-based sandbox với resource limits. Foundation cho AI coding practice + Stock paper trading. KHÔNG phải production-grade isolation (đó là Phase 3+ với container).
 
@@ -362,7 +362,7 @@ pytest tests/unit/execution/test_sandbox.py -v
 ```
 
 **Files**:
-- `uaaf/execution/sandbox.py`
+- `ryuu/execution/sandbox.py`
 - `tests/unit/execution/test_sandbox.py`
 
 **Effort**: 1 day
@@ -371,15 +371,15 @@ pytest tests/unit/execution/test_sandbox.py -v
 
 ---
 
-## T12. Test utilities (`uaaf._testing`)
+## T12. Test utilities (`ryuu._testing`)
 
 **Description**: Public test fixtures + fakes cho product team test domain plugins KHÔNG cần real LLM/network.
 
 **Acceptance**:
 - `FakeLLMProvider(ILLMProvider)`: configurable response per call, count assertions.
-- `fake_runtime(...)`: tạo UAAFRuntime minimal cho integration test.
+- `fake_runtime(...)`: tạo RYUURuntime minimal cho integration test.
 - `pytest` fixtures: `tracer_fixture`, `cost_tracker_fixture`, `audit_fixture` — pre-configured cho test.
-- Re-export public symbols ở `uaaf._testing.__init__`.
+- Re-export public symbols ở `ryuu._testing.__init__`.
 
 **Verify**:
 ```bash
@@ -388,9 +388,9 @@ pytest tests/unit/_testing/test_fakes.py -v
 ```
 
 **Files**:
-- `uaaf/_testing/__init__.py`
-- `uaaf/_testing/fakes.py`
-- `uaaf/_testing/fixtures.py`
+- `ryuu/_testing/__init__.py`
+- `ryuu/_testing/fakes.py`
+- `ryuu/_testing/fixtures.py`
 - `tests/unit/_testing/test_fakes.py`
 
 **Effort**: 0.5 day
@@ -434,7 +434,7 @@ pytest tests/integration/test_phase0_smoke.py -v
 
 Cuối Phase 0, ALL phải pass trước khi proceed Phase 1:
 
-- [x] CI gate: `ruff check && mypy uaaf && pytest --cov=uaaf` — coverage ≥85% (87.18%, 2026-05-07)
+- [x] CI gate: `ruff check && mypy ryuu && pytest --cov=ryuu` — coverage ≥85% (87.18%, 2026-05-07)
 - [x] All 13 task acceptance criteria pass
 - [x] T13 smoke test green
 - [x] CHANGELOG.md có v0.1.0a1 entry
@@ -468,7 +468,7 @@ Cuối Phase 0, ALL phải pass trước khi proceed Phase 1:
 | OTel async context propagation gotcha (T03) | Medium | High | Test sớm với nested spans across `anyio.create_task_group()`; có sample code reference từ OTel Python docs |
 | Sandbox không isolate đủ trên macOS dev machine (T11) | Medium | Medium | Doc rõ "Linux production target"; CI test trên Ubuntu |
 | BaseAgent template "leaky abstraction" — subclass cần custom flow (T08) | High | High | Doc rõ "DON'T override execute()". Nếu thật sự cần custom flow → tạo strategy plugin, không subclass agent |
-| Cross-repo dev workflow chậm (Code Analysis test cần `pip install -e ../uaaf-framework` mỗi đổi) | Medium | Low | Doc workflow trong CONTRIBUTING.md; setup `pre-commit` để auto-reinstall |
+| Cross-repo dev workflow chậm (Code Analysis test cần `pip install -e ../ryuu-framework` mỗi đổi) | Medium | Low | Doc workflow trong CONTRIBUTING.md; setup `pre-commit` để auto-reinstall |
 | Pricing table outdated (T04) | Low | Medium | Comment rõ "as of YYYY-MM"; có CI job alert nếu provider release new model |
 | User reject ADR/spec sau Phase 0 task #5 → rework | Low | High | Phase gate review TRƯỚC khi T01 — đây là điều đang chờ |
 
@@ -497,6 +497,6 @@ Phase 0 ready để start khi:
 - [x] Spec approved
 - [x] ADR 005 approved
 - [ ] Phase 0 task breakdown (file này) approved by user
-- [ ] Repo `uaaf-framework` private được tạo trên GitHub
+- [ ] Repo `ryuu-framework` private được tạo trên GitHub
 
 → Sau khi 4/4: bắt đầu T01.

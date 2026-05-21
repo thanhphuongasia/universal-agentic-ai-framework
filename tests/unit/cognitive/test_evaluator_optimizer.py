@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
-from uaaf.intent.models import (
+from ryuu.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
+from ryuu.intent.models import (
     EVALUATOR_OPTIMIZER,
     CognitiveResult,
     ComplexityLevel,
     StructuredIntent,
 )
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _intent(complexity: ComplexityLevel = ComplexityLevel.HIGH) -> StructuredIntent:
@@ -59,9 +59,9 @@ def test_eo_strategy_id() -> None:
 
 @pytest.mark.anyio
 async def test_eo_returns_on_first_pass() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="high quality answer", cost=Cost.zero()),
@@ -78,9 +78,9 @@ async def test_eo_returns_on_first_pass() -> None:
 
 @pytest.mark.anyio
 async def test_eo_retries_on_fail_then_passes() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="draft answer", cost=Cost.zero()),
@@ -96,9 +96,9 @@ async def test_eo_retries_on_fail_then_passes() -> None:
 
 @pytest.mark.anyio
 async def test_eo_returns_best_after_max_rounds() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id=f"t{i}", output=f"answer_{i}", cost=Cost.zero())
@@ -113,9 +113,9 @@ async def test_eo_returns_best_after_max_rounds() -> None:
 
 @pytest.mark.anyio
 async def test_eo_confidence_from_verifier() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="answer", cost=Cost.zero()),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from uaaf.providers.circuit_breaker import CircuitBreaker, CircuitState
+from ryuu.providers.circuit_breaker import CircuitBreaker, CircuitState
 
 
 class TestCircuitBreakerClosed:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone
-from uaaf.knowledge.hybrid import HybridBackbone
+from ryuu.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone
+from ryuu.knowledge.hybrid import HybridBackbone
 
 
 class TestHybridBackbone:

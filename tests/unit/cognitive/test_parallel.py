@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-from uaaf.cognitive.strategies.parallel import (
+from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+from ryuu.cognitive.strategies.parallel import (
     EntitySubtaskBuilder,
     ISubtaskBuilder,
     ParallelFanoutStrategy,
 )
-from uaaf.cognitive.strategy import ICognitiveStrategy
-from uaaf.execution.agent import AgentResult, Task
-from uaaf.execution.pool import AgentPool
-from uaaf.intent.models import PARALLEL_FANOUT, ComplexityLevel, StructuredIntent
-from uaaf.observability.cost import Cost
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.cognitive.strategy import ICognitiveStrategy
+from ryuu.execution.agent import AgentResult, Task
+from ryuu.execution.pool import AgentPool
+from ryuu.intent.models import PARALLEL_FANOUT, ComplexityLevel, StructuredIntent
+from ryuu.observability.cost import Cost
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -112,7 +112,7 @@ def test_applicable_false_for_high_with_no_entities() -> None:
 
 
 def test_estimate_cost_scales_with_entity_count() -> None:
-    from uaaf.intent.models import CostEstimate
+    from ryuu.intent.models import CostEstimate
     strategy = ParallelFanoutStrategy()
     cost = strategy.estimate_cost(_intent(entities={"a": 1, "b": 2, "c": 3}), _ctx())
     assert isinstance(cost, CostEstimate)
@@ -127,7 +127,7 @@ def test_estimate_cost_scales_with_entity_count() -> None:
 
 @pytest.mark.anyio
 async def test_execute_returns_cognitive_result_with_strategy_id() -> None:
-    from uaaf.intent.models import CognitiveResult
+    from ryuu.intent.models import CognitiveResult
     strategy = ParallelFanoutStrategy()
     result = await strategy.execute(
         _intent(), _ctx(), _pool_with_responses(2), FakeVerifier()
@@ -181,11 +181,11 @@ async def test_execute_uses_real_pool_fan_out() -> None:
 
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    from uaaf.execution.agent import BaseAgent
-    from uaaf.observability.audit import AuditConfig, AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
+    from ryuu.execution.agent import BaseAgent
+    from ryuu.observability.audit import AuditConfig, AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
 
     @dataclass
     class EchoAgent(BaseAgent):
@@ -218,7 +218,7 @@ async def test_execute_uses_real_pool_fan_out() -> None:
 @pytest.mark.anyio
 async def test_execute_collect_skips_failed_workers() -> None:
     """Workers that fail are excluded from the combined output."""
-    from uaaf._testing.fakes import FakeAgentPool
+    from ryuu._testing.fakes import FakeAgentPool
 
     fail_pool = FakeAgentPool(responses=[
         AgentResult(task_id="t0", output="good", cost=Cost.zero(), success=True),

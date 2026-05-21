@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.observability.cost import Cost
-from uaaf.providers.llm import CompletionRequest, Message
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.observability.cost import Cost
+from ryuu.providers.llm import CompletionRequest, Message
 
 
 def _req(model: str = "fake") -> CompletionRequest:
@@ -33,9 +33,9 @@ def _make_fake() -> FakeLLMProvider:
 
 
 def _make_openai() -> object:
-    from uaaf.providers.adapters.openai import OpenAIProvider
+    from ryuu.providers.adapters.openai import OpenAIProvider
 
-    with patch("uaaf.providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_choice = MagicMock()
         mock_choice.message.content = "openai response"
@@ -53,9 +53,9 @@ def _make_openai() -> object:
 
 
 def _make_anthropic() -> object:
-    from uaaf.providers.adapters.anthropic import AnthropicProvider
+    from ryuu.providers.adapters.anthropic import AnthropicProvider
 
-    with patch("uaaf.providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_block = MagicMock()
         mock_block.type = "text"

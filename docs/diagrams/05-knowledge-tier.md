@@ -1,6 +1,6 @@
 # Knowledge Tier — Class Diagram
 
-`uaaf/knowledge/` — agent memory and context assembly.
+`ryuu/knowledge/` — agent memory and context assembly.
 
 ```mermaid
 classDiagram

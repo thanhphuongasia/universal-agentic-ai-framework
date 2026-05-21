@@ -20,10 +20,10 @@ from __future__ import annotations
 import json
 import logging
 
-from uaaf.cognitive.strategy import IAgentPool, IVerifier
-from uaaf.execution.agent import Task
-from uaaf.execution.pool import AgentPool
-from uaaf.intent.models import (
+from ryuu_cognitive.strategy import IAgentPool, IVerifier
+from ryuu_execution.agent import Task
+from ryuu_execution.pool import AgentPool
+from ryuu.intent.models import (
     DIRECT,
     EVALUATOR_OPTIMIZER,
     PARALLEL_FANOUT,
@@ -33,7 +33,7 @@ from uaaf.intent.models import (
     CostEstimate,
     StructuredIntent,
 )
-from uaaf_workflow.context import ExecutionContext
+from ryuu_workflow.context import ExecutionContext
 
 
 class TodoDirectStrategy:

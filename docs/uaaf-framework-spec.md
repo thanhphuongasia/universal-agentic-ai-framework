@@ -1,4 +1,4 @@
-# Spec: UAAF — Universal Agentic AI Framework
+# Spec: RYUU — Universal Agentic AI Framework
 
 > Spec-driven development output cho framework dùng chung 3 product: **AI Code Analysis**, **Personal AI Assistant**, **MAAF Per-Domain**.
 >
@@ -9,12 +9,12 @@
 **Author**: Claude (Sonnet 4.6)
 **Reviewers**: phuongtt@core-corp.co.jp
 **Related docs**:
-- `docs/ improvements/UAAF-universal-agentic-framework.md` (concept gốc)
-- `docs/decisions/005-uaaf-framework.md` (ADR — quyết định build, separate repo, anyio)
+- `docs/ improvements/RYUU-universal-agentic-framework.md` (concept gốc)
+- `docs/decisions/005-ryuu-framework.md` (ADR — quyết định build, separate repo, anyio)
 - `CLAUDE.md` (project conventions)
 
 **Resolved decisions** (2026-05-07):
-- **Repo strategy**: Separate repo `uaaf-framework` (independent versioning, có thể open source về sau).
+- **Repo strategy**: Separate repo `ryuu-framework` (independent versioning, có thể open source về sau).
 - **Async runtime**: `anyio` (asyncio + trio compatible — quan trọng cho future open source).
 - **Target products**: 5+ product (Code Analysis, Todo app, Stock trading, Flashcard, AI-powered coding practice, ...).
 
@@ -45,11 +45,11 @@ Hiện tại:
 
 - **Chat của Code Analysis** (1183-line orchestrator + 360-line intent classifier) là **fragile**: 5 method procedural duplication, 2 code path coexist (handler registry mới + legacy if-chain), workers instantiate cứng, confidence là heuristic vu vơ, không có verifier, `try/except: pass` nuốt errors. Không reusable, không testable.
 - **2 product kia** nếu build từ đầu sẽ **lặp lại** 7 pattern chung: cognitive layer, intent understanding, memory hierarchy, tool execution, multi-agent + verifier, cross-cutting, provider abstraction.
-- **Rule of three đã đáp ứng** — đây là điều kiện UAAF doc gốc đề ra để justify framework hóa.
+- **Rule of three đã đáp ứng** — đây là điều kiện RYUU doc gốc đề ra để justify framework hóa.
 
 ### Mục tiêu
 
-Xây **UAAF** — framework Python lõi cung cấp:
+Xây **RYUU** — framework Python lõi cung cấp:
 
 1. **Foundation** chung: `BaseAgent`, cross-cutting (cost/trace/audit/retry), provider abstraction.
 2. **Pluggable** layers: cognitive strategy, knowledge backbone, intent analyzer, verifier — mỗi layer là plugin product implement riêng.
@@ -91,7 +91,7 @@ Xây **UAAF** — framework Python lõi cung cấp:
 
 ### Non-dependencies (KHÔNG đưa vào framework)
 
-- **LangChain / LlamaIndex / CrewAI**: triết lý của UAAF là *abstract chỗ thực sự lặp lại*; mấy framework này abstract quá nhiều, dẫn đến over-coupling. UAAF cạnh tranh trực tiếp về scope, nhưng nhỏ và explicit hơn.
+- **LangChain / LlamaIndex / CrewAI**: triết lý của RYUU là *abstract chỗ thực sự lặp lại*; mấy framework này abstract quá nhiều, dẫn đến over-coupling. RYUU cạnh tranh trực tiếp về scope, nhưng nhỏ và explicit hơn.
 - **Vector DB / Graph DB cụ thể**: framework chỉ định nghĩa interface `IGraphStore`, `IVectorStore`. Implementation (Neo4j, Qdrant, …) ở phía product.
 - **Pydantic AI / Instructor**: structured output là concern của LLM provider adapter, không phải framework.
 - **Pure asyncio** (đã reject): user chọn `anyio` để runtime portable cho open source.
@@ -109,12 +109,12 @@ pip install -e ".[dev]"
 pytest                              # all tests
 pytest tests/unit                   # unit only
 pytest tests/integration            # cần Neo4j/Redis chạy
-pytest --cov=uaaf --cov-report=html # coverage report
+pytest --cov=ryuu --cov-report=html # coverage report
 
 # Lint + format
-ruff check uaaf/ tests/
-ruff format uaaf/ tests/
-mypy uaaf/
+ruff check ryuu/ tests/
+ruff format ryuu/ tests/
+mypy ryuu/
 
 # Build
 python -m build                     # tạo wheel + sdist trong dist/
@@ -127,14 +127,14 @@ mkdocs serve                        # docs site local
 
 ## 4. Project Structure
 
-**Repo strategy** (resolved): **separate repo** `uaaf-framework` từ Phase 0. Lý do:
+**Repo strategy** (resolved): **separate repo** `ryuu-framework` từ Phase 0. Lý do:
 - Force clean public API contract — không tempt import private symbols across boundaries.
 - Independent versioning Semver — product team plan upgrade rõ ràng.
 - Open source readiness từ ngày 1: license, CI, contribution guide ở đúng repo.
-- 5 product downstream depend qua `pip install uaaf>=0.1` — clear dependency direction.
+- 5 product downstream depend qua `pip install ryuu>=0.1` — clear dependency direction.
 
 ```
-uaaf-framework/                        # SEPARATE GIT REPO (private during dev, public when v1.0)
+ryuu-framework/                        # SEPARATE GIT REPO (private during dev, public when v1.0)
 ├── pyproject.toml
 ├── README.md
 ├── CHANGELOG.md
@@ -144,12 +144,12 @@ uaaf-framework/                        # SEPARATE GIT REPO (private during dev, 
 │   ├── workflows/                     # CI: test, lint, type, build, contract tests
 │   └── ISSUE_TEMPLATE/
 │
-├── uaaf/
+├── ryuu/
 │   ├── __init__.py                    # public API re-exports
 │   │
 │   ├── runtime/                       # entry point
 │   │   ├── config.py                  # RuntimeConfig, DomainConfig, RuntimeMode
-│   │   ├── runtime.py                 # UAAFRuntime — top-level facade
+│   │   ├── runtime.py                 # RYUURuntime — top-level facade
 │   │   └── context.py                 # ExecutionContext, ContextScope
 │   │
 │   ├── intent/                        # Intent tier
@@ -248,9 +248,9 @@ uaaf-framework/                        # SEPARATE GIT REPO (private during dev, 
 
 ```
 prod-grade-code-analysis/              # product repo — KHÔNG thay đổi structure cũ ở src/
-├── pyproject.toml                     # depends on uaaf>=0.1
+├── pyproject.toml                     # depends on ryuu>=0.1
 ├── src/
-│   ├── adapters/                      # giữ nguyên Neo4jGraphStore — implement uaaf.knowledge.graph.IGraphStore
+│   ├── adapters/                      # giữ nguyên Neo4jGraphStore — implement ryuu.knowledge.graph.IGraphStore
 │   ├── domain/                        # NEW — domain-specific plugins
 │   │   ├── intent_analyzer.py         # implements IIntentAnalyzer cho code analysis
 │   │   ├── strategies/                # ReActWithGraphStrategy, …
@@ -264,7 +264,7 @@ prod-grade-code-analysis/              # product repo — KHÔNG thay đổi str
 
 ```
               ┌──────────────────────────┐
-              │   uaaf-framework (PyPI)  │  ← stable contract, semver
+              │   ryuu-framework (PyPI)  │  ← stable contract, semver
               └────────────┬─────────────┘
                            │ depends on
        ┌───────────┬───────┼───────┬─────────────┐
@@ -276,7 +276,7 @@ prod-grade-code-analysis/              # product repo — KHÔNG thay đổi str
                               market data SDK, audit storage
 ```
 
-Framework KHÔNG biết product nào tồn tại. Product import `uaaf.*` qua public API.
+Framework KHÔNG biết product nào tồn tại. Product import `ryuu.*` qua public API.
 
 ---
 
@@ -393,7 +393,7 @@ def classify_sync(msg):
 ```
 
 **Lint rule** sẽ enforce:
-- Không `import asyncio` trong `uaaf/` ngoài `uaaf/_internal/asyncio_compat.py`.
+- Không `import asyncio` trong `ryuu/` ngoài `ryuu/_internal/asyncio_compat.py`.
 - Không `asyncio.run()` trong async context.
 - Không `Thread(target=runner).start()` để chạy coroutine.
 
@@ -406,7 +406,7 @@ def classify_sync(msg):
 | Level | Where | Ratio | Coverage requirement |
 |---|---|---|---|
 | Unit | `tests/unit/` | 70% | mỗi module có test, mock dependencies |
-| Integration | `tests/integration/` | 20% | dùng `FakeLLMProvider` từ `uaaf._testing`, no real network |
+| Integration | `tests/integration/` | 20% | dùng `FakeLLMProvider` từ `ryuu._testing`, no real network |
 | Contract | `tests/contract/` | 10% | mỗi Protocol có test verify implementation tuân thủ |
 
 ### Coverage targets
@@ -418,10 +418,10 @@ def classify_sync(msg):
 
 ### Fakes & fixtures
 
-Framework xuất `uaaf._testing`:
+Framework xuất `ryuu._testing`:
 
 ```python
-from uaaf._testing import FakeLLMProvider, FakeKnowledgeBackbone, fake_runtime
+from ryuu._testing import FakeLLMProvider, FakeKnowledgeBackbone, fake_runtime
 
 @pytest.fixture
 def runtime():
@@ -464,7 +464,7 @@ async def test_strategy_returns_cognitive_result(strategy_factory):
 └─────────────────────────────┬──────────────────────────────────────────┘
                               │ uses
 ┌─────────────────────────────▼──────────────────────────────────────────┐
-│                         UAAF RUNTIME                                   │
+│                         RYUU RUNTIME                                   │
 │                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │ INTERACTION TIER  RequestHandler │ WorkflowEngine │ StreamManager│  │
@@ -509,7 +509,7 @@ classDiagram
         +trust_default: TrustLevel
     }
 
-    class UAAFRuntime {
+    class RYUURuntime {
         -config: RuntimeConfig
         -intent_tier: IntentTier
         -cognitive_tier: CognitiveTier
@@ -520,7 +520,7 @@ classDiagram
         +run_workflow(workflow) WorkflowResult
         +shutdown()
     }
-    UAAFRuntime --> RuntimeConfig
+    RYUURuntime --> RuntimeConfig
 
     %% ==== Intent ====
     class IIntentAnalyzer {
@@ -686,11 +686,11 @@ classDiagram
         +acquire(scope, agent_id) None
     }
 
-    UAAFRuntime --> IIntentAnalyzer
-    UAAFRuntime --> StrategySelector
-    UAAFRuntime --> IKnowledgeBackbone
-    UAAFRuntime --> ModelRouter
-    UAAFRuntime --> WorkflowEngine
+    RYUURuntime --> IIntentAnalyzer
+    RYUURuntime --> StrategySelector
+    RYUURuntime --> IKnowledgeBackbone
+    RYUURuntime --> ModelRouter
+    RYUURuntime --> WorkflowEngine
 ```
 
 ### 7.3 Sequence — Conversational request
@@ -698,7 +698,7 @@ classDiagram
 ```mermaid
 sequenceDiagram
     participant Product as Product Layer
-    participant Runtime as UAAFRuntime
+    participant Runtime as RYUURuntime
     participant Intent as IntentTier
     participant Selector as StrategySelector
     participant Strategy as ICognitiveStrategy
@@ -812,7 +812,7 @@ sequenceDiagram
 sequenceDiagram
     participant User
     participant API as Code Analysis API
-    participant Runtime as UAAFRuntime
+    participant Runtime as RYUURuntime
     participant DomainIA as CodeIntentAnalyzer<br/>(domain plugin)
     participant ReAct as ReActWithGraphStrategy<br/>(domain plugin)
     participant Graph as GraphBackbone<br/>(wraps Neo4jGraphStore)
@@ -841,18 +841,18 @@ sequenceDiagram
 
 ### Phase 0 — Foundation (1 tuần)
 
-- Setup repo `uaaf/` (separate hoặc monorepo subfolder).
+- Setup repo `ryuu/` (separate hoặc monorepo subfolder).
 - Implement `BaseAgent` + cross-cutting (`CostTracker`, `Tracer`, `AuditLogger`, `RateLimiter`).
 - Implement tiered errors + retry policy.
 - Implement `ILLMProvider` Protocol + adapt `OpenAIAdapter` + `AnthropicAdapter` hiện tại.
-- **Deliverable**: `pip install uaaf==0.1.0a1`, có thể wrap 1 LLM call qua `BaseAgent` và thấy trace + cost.
+- **Deliverable**: `pip install ryuu==0.1.0a1`, có thể wrap 1 LLM call qua `BaseAgent` và thấy trace + cost.
 
 ### Phase 1 — Intent + Strategy (2 tuần)
 
 - Implement `StructuredIntent` schema + `IIntentAnalyzer` Protocol + `StrategySelector`.
 - Implement 3 strategies: `DirectStrategy`, `ReActStrategy`, `EvaluatorOptimizerStrategy`.
 - **Code Analysis migrate**: viết `CodeIntentAnalyzer` (domain plugin) replace `intent_classifier.py`. Giữ behavior cũ + log metric song song để verify equivalence.
-- **Deliverable**: chat Code Analysis dùng UAAF intent + strategy. Legacy code path tắt sau 1 tuần parallel run.
+- **Deliverable**: chat Code Analysis dùng RYUU intent + strategy. Legacy code path tắt sau 1 tuần parallel run.
 
 ### Phase 2 — Verifier first-class (1 tuần)
 
@@ -883,11 +883,11 @@ Thứ tự suggest theo độ phức tạp tăng dần — mỗi product validat
 3. **AI coding practice** (2-3 tuần) — validate `SandboxManager` cho `run_code` tool. Đây là check thực sự cho sandbox isolation.
 4. **Stock trading system** (2-3 tuần) — cuối cùng vì trust=HIGH: validate `AuditLogger` 7-year retention, `GroundTruthVerifier` chống bad trade signals, sandbox cho `place_order` (paper trading mode).
 
-**Deliverable**: 5 product chạy production trên UAAF core. Examples folder có 5 minimal end-to-end. CHANGELOG ghi rõ breaking changes per minor version. v0.x → v1.0 stable khi cả 5 ổn định ≥1 tháng.
+**Deliverable**: 5 product chạy production trên RYUU core. Examples folder có 5 minimal end-to-end. CHANGELOG ghi rõ breaking changes per minor version. v0.x → v1.0 stable khi cả 5 ổn định ≥1 tháng.
 
 ### Strangler pattern, không big-bang
 
-- Mỗi phase Code Analysis chạy song song legacy path với feature flag (`USE_UAAF_INTENT=true`).
+- Mỗi phase Code Analysis chạy song song legacy path với feature flag (`USE_RYUU_INTENT=true`).
 - Verify metric equivalence trước khi tắt legacy.
 - Rollback < 5 phút (flip flag).
 
@@ -915,7 +915,7 @@ Thứ tự suggest theo độ phức tạp tăng dần — mỗi product validat
 
 ### Never
 
-- Domain logic trong `uaaf/` — không có if-else theo product name.
+- Domain logic trong `ryuu/` — không có if-else theo product name.
 - Prompt template trong framework — chỉ `PromptRegistry` infrastructure.
 - Hardcode model name (`gpt-4o`) trong cognitive strategy — dùng `ModelRouter` + `ModelTier` enum.
 - Storage schema trong framework — chỉ Protocol, schema ở product side.
@@ -935,8 +935,8 @@ Thứ tự suggest theo độ phức tạp tăng dần — mỗi product validat
 | 2 | Code Analysis chat test coverage ≥70% (logic, không phải models) | `pytest --cov=src.chat` |
 | 3 | Một correlation_id trace qua 5 tier (intent→cognitive→tool→provider→verifier) | Manual: trigger 1 chat req, search log |
 | 4 | Cost per chat query đo được, có hard cap enforce | Test: gửi 100 req, verify quota cap |
-| 5 | UAAF core test coverage ≥85% | `pytest --cov=uaaf` |
-| 6 | 2 product (Personal AI, MAAF) chạy minimal flow trên UAAF | Examples trong `examples/` chạy được |
+| 5 | RYUU core test coverage ≥85% | `pytest --cov=ryuu` |
+| 6 | 2 product (Personal AI, MAAF) chạy minimal flow trên RYUU | Examples trong `examples/` chạy được |
 | 7 | Migration Code Analysis chat KHÔNG break existing API | E2E test pass với cùng request/response shape |
 | 8 | Verifier replace `_assess_confidence` heuristic | Code search: không còn `score += min(... * 0.08, ...)` pattern |
 | 9 | Plugin contract documented + contract test pass | `tests/contract/` xanh |
@@ -964,7 +964,7 @@ Thứ tự suggest theo độ phức tạp tăng dần — mỗi product validat
 
 ### Resolved (2026-05-07)
 
-- ~~**Q1 Monorepo vs separate repo?**~~ → **Separate repo** `uaaf-framework`. Lý do: open source readiness, force clean public API, independent versioning.
+- ~~**Q1 Monorepo vs separate repo?**~~ → **Separate repo** `ryuu-framework`. Lý do: open source readiness, force clean public API, independent versioning.
 - ~~**Q2 Product list?**~~ → **5+ product**: Code Analysis (existing), Todo, Stock trading, Flashcard, AI coding practice, ...
 - ~~**Q3 Async runtime?**~~ → **`anyio`** thay pure asyncio. Lý do: open source — user chọn asyncio hoặc trio.
 
@@ -1035,10 +1035,10 @@ Trước khi proceed sang Phase implement:
 - [x] User confirm product list (Q2: Todo, Stock, Flashcard, AI coding practice, Code Analysis, ...) — 2026-05-07
 - [x] User chọn separate repo (Q1) — 2026-05-07
 - [x] User confirm `anyio` (Q3) — 2026-05-07
-- [x] Spec committed vào `docs/ improvements/uaaf-framework-spec.md`
-- [x] ADR `docs/decisions/005-uaaf-framework.md` — ghi quyết định + trade-offs
-- [ ] Phase 0 task breakdown `docs/ improvements/uaaf-phase0-tasks.md` (planning skill output)
+- [x] Spec committed vào `docs/ improvements/ryuu-framework-spec.md`
+- [x] ADR `docs/decisions/005-ryuu-framework.md` — ghi quyết định + trade-offs
+- [ ] Phase 0 task breakdown `docs/ improvements/ryuu-phase0-tasks.md` (planning skill output)
 - [ ] User review ADR + Phase 0 tasks → approve để start implement
-- [ ] Tạo repo `uaaf-framework` (private) trên GitHub — gate cuối trước Phase 0 task #1
+- [ ] Tạo repo `ryuu-framework` (private) trên GitHub — gate cuối trước Phase 0 task #1
 
 **Status**: 5/8 gates passed. Next action: tạo Phase 0 task breakdown.

@@ -18,7 +18,7 @@ Hai thành phần phối hợp:
 
 **Không phù hợp khi**: tiêu chí chất lượng cần human review — chi phí LLM không đủ bù đắp.
 
-## UAAF triển khai như thế nào?
+## RYUU triển khai như thế nào?
 
 ```
 Vòng lặp (tối đa max_rounds):
@@ -44,15 +44,15 @@ import os
 import anyio
 from dataclasses import dataclass, field
 
-from uaaf import (
+from ryuu import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
     StructuredIntent, ComplexityLevel,
 )
-from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
-from uaaf.cognitive.verifiers.pipeline import VerifierPipeline, PipelineMode
-from uaaf.cognitive.verifier import VerificationResult
-from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
+from ryuu.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
+from ryuu.cognitive.verifiers.pipeline import VerifierPipeline, PipelineMode
+from ryuu.cognitive.verifier import VerificationResult
+from ryuu.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
 _SYSTEM_PROMPT = """\
@@ -67,10 +67,10 @@ Nếu được cung cấp feedback, hãy sửa flashcard theo đúng feedback đ
 def build_provider() -> ILLMProvider:
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
-        from uaaf.providers.adapters.openai import OpenAIProvider
+        from ryuu.providers.adapters.openai import OpenAIProvider
         return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.providers.llm import Response, TokenUsage
+    from ryuu._testing.fakes import FakeLLMProvider
+    from ryuu.providers.llm import Response, TokenUsage
     # Vòng 1: thiếu ví dụ; Vòng 2: đủ sau khi nhận feedback
     return FakeLLMProvider(responses=[  # type: ignore[return-value]
         Response(
@@ -157,10 +157,10 @@ class DifficultyVerifier:
 
 
 async def main():
-    from uaaf.observability.audit import AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
+    from ryuu.observability.audit import AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     agent = FlashcardAgent(

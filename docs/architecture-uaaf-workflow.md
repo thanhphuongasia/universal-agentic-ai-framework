@@ -1,18 +1,18 @@
-# `uaaf-workflow` — Architecture Document
+# `ryuu-workflow` — Architecture Document
 
 | Field | Value |
 |---|---|
 | Document version | 0.1 |
 | Last updated | 2026-05-12 |
 | Status | Design — Phase 8.1 (pending implementation) |
-| Owner | UAAF maintainers |
-| Source of truth | Code currently at `uaaf/workflow/`, `uaaf/observability/errors.py`, `uaaf/runtime/context.py` (will be migrated to `packages/uaaf-workflow/`) |
+| Owner | RYUU maintainers |
+| Source of truth | Code currently at `ryuu/workflow/`, `ryuu/observability/errors.py`, `ryuu/runtime/context.py` (will be migrated to `packages/ryuu-workflow/`) |
 
 ## 1. Purpose & Scope
 
 ### 1.1 What it is
 
-`uaaf-workflow` is a **standalone Python library** that runs **directed state graphs with checkpointing**. It is the kernel originally built inside UAAF Phase 7 to orchestrate batch pipelines, extracted as an independent PyPI package so that non-AI consumers (ETL pipelines, Wyckoff state-machine trading bots, code-analysis pipelines, generic DAG runners) can use it without pulling LLM SDKs or any AI machinery.
+`ryuu-workflow` is a **standalone Python library** that runs **directed state graphs with checkpointing**. It is the kernel originally built inside RYUU Phase 7 to orchestrate batch pipelines, extracted as an independent PyPI package so that non-AI consumers (ETL pipelines, Wyckoff state-machine trading bots, code-analysis pipelines, generic DAG runners) can use it without pulling LLM SDKs or any AI machinery.
 
 The library does three things, and nothing else:
 
@@ -28,13 +28,13 @@ The library does three things, and nothing else:
 - ❌ An AI agent framework — no LLMs, no prompts, no embeddings.
 - ❌ A retry library — retry is one feature among many, not the focus.
 
-### 1.3 Relationship to UAAF
+### 1.3 Relationship to RYUU
 
-`uaaf` (the AI framework) depends on `uaaf-workflow` like any third-party library. UAAF uses workflow to drive multi-state batch pipelines (e.g., ingest → analyse → summarize for code analysis); it does NOT use workflow for chat-style conversational flows (those use `RequestHandler` + cognitive strategies, which are separate).
+`ryuu` (the AI framework) depends on `ryuu-workflow` like any third-party library. RYUU uses workflow to drive multi-state batch pipelines (e.g., ingest → analyse → summarize for code analysis); it does NOT use workflow for chat-style conversational flows (those use `RequestHandler` + cognitive strategies, which are separate).
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
-│ uaaf (AI fwk)   │ depends │ uaaf-workflow   │
+│ ryuu (AI fwk)   │ depends │ ryuu-workflow   │
 │ ───────────────  │ ─────▶  │ ─────────────── │
 │ cognitive/      │         │ state machine + │
 │ execution/      │         │ checkpoint engine│
@@ -43,7 +43,7 @@ The library does three things, and nothing else:
 └─────────────────┘         └─────────────────┘
        ↑                            ↑
        │                            │
- pip install uaaf             pip install uaaf-workflow
+ pip install ryuu             pip install ryuu-workflow
  (auto-pulls workflow)        (standalone, no AI)
 ```
 
@@ -106,8 +106,8 @@ The library does three things, and nothing else:
 | ID | Requirement | Rationale |
 |---|---|---|
 | NFR-1 | **Async-first.** All I/O methods on `IState`, `IWorkflowEngine`, `ICheckpointStore` are `async def`. Sync wrappers are out of scope. | Workflow tier was extracted from an async-native framework; sync support adds complexity for low value. |
-| NFR-2 | **Minimal dependencies.** Only `anyio>=4.0`. No pydantic, no pyyaml, no OpenTelemetry, no LLM SDKs. | Library must be cheap to embed in unrelated projects. The full UAAF AI tier is ~12 transitive deps; workflow is ~3. |
-| NFR-3 | **Python ≥ 3.11.** Uses `StrEnum`, PEP 604 union syntax (`X \| None`), `Self` typing. Matches UAAF baseline. | Avoid backport packages; modern Python is the runtime UAAF targets. |
+| NFR-2 | **Minimal dependencies.** Only `anyio>=4.0`. No pydantic, no pyyaml, no OpenTelemetry, no LLM SDKs. | Library must be cheap to embed in unrelated projects. The full RYUU AI tier is ~12 transitive deps; workflow is ~3. |
+| NFR-3 | **Python ≥ 3.11.** Uses `StrEnum`, PEP 604 union syntax (`X \| None`), `Self` typing. Matches RYUU baseline. | Avoid backport packages; modern Python is the runtime RYUU targets. |
 | NFR-4 | **Type-safe.** Library MUST pass `mypy --strict` on its own source and ship a `py.typed` marker (PEP 561). | Consumers using strict typing should get inference for free. |
 | NFR-5 | **PEP 604 / PEP 612 idioms** — protocols, generics, `runtime_checkable` decorators. No metaclasses, no abstract base classes for user-facing API. | User-defined states should be plain dataclasses, not subclasses of a framework class. |
 
@@ -132,7 +132,7 @@ The library does three things, and nothing else:
 
 | ID | Requirement | Rationale |
 |---|---|---|
-| NFR-13 | Public API surface = the symbols re-exported by `uaaf_workflow/__init__.py`. Anything not re-exported is **internal**. | Smaller stable surface = freedom to refactor internals. |
+| NFR-13 | Public API surface = the symbols re-exported by `ryuu_workflow/__init__.py`. Anything not re-exported is **internal**. | Smaller stable surface = freedom to refactor internals. |
 | NFR-14 | Semver: pre-1.0 is allowed to break minor versions. Post-1.0, public API changes require a major bump. | Standard for libraries pre/post stabilization. |
 | NFR-15 | Protocol-based extensibility: users add states by implementing `IState`; they add stores by implementing `ICheckpointStore`. No inheritance from concrete classes. | Avoids fragile-base-class problem; future-proofs the public API. |
 
@@ -141,7 +141,7 @@ The library does three things, and nothing else:
 ### 4.1 Module map
 
 ```
-uaaf_workflow/
+ryuu_workflow/
 ├── __init__.py          ← public API (re-exports)
 ├── py.typed
 ├── checkpoint.py        ← Checkpoint dataclass + ICheckpointStore protocol
@@ -340,7 +340,7 @@ The three tiers are NOT interchangeable. Choosing the wrong tier changes the wor
 | `FatalError` | Stop workflow with FAILED. NO retry. | Programming bug, corrupted state, auth failure. Human intervention required. |
 | _any other `Exception`_ | Wrapped as `FatalError` internally — workflow FAILS. | Don't rely on this; raise an explicit tier. |
 
-The distinction between `DegradedError` and `FatalError` exists because **callers above the engine** (e.g., UAAF's cognitive strategies) can use `retry_policy()` directly to make different fallback decisions per tier. The engine itself treats them equivalently (both → FAILED no-retry).
+The distinction between `DegradedError` and `FatalError` exists because **callers above the engine** (e.g., RYUU's cognitive strategies) can use `retry_policy()` directly to make different fallback decisions per tier. The engine itself treats them equivalently (both → FAILED no-retry).
 
 ## 6. Class Diagram
 
@@ -692,21 +692,21 @@ sequenceDiagram
 **Choice:** `RetryableError`, `DegradedError`, `FatalError`.
 
 **Alternatives considered:**
-- *Two tiers* (`RetryableError` / `FatalError`): simpler but loses the "capability lost but not a bug" semantics. UAAF cognitive strategies use `DegradedError` to mean "fall back to cheaper model" — engine doesn't care, but the tier is useful at higher levels.
+- *Two tiers* (`RetryableError` / `FatalError`): simpler but loses the "capability lost but not a bug" semantics. RYUU cognitive strategies use `DegradedError` to mean "fall back to cheaper model" — engine doesn't care, but the tier is useful at higher levels.
 - *Exception-class-per-failure* (e.g., `RateLimitError`, `BudgetExceededError`): more specific but explodes the surface area. Resolution: tier base classes + named subclasses (`BudgetExceededError(DegradedError)`, `RateLimitTimeout(DegradedError)`).
 
 **Rationale:** Three tiers map cleanly to three caller responses: retry / fall-back / abort. Subclassing within tiers preserves specificity. `retry_policy()` returns a `RetryDecision` parameterized by tier so callers can act differently.
 
 ### 9.7 `ExecutionContext.strategy_id` lives in workflow library
 
-**Choice:** Keep `strategy_id: str | None = None` field in `ExecutionContext` even though it's UAAF-specific.
+**Choice:** Keep `strategy_id: str | None = None` field in `ExecutionContext` even though it's RYUU-specific.
 
 **Alternatives considered:**
-- *Drop the field*: forces UAAF to subclass or wrap `ExecutionContext`. Complicates UAAF code.
+- *Drop the field*: forces RYUU to subclass or wrap `ExecutionContext`. Complicates RYUU code.
 - *Use a generic `metadata: dict`*: type-unsafe.
 - *Generic Context[T]*: heavy generic machinery.
 
-**Rationale (compromise):** Workflow consumers ignore the field (it stays `None`). UAAF sets it before dispatching to a cognitive strategy. The cost is one unused field in the workflow-only case (~0 bytes for None).
+**Rationale (compromise):** Workflow consumers ignore the field (it stays `None`). RYUU sets it before dispatching to a cognitive strategy. The cost is one unused field in the workflow-only case (~0 bytes for None).
 
 **Known design debt:** Track in Phase 9. If a workflow-only consumer asks for cleaner separation, generalize via TypeVar-parameterized context.
 
@@ -743,14 +743,14 @@ sequenceDiagram
 
 ## 10. Public API Surface
 
-After Phase 8.1 ships, `uaaf_workflow/__init__.py` re-exports the following symbols:
+After Phase 8.1 ships, `ryuu_workflow/__init__.py` re-exports the following symbols:
 
 ```python
 # From state_machine.py
-from uaaf_workflow.state_machine import IState, StateTransition, Workflow, StateMachine
+from ryuu_workflow.state_machine import IState, StateTransition, Workflow, StateMachine
 
 # From engine.py
-from uaaf_workflow.engine import (
+from ryuu_workflow.engine import (
     IWorkflowEngine,
     WorkflowEngine,
     WorkflowResult,
@@ -758,14 +758,14 @@ from uaaf_workflow.engine import (
 )
 
 # From checkpoint.py
-from uaaf_workflow.checkpoint import Checkpoint, ICheckpointStore
+from ryuu_workflow.checkpoint import Checkpoint, ICheckpointStore
 
 # From stores/
-from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
-from uaaf_workflow.stores.file import FileCheckpointStore
+from ryuu_workflow.stores.in_memory import InMemoryCheckpointStore
+from ryuu_workflow.stores.file import FileCheckpointStore
 
 # From errors.py
-from uaaf_workflow.errors import (
+from ryuu_workflow.errors import (
     FrameworkError,
     RetryableError,
     DegradedError,
@@ -778,14 +778,14 @@ from uaaf_workflow.errors import (
 )
 
 # From context.py
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.context import ContextScope, ExecutionContext
 ```
 
-Users can `import uaaf_workflow as wf` for ergonomic short-form access.
+Users can `import ryuu_workflow as wf` for ergonomic short-form access.
 
 ## 11. Out of Scope (Explicitly)
 
-The following are explicit non-goals for `uaaf-workflow` v0.2 / v1.x:
+The following are explicit non-goals for `ryuu-workflow` v0.2 / v1.x:
 
 1. **Distributed execution** — workflow runs in-process. No worker pool, no cross-machine coordination.
 2. **Parallel state execution** — exactly one state runs at a time per workflow run. (A state can internally parallelize work.)
@@ -821,4 +821,4 @@ Each is gated on a real signal — none ship speculatively.
 | Checkpoint | Immutable record `(workflow_id, state_id, output, sequence, metadata)` persisted after each successful state. |
 | Tier | One of `retryable / degraded / fatal` — describes how a caller should respond. |
 | Correlation ID | Free-form string in `ExecutionContext.correlation_id` used by consumers for distributed tracing. Workflow library does not interpret it. |
-| Scope | `ContextScope(user_id, session_id, domain, tenant_id?)` — identity bundle. Used by UAAF for budget bucketing; workflow-only consumers can pass placeholder values. |
+| Scope | `ContextScope(user_id, session_id, domain, tenant_id?)` — identity bundle. Used by RYUU for budget bucketing; workflow-only consumers can pass placeholder values. |

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-workflow"
+version = "0.2.0a1"
+description = "Standalone workflow engine and state machine — extracted from RYUU"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.0",
+    "ryuu-core>=0.2.0a1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "anyio[trio]>=4.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.6.0",
+]
+
+[project.urls]
+Repository = "https://github.com/core-corp/ryuu-framework"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_workflow"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

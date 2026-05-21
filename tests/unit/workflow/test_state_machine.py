@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf_workflow.errors import FatalError
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf_workflow.state_machine import (
+from ryuu_workflow.errors import FatalError
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.state_machine import (
     IState,
     StateMachine,
     StateTransition,

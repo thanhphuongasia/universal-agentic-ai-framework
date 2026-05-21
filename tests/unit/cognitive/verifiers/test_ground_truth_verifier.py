@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.cognitive.verifiers.ground_truth import GroundTruthVerifier
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

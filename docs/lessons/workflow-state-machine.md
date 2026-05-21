@@ -53,7 +53,7 @@ engine.run(workflow, input)
 
 ### Điểm giống nhau
 
-| Concept | AWS Step Functions | UAAF WorkflowEngine |
+| Concept | AWS Step Functions | RYUU WorkflowEngine |
 |---|---|---|
 | State machine | ✅ states + transitions | ✅ states + transitions |
 | Checkpoint sau mỗi state | ✅ DynamoDB (managed) | ✅ `ICheckpointStore` (bạn chọn backend) |
@@ -66,18 +66,18 @@ engine.run(workflow, input)
 **1. Worker ở mỗi state là gì:**
 ```
 Step Functions:  state → Lambda / ECS / SQS / bất kỳ AWS service
-UAAF:            state → AgentPool → LLM agents
+RYUU:            state → AgentPool → LLM agents
 
 Step Functions orchestrate services.
-UAAF orchestrate LLM reasoning.
+RYUU orchestrate LLM reasoning.
 ```
 
 **2. Distributed vs in-process:**
 ```
 Step Functions:  managed service, chạy song song hàng triệu execution
-UAAF:            embedded library, chạy trong process Python của bạn
+RYUU:            embedded library, chạy trong process Python của bạn
 ```
-Step Functions là infrastructure. UAAF WorkflowEngine là library.
+Step Functions là infrastructure. RYUU WorkflowEngine là library.
 
 **3. Cách define state:**
 ```json
@@ -99,7 +99,7 @@ Step Functions là infrastructure. UAAF WorkflowEngine là library.
 ```
 
 ```python
-# UAAF — Python thuần, code-first
+# RYUU — Python thuần, code-first
 class IngestionWorkflow:
     states      = [PARSING, ENHANCEMENT, GOLD_DERIVATION, DONE, ERROR]
     initial     = PARSING
@@ -114,7 +114,7 @@ class IngestionWorkflow:
 ### Bảng tổng hợp
 
 ```
-                    Step Functions      UAAF WorkflowEngine     Temporal/Cadence
+                    Step Functions      RYUU WorkflowEngine     Temporal/Cadence
 ─────────────────── ──────────────────  ──────────────────────  ────────────────────
 Worker              AWS services        LLM agents              Arbitrary code
 Execution model     Distributed/managed In-process library      Distributed/managed
@@ -150,7 +150,7 @@ Mỗi state của workflow có thể dùng bất kỳ strategy nào trong 5 patt
 
 ---
 
-## Use case cụ thể trong các ví dụ của UAAF
+## Use case cụ thể trong các ví dụ của RYUU
 
 | Project | Workflow states | Lý do cần WorkflowEngine |
 |---|---|---|
@@ -165,7 +165,7 @@ Mỗi state của workflow có thể dùng bất kỳ strategy nào trong 5 patt
 Framework chỉ define interface. Project tự chọn backend:
 
 ```python
-# uaaf/workflow/checkpoint.py
+# ryuu/workflow/checkpoint.py
 @runtime_checkable
 class ICheckpointStore(Protocol):
     async def save(self, workflow_id: str, state: str, data: dict) -> None: ...
@@ -196,9 +196,9 @@ Request đến
     │   └── → Dùng 5 pattern (DirectStrategy, ReAct, v.v.)
     │
     ├── Job batch, chạy hàng giờ, cần fault-tolerance?
-    │   └── → UAAF WorkflowEngine (Phase 7)
+    │   └── → RYUU WorkflowEngine (Phase 7)
     │
     └── Hàng nghìn concurrent workflow, cần distributed?
         └── → Temporal / Prefect / AWS Step Functions
-              (UAAF WorkflowEngine là stepping stone, ICheckpointStore là exit ramp)
+              (RYUU WorkflowEngine là stepping stone, ICheckpointStore là exit ramp)
 ```

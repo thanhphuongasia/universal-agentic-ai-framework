@@ -3,7 +3,7 @@
 RED criteria:
 - Fails if docs/guides/ or docs/cookbook/ don't exist yet.
 - Fails if any ```python block has a SyntaxError.
-- Fails if any `from uaaf.X import Y` path cannot be resolved.
+- Fails if any `from ryuu.X import Y` path cannot be resolved.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ GUIDES_DIR = DOCS_ROOT / "guides"
 COOKBOOK_DIR = DOCS_ROOT / "cookbook"
 
 PYTHON_BLOCK_RE = re.compile(r"```python\n(.*?)```", re.DOTALL)
-IMPORT_FROM_RE = re.compile(r"^from (uaaf[\w.]*) import", re.MULTILINE)
+IMPORT_FROM_RE = re.compile(r"^from (ryuu[\w.]*) import", re.MULTILINE)
 
 
 def collect_md_files() -> list[Path]:
@@ -82,7 +82,7 @@ def test_python_snippets_compile(md_file: Path):
 
 
 @pytest.mark.parametrize("md_file", collect_md_files(), ids=lambda p: p.name)
-def test_uaaf_import_paths_exist(md_file: Path):
+def test_ryuu_import_paths_exist(md_file: Path):
     for code, line in extract_snippets(md_file):
         for module_path in IMPORT_FROM_RE.findall(code):
             try:

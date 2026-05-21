@@ -5,12 +5,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "Installing uaaf-workflow (editable)..."
-pip install -e "$REPO_ROOT/packages/uaaf-workflow"
+echo "Installing ryuu-workflow (editable)..."
+pip install -e "$REPO_ROOT/packages/ryuu-workflow"
 
-echo "Installing uaaf (editable, with dev extras)..."
+echo "Installing ryuu (editable, with dev extras)..."
 pip install -e "$REPO_ROOT[dev]"
 
 echo ""
 echo "Verifying..."
-python -c "import uaaf, uaaf_workflow; print('uaaf', uaaf.__version__, '+ uaaf_workflow', uaaf_workflow.__version__, '— OK')"
+python -c "import ryuu, ryuu_workflow; print('ryuu', ryuu.__version__, '+ ryuu_workflow', ryuu_workflow.__version__, '— OK')"

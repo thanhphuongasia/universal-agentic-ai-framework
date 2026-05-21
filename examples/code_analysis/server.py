@@ -1,6 +1,6 @@
 """
 FastAPI SSE server for the code_analysis example.
-Exposes POST /chat — runs the 3-state pipeline and streams UAAFEvents.
+Exposes POST /chat — runs the 3-state pipeline and streams RYUUEvents.
 
 Run:
     OPENAI_API_KEY=sk-... uvicorn examples.code_analysis.server:app --reload
@@ -21,9 +21,9 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from examples.code_analysis.workflow import AnalyseState, IngestState, SummarizeState
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
-app = FastAPI(title="UAAF Code Analysis — SSE Chat")
+app = FastAPI(title="RYUU Code Analysis — SSE Chat")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,7 +59,7 @@ async def _stream_analysis(message: str) -> AsyncIterator[dict[str, Any]]:
     t0 = time.monotonic()
     ctx = _make_ctx()
     target = _parse_target(message)
-    target_label = str(target) if target else "uaaf/ (default)"
+    target_label = str(target) if target else "ryuu/ (default)"
 
     # ── intent + strategy ──────────────────────────────────────────────────
     yield {"type": "intent_classified", "intent_type": "code_analysis", "confidence": 0.97}

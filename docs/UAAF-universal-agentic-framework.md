@@ -1,4 +1,4 @@
-# Universal Agentic AI Framework (UAAF)
+# Universal Agentic AI Framework (RYUU)
 ## Phân tích pattern + Software Design Document
 
 > **Mục tiêu**: Trích xuất các pattern chung từ ba hệ thống đã thiết kế (MAAF Per-Domain, Personal AI Assistant, AI Code Analysis), từ đó propose một framework lõi reusable cho cả conversational AI và batch processing, ở bất kỳ domain nào.
@@ -170,7 +170,7 @@ Quan trọng không kém phần chung là phần *khác*. Framework ép chuẩn 
 
 ---
 
-## Phần II — UAAF Software Design Document
+## Phần II — RYUU Software Design Document
 
 ### 5. Goals & Non-Goals
 
@@ -253,11 +253,11 @@ Quan trọng không kém phần chung là phần *khác*. Framework ép chuẩn 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          PRODUCT LAYER                                  │
 │  Todo App │ Stock App │ Code Analysis │ Personal AI │ ...new domain     │
-│  (mỗi product config UAAF với plugin riêng)                            │
+│  (mỗi product config RYUU với plugin riêng)                            │
 └────────────────────────────┬────────────────────────────────────────────┘
                              │ uses
 ┌────────────────────────────▼────────────────────────────────────────────┐
-│                         UAAF RUNTIME                                    │
+│                         RYUU RUNTIME                                    │
 │                                                                         │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                    INTERACTION TIER                              │  │
@@ -563,7 +563,7 @@ class WorkflowEngine:
                         └────────────┬─────────────┘
                                      │ inject
                         ┌────────────▼─────────────┐
-                        │       UAAF Runtime       │
+                        │       RYUU Runtime       │
                         │  (entry point)           │
                         ├──────────────────────────┤
                         │ + handle_request()       │
@@ -686,7 +686,7 @@ class WorkflowEngine:
 #### 11.1. Conversational request (single-domain mode)
 
 ```
-Product   UAAF     IntentTier  CognitiveTier  KnowledgeBB  AgentPool  Verifier  Provider
+Product   RYUU     IntentTier  CognitiveTier  KnowledgeBB  AgentPool  Verifier  Provider
    │       │           │            │             │           │          │         │
    │─req──▶│           │            │             │           │          │         │
    │       │──analyze─▶│            │             │           │          │         │
@@ -883,9 +883,9 @@ Migration không phải all-or-nothing. Mỗi step độc lập có giá trị.
 
 ## Phần III — Tóm tắt sự khác biệt với MAAF gốc
 
-UAAF không phải MAAF v2 — là *sibling* với scope rộng hơn:
+RYUU không phải MAAF v2 — là *sibling* với scope rộng hơn:
 
-| Aspect | MAAF Per-Domain | UAAF |
+| Aspect | MAAF Per-Domain | RYUU |
 |---|---|---|
 | Scope | Conversational, agentic | Conversational + batch, agentic + deterministic |
 | Domain pinning | Pin cứng lúc khởi tạo | Mode-dependent: pin (single) hoặc registry (multi) |
@@ -894,7 +894,7 @@ UAAF không phải MAAF v2 — là *sibling* với scope rộng hơn:
 | Verification | Có nhưng chưa first-class | First-class concept với pipeline |
 | Operation | Request-response | Request-response + Workflow batch |
 
-Nếu bạn đang ở MAAF, UAAF là natural evolution khi:
+Nếu bạn đang ở MAAF, RYUU là natural evolution khi:
 - Cần thêm batch processing pipeline (như code ingestion).
 - Cần backbone không phải memory (như graph).
 - Cần multiple cognitive strategies cho cùng một product.

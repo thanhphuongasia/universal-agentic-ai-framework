@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf_workflow.errors import FatalError
-from uaaf_workflow.checkpoint import ICheckpointStore, make_checkpoint
-from uaaf_workflow.stores.file import FileCheckpointStore
+from ryuu_workflow.errors import FatalError
+from ryuu_workflow.checkpoint import ICheckpointStore, make_checkpoint
+from ryuu_workflow.stores.file import FileCheckpointStore
 
 
 class TestFileCheckpointStoreBasic:

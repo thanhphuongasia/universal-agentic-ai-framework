@@ -3,19 +3,19 @@
 Tests:
 1. Full 3-state workflow PARSE → ENRICH → DERIVE completes.
 2. SIGKILL simulation: engine A runs 1 state, crashes, engine B resumes → completes.
-3. Public API imports work from uaaf top-level.
+3. Public API imports work from ryuu top-level.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from uaaf_workflow.context import ContextScope, ExecutionContext
-from uaaf_workflow.checkpoint import make_checkpoint
-from uaaf_workflow.engine import WorkflowEngine, WorkflowStatus
-from uaaf_workflow.state_machine import StateTransition, Workflow
-from uaaf_workflow.stores.file import FileCheckpointStore
-from uaaf_workflow.stores.in_memory import InMemoryCheckpointStore
+from ryuu_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.checkpoint import make_checkpoint
+from ryuu_workflow.engine import WorkflowEngine, WorkflowStatus
+from ryuu_workflow.state_machine import StateTransition, Workflow
+from ryuu_workflow.stores.file import FileCheckpointStore
+from ryuu_workflow.stores.in_memory import InMemoryCheckpointStore
 
 
 def _ctx() -> ExecutionContext:
@@ -150,21 +150,21 @@ class TestSigkillSimulation:
 
 
 class TestPublicAPIImports:
-    def test_workflow_engine_importable_from_uaaf_workflow(self):
-        from uaaf_workflow import WorkflowEngine  # noqa: F401
+    def test_workflow_engine_importable_from_ryuu_workflow(self):
+        from ryuu_workflow import WorkflowEngine  # noqa: F401
 
-    def test_workflow_importable_from_uaaf_workflow(self):
-        from uaaf_workflow import Workflow  # noqa: F401
+    def test_workflow_importable_from_ryuu_workflow(self):
+        from ryuu_workflow import Workflow  # noqa: F401
 
-    def test_istate_importable_from_uaaf_workflow(self):
-        from uaaf_workflow import IState  # noqa: F401
+    def test_istate_importable_from_ryuu_workflow(self):
+        from ryuu_workflow import IState  # noqa: F401
 
-    def test_icheckpointstore_importable_from_uaaf_workflow(self):
-        from uaaf_workflow import ICheckpointStore  # noqa: F401
+    def test_icheckpointstore_importable_from_ryuu_workflow(self):
+        from ryuu_workflow import ICheckpointStore  # noqa: F401
 
-    def test_filecheckpointstore_importable_from_uaaf_workflow(self):
-        from uaaf_workflow import FileCheckpointStore  # noqa: F401
+    def test_filecheckpointstore_importable_from_ryuu_workflow(self):
+        from ryuu_workflow import FileCheckpointStore  # noqa: F401
 
     def test_version_bumped(self):
-        import uaaf
-        assert uaaf.__version__ == "0.2.0a1"
+        import ryuu
+        assert ryuu.__version__ == "0.3.0a8"  # Phase 9.3 perf fixes

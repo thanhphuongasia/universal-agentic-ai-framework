@@ -31,7 +31,7 @@ LEARNING CASES:
 
 from __future__ import annotations
 
-from uaaf.cognitive.verifiers import (
+from ryuu.cognitive.verifiers import (
     GroundTruthVerifier,
     PipelineMode,
     SchemaVerifier,

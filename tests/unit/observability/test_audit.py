@@ -1,4 +1,4 @@
-"""Tests for uaaf.observability.audit — T05."""
+"""Tests for ryuu.observability.audit — T05."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from uaaf.observability.audit import (
+from ryuu.observability.audit import (
     _GENESIS_HASH,
     AuditConfig,
     AuditEvent,

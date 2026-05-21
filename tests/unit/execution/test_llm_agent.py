@@ -1,4 +1,4 @@
-"""Tests for uaaf.execution.llm_agent — LLMAgent + react_loop."""
+"""Tests for ryuu.execution.llm_agent — LLMAgent + react_loop."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from typing import Any
 
 import pytest
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import AgentResult, Task
-from uaaf.execution.llm_agent import LLMAgent
-from uaaf.execution.tool_registry import ToolRegistry
-from uaaf.observability.audit import AuditConfig, AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message, Response, TokenUsage
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import AgentResult, Task
+from ryuu.execution.llm_agent import LLMAgent
+from ryuu.execution.tool_registry import ToolRegistry
+from ryuu.observability.audit import AuditConfig, AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message, Response, TokenUsage
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers

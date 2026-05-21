@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.knowledge.memory.store import MemoryLayer
-from uaaf.knowledge.memory.working import WorkingMemoryStore
+from ryuu.knowledge.memory.store import MemoryLayer
+from ryuu.knowledge.memory.working import WorkingMemoryStore
 
 
 class TestWorkingMemoryStore:

@@ -34,7 +34,7 @@ User submits code
 ## SandboxManager Setup
 
 ```python
-from uaaf.execution.sandbox import SandboxManager
+from ryuu.execution.sandbox import SandboxManager
 
 sandbox = SandboxManager(
     timeout_seconds=10,      # kill nếu code chạy quá 10s
@@ -50,7 +50,7 @@ sandbox = SandboxManager(
 ## Run Code Pattern
 
 ```python
-from uaaf.execution.sandbox import SandboxManager
+from ryuu.execution.sandbox import SandboxManager
 
 async def run_user_code(code: str, test_input: str) -> str:
     sandbox = SandboxManager(timeout_seconds=10, max_memory_mb=128)
@@ -68,17 +68,17 @@ async def run_user_code(code: str, test_input: str) -> str:
 ```python
 from dataclasses import dataclass, field
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.execution.sandbox import SandboxManager
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message
-from uaaf_workflow.context import ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.cognitive.verifiers.ground_truth import GroundTruthVerifier
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.execution.sandbox import SandboxManager
+from ryuu.observability.audit import AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message
+from ryuu_workflow.context import ExecutionContext
 
 
 @dataclass
@@ -148,7 +148,7 @@ async def run_safely(sandbox: SandboxManager, user_code: str) -> str:
 ### Whitelist modules
 
 ```python
-from uaaf.execution.sandbox import SandboxManager
+from ryuu.execution.sandbox import SandboxManager
 
 # Chỉ cho phép safe standard library
 safe_sandbox = SandboxManager(
@@ -177,9 +177,9 @@ sandbox = SandboxManager(timeout_seconds=5, max_memory_mb=64)
 Nếu muốn agent tự suggest fixes khi code fail:
 
 ```python
-from uaaf.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
-from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
-from uaaf._testing.fakes import FakeLLMProvider, FakeAgentPool, FakeVerifier
+from ryuu.cognitive.strategies.evaluator_optimizer import EvaluatorOptimizerStrategy
+from ryuu.cognitive.verifiers.ground_truth import GroundTruthVerifier
+from ryuu._testing.fakes import FakeLLMProvider, FakeAgentPool, FakeVerifier
 
 strategy = EvaluatorOptimizerStrategy(
     agent_pool=FakeAgentPool(),

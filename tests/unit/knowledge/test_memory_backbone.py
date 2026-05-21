@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone
-from uaaf.knowledge.memory.backbone import MemoryBackbone
+from ryuu.knowledge.backbone import AssembledContext, BackboneType, IKnowledgeBackbone
+from ryuu.knowledge.memory.backbone import MemoryBackbone
 
 
 class TestMemoryBackbone:

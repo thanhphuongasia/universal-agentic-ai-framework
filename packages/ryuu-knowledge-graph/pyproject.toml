@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-knowledge-graph"
+version = "0.2.0a1"
+description = "RYUU Knowledge Graph — graph store and graph backbone"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = ["ryuu-knowledge-base>=0.2.0a1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_knowledge_graph"]

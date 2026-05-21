@@ -1,4 +1,4 @@
-"""Tests for uaaf.execution.sandbox (SandboxManager) — T11."""
+"""Tests for ryuu.execution.sandbox (SandboxManager) — T11."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from uaaf.execution.sandbox import SandboxManager, SandboxResult
+from ryuu.execution.sandbox import SandboxManager, SandboxResult
 
 # ---------------------------------------------------------------------------
 # Basic execution

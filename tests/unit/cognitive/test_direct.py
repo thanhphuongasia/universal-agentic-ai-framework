@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from uaaf.cognitive.strategies.direct import DirectStrategy
-from uaaf.intent.models import (
+from ryuu.cognitive.strategies.direct import DirectStrategy
+from ryuu.intent.models import (
     DIRECT,
     CognitiveResult,
     ComplexityLevel,
     CostEstimate,
     StructuredIntent,
 )
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _intent(complexity: ComplexityLevel = ComplexityLevel.LOW) -> StructuredIntent:
@@ -70,9 +70,9 @@ def test_direct_strategy_estimate_cost() -> None:
 
 @pytest.mark.anyio
 async def test_direct_executes_single_dispatch() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(
@@ -92,9 +92,9 @@ async def test_direct_executes_single_dispatch() -> None:
 
 @pytest.mark.anyio
 async def test_direct_execute_carries_intent_type_in_task() -> None:
-    from uaaf._testing.fakes import FakeAgentPool, FakeVerifier
-    from uaaf.execution.agent import AgentResult
-    from uaaf.observability.cost import Cost
+    from ryuu._testing.fakes import FakeAgentPool, FakeVerifier
+    from ryuu.execution.agent import AgentResult
+    from ryuu.observability.cost import Cost
 
     pool = FakeAgentPool(responses=[
         AgentResult(task_id="t1", output="ok", cost=Cost.zero())

@@ -3,7 +3,7 @@
 ## Pattern là gì?
 
 Prompt Chaining chia một yêu cầu phức tạp thành nhiều bước xử lý tuần tự, output của bước trước
-là input của bước tiếp theo. UAAF triển khai qua **ReAct loop** (Reasoning + Acting): mỗi vòng
+là input của bước tiếp theo. RYUU triển khai qua **ReAct loop** (Reasoning + Acting): mỗi vòng
 agent nhận toàn bộ lịch sử quan sát, quyết định `ACTION:<hành động>` hay `DONE:<câu trả lời>`.
 
 ## Khi nào nên dùng?
@@ -14,12 +14,12 @@ agent nhận toàn bộ lịch sử quan sát, quyết định `ACTION:<hành đ
 
 **Không phù hợp khi**: các bước độc lập nhau → dùng Pattern 3 (Parallelization).
 
-## UAAF triển khai như thế nào?
+## RYUU triển khai như thế nào?
 
 | Thành phần | Vị trí |
 |-----------|--------|
-| `ReActStrategy` | `uaaf/cognitive/strategies/react.py` |
-| `ICognitiveStrategy` | `uaaf/cognitive/strategy.py` |
+| `ReActStrategy` | `ryuu/cognitive/strategies/react.py` |
+| `ICognitiveStrategy` | `ryuu/cognitive/strategy.py` |
 
 **Luồng bên trong `ReActStrategy.execute()`:**
 
@@ -47,14 +47,14 @@ import os
 import anyio
 from dataclasses import dataclass, field
 
-from uaaf import (
+from ryuu import (
     AgentPool, BaseAgent, AgentResult, Task,
     ExecutionContext, ContextScope, Cost,
     StructuredIntent, ComplexityLevel,
 )
-from uaaf.cognitive.strategies.react import ReActStrategy
-from uaaf.cognitive.verifier import VerificationResult
-from uaaf.providers.llm import ILLMProvider, CompletionRequest, Message
+from ryuu.cognitive.strategies.react import ReActStrategy
+from ryuu.cognitive.verifier import VerificationResult
+from ryuu.providers.llm import ILLMProvider, CompletionRequest, Message
 
 
 # --- Prompt cho LLM: dạy nó dùng ACTION:/DONE: ---
@@ -70,10 +70,10 @@ Chỉ trả DONE khi đã có đủ thông tin để đưa ra khuyến nghị r�
 def build_provider() -> ILLMProvider:
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
-        from uaaf.providers.adapters.openai import OpenAIProvider
+        from ryuu.providers.adapters.openai import OpenAIProvider
         return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.providers.llm import Response, TokenUsage
+    from ryuu._testing.fakes import FakeLLMProvider
+    from ryuu.providers.llm import Response, TokenUsage
     # Demo mode: mô phỏng luồng ACTION → ACTION → DONE
     return FakeLLMProvider(responses=[  # type: ignore[return-value]
         Response("ACTION: Lấy giá AAPL hiện tại và volume 30 ngày", "fake", TokenUsage(80, 20)),
@@ -123,10 +123,10 @@ class PassVerifier:
 
 
 async def main():
-    from uaaf.observability.audit import AuditLogger
-    from uaaf.observability.cost import CostPolicy, CostTracker
-    from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-    from uaaf.observability.tracer import Tracer
+    from ryuu.observability.audit import AuditLogger
+    from ryuu.observability.cost import CostPolicy, CostTracker
+    from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+    from ryuu.observability.tracer import Tracer
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     agent = StockResearchAgent(

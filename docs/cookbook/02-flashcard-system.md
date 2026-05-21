@@ -29,12 +29,12 @@ StudySession
 
 ## Card Storage Pattern
 
-UAAF không cung cấp sẵn card schema — product tự define. Pattern đề xuất: lưu card dưới dạng JSON string vào `EpisodicMemoryStore`, dùng `metadata` để track scheduling info.
+RYUU không cung cấp sẵn card schema — product tự define. Pattern đề xuất: lưu card dưới dạng JSON string vào `EpisodicMemoryStore`, dùng `metadata` để track scheduling info.
 
 ```python
 import json
-from uaaf.knowledge.memory.episodic import EpisodicMemoryStore
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.knowledge.memory.episodic import EpisodicMemoryStore
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 store = EpisodicMemoryStore(max_entries=500)
 
@@ -68,12 +68,12 @@ def compute_next_interval(current_interval: float, ease: float, quality: int) ->
 ## Answer Evaluation với GroundTruthVerifier
 
 ```python
-from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
+from ryuu.cognitive.verifiers.ground_truth import GroundTruthVerifier
 
 verifier = GroundTruthVerifier(mode="word_overlap", threshold=0.6)
 
 async def evaluate_answer(user_answer: str, correct_answer: str) -> bool:
-    from uaaf_workflow.context import ContextScope, ExecutionContext
+    from ryuu_workflow.context import ContextScope, ExecutionContext
     ctx = ExecutionContext(
         scope=ContextScope(user_id="u1", session_id="s1", domain="flashcard"),
         correlation_id="c1",
@@ -96,15 +96,15 @@ async def evaluate_answer(user_answer: str, correct_answer: str) -> bool:
 import json
 from dataclasses import dataclass, field
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.knowledge.memory.episodic import EpisodicMemoryStore
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.knowledge.memory.episodic import EpisodicMemoryStore
+from ryuu.observability.audit import AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @dataclass
@@ -162,7 +162,7 @@ class FlashcardAgent(BaseAgent):
 
 ## Scheduled Batch Review
 
-UAAF không có built-in scheduler — dùng cron job hoặc task queue của product:
+RYUU không có built-in scheduler — dùng cron job hoặc task queue của product:
 
 ```python
 # Ví dụ: chạy mỗi ngày lúc 8 giờ sáng (APScheduler, Celery, hoặc cron)

@@ -14,8 +14,8 @@ import os as _os
 from dataclasses import dataclass
 from typing import Any
 
-from uaaf.intent.llm_analyzer import LLMIntentAnalyzer
-from uaaf.intent.models import (
+from ryuu.intent.llm_analyzer import LLMIntentAnalyzer
+from ryuu.intent.models import (
     DIRECT,
     REACT,
     ComplexityLevel,
@@ -104,7 +104,7 @@ class TodoIntentAnalyzer:
 
 
 # ---------------------------------------------------------------------------
-# LLM-backed analyzer — uses uaaf.intent.LLMIntentAnalyzer with todo prompt
+# LLM-backed analyzer — uses ryuu.intent.LLMIntentAnalyzer with todo prompt
 # ---------------------------------------------------------------------------
 
 TODO_INTENT_SYSTEM_PROMPT = """\
@@ -169,7 +169,7 @@ def build_llm_analyzer(
                 "LLM analyzer requires OPENAI_API_KEY. "
                 "Set the env var, or use ANALYZER_MODE='rule' / CLI 'rule' for offline runs."
             )
-        from uaaf.providers.adapters.openai import OpenAIProvider
+        from ryuu.providers.adapters.openai import OpenAIProvider
         provider = OpenAIProvider(api_key=api_key)
 
     return LLMIntentAnalyzer(

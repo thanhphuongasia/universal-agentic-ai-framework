@@ -1,8 +1,8 @@
-# Implementation Plan: `@uaaf/chat-core` + `@uaaf/chat-web` React binding
+# Implementation Plan: `@ryuu/chat-core` + `@ryuu/chat-web` React binding
 
 > **Source handoff**: `tasks/claudechat-handoff-chat-frontend.md` (chat-shell pattern — superseded by chat-core pattern per 2026-05-08 decision).
-> **Repo target**: `../uaaf-frontend/` (sibling of `uaaf-framework/`, separate git repo).
-> **Backend contract**: `docs/uaaf-framework-spec.md` §SSE event schema (UAAF Python runtime emits `UAAFEvent` stream).
+> **Repo target**: `../ryuu-frontend/` (sibling of `ryuu-framework/`, separate git repo).
+> **Backend contract**: `docs/ryuu-framework-spec.md` §SSE event schema (RYUU Python runtime emits `RYUUEvent` stream).
 
 ---
 
@@ -11,11 +11,11 @@
 Build a **framework-agnostic chat client core** + a **thin React binding**. Core is pure TypeScript with zero runtime deps and zero UI assumptions. Bindings (React now, RN/Flutter later) wrap the core.
 
 ```
-uaaf-frontend/
+ryuu-frontend/
 ├── packages/
 │   ├── chat-core/           # Pure TS, framework-agnostic, AsyncIterator API
 │   │   └── src/
-│   │       ├── types.ts            # UAAFEvent, Message, ChatConfig, RetryPolicy
+│   │       ├── types.ts            # RYUUEvent, Message, ChatConfig, RetryPolicy
 │   │       ├── transport/
 │   │       │   └── sse.ts          # parseSSEStream(ReadableStream) → AsyncIterable
 │   │       ├── session.ts          # ChatSession class — main entry
@@ -64,7 +64,7 @@ Only browser/standard APIs: `fetch`, `ReadableStream`, `TextDecoder`, `AbortCont
 **Trade-off**: write our own SSE parser (small, well-tested).
 
 ### AD-3. SSE transport via `fetch` + `ReadableStream`
-Browser-native. Streams chunks → `TextDecoder` → split on `\n\n` → parse `event:` / `data:` lines → yield `UAAFEvent`.
+Browser-native. Streams chunks → `TextDecoder` → split on `\n\n` → parse `event:` / `data:` lines → yield `RYUUEvent`.
 **Why not `EventSource`?** EventSource doesn't support POST body or custom headers (auth) — both required.
 
 ### AD-4. `chat-web` depends on `chat-core` (one-way), `react` is peerDep
@@ -78,7 +78,7 @@ class ParseError extends ChatError        // malformed SSE / JSON
 class RetryableError extends ChatError    // server hint: retry safe
 class FatalError extends ChatError        // server hint: do not retry
 ```
-Mirrors `uaaf.observability.errors` tier on the Python side. Retry policy keys off these classes.
+Mirrors `ryuu.observability.errors` tier on the Python side. Retry policy keys off these classes.
 
 ### AD-6. Retry policy injected as interface
 ```ts
@@ -119,7 +119,7 @@ Forwarded raw to consumer. Consumer (React component, RN screen) decides how to 
 Monorepo + tooling + `chat-core` package skeleton + types. Deliverable: `pnpm install && pnpm build && pnpm test` runs green on empty stubs.
 
 ### Phase B — Transport + Session (T03–T04)
-SSE parser + `ChatSession.send()` AsyncIterable. Deliverable: against a fake SSE server, `for await` yields all `UAAFEvent` types in order.
+SSE parser + `ChatSession.send()` AsyncIterable. Deliverable: against a fake SSE server, `for await` yields all `RYUUEvent` types in order.
 
 ### Phase C — Resilience (T05–T06)
 Errors, retry, history, auth, abort. Deliverable: network drop mid-stream triggers retry; abort cleanly cancels; history persists across calls.
@@ -128,7 +128,7 @@ Errors, retry, history, auth, abort. Deliverable: network drop mid-stream trigge
 `useChat` hook wrapping ChatSession. Deliverable: React Testing Library test renders a fake-backed component, sends a message, asserts streaming text + done state.
 
 ### Phase E — Verification (T09–T10)
-Contract test against a fake UAAF backend matching the spec, integration smoke from `useChat` through SSE end-to-end. Deliverable: CI gate green.
+Contract test against a fake RYUU backend matching the spec, integration smoke from `useChat` through SSE end-to-end. Deliverable: CI gate green.
 
 ---
 
@@ -136,7 +136,7 @@ Contract test against a fake UAAF backend matching the spec, integration smoke f
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R1 | Backend SSE schema drifts from frontend types | Single source of truth: copy `UAAFEvent` discriminated union from `docs/uaaf-framework-spec.md` verbatim into `types.ts`. Add contract test that parses real backend output. |
+| R1 | Backend SSE schema drifts from frontend types | Single source of truth: copy `RYUUEvent` discriminated union from `docs/ryuu-framework-spec.md` verbatim into `types.ts`. Add contract test that parses real backend output. |
 | R2 | AsyncIterator + React lifecycle (cleanup, double-mount in StrictMode) | Use `AbortController` per send; cleanup in `useEffect` return; track `mounted` ref to drop late events. Test with React 18 StrictMode enabled. |
 | R3 | SSE buffering / chunked-transfer behavior differs across runtimes | Test the parser with split chunks at every byte boundary (property test). Test against Node's `undici` and browser `fetch`. |
 | R4 | RN / Flutter bundling later may surface accidental browser-only APIs | Add lint rule banning `window`, `document`, `localStorage`, `sessionStorage`, `node:*` imports in `chat-core/src/`. CI fails on violation. |

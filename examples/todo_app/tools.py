@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from examples.todo_app.models import Goal, Priority, Status, Task
-from uaaf.execution import ToolRegistry
+from ryuu_execution import ToolRegistry
 
 # ---------------------------------------------------------------------------
 # Handler implementations

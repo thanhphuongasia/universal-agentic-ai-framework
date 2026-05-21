@@ -1,7 +1,7 @@
 """
-Stock Advisory — UAAF Pattern Demo
+Stock Advisory — RYUU Pattern Demo
 =====================================
-Demonstrates 5 patterns từ uaaf-framework-spec.md, mỗi case độc lập.
+Demonstrates 5 patterns từ ryuu-framework-spec.md, mỗi case độc lập.
 
 Run (fake LLM, không cần API key):
     python -m examples.stock_advisory.main
@@ -57,12 +57,12 @@ from examples.stock_advisory.verifiers import (
     build_ticker_mention_verifier,
     build_trade_schema_verifier,
 )
-from uaaf.execution.agent import Task as AgentTask
-from uaaf.execution.llm_agent import PrintCallbacks
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.execution.agent import Task as AgentTask
+from ryuu.execution.llm_agent import PrintCallbacks
+from ryuu.observability.audit import AuditLogger
+from ryuu.observability.cost import CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ async def case1_market_snapshot() -> None:
     print("  Checks: does response contain 'AAPL' and 'risk'?\n")
     verifier_a = build_trade_schema_verifier()
     # Override to raw mode for demonstration
-    from uaaf.cognitive.verifiers import SchemaVerifier
+    from ryuu.cognitive.verifiers import SchemaVerifier
     verifier_raw = SchemaVerifier(required_keys=["AAPL", "risk"], output_must_be_json=False)
     vr_a = await verifier_raw.verify(result.output, ctx)
     print(f"  {'✅ PASS' if vr_a.passed else '❌ FAIL'}  confidence={vr_a.confidence:.2f}")
@@ -281,7 +281,7 @@ async def case3_ground_truth_verifier() -> None:
     print("  Use case: deterministic output (e.g. ticker confirmation).")
     print("  Rarely used for LLM output but available for deterministic agents.\n")
 
-    from uaaf.cognitive.verifiers import GroundTruthVerifier
+    from ryuu.cognitive.verifiers import GroundTruthVerifier
     v_exact = GroundTruthVerifier(reference="NVDA", mode="exact")
     for label, text in [("Exact 'NVDA'", "NVDA"), ("Full sentence", response_nvda)]:
         vr = await v_exact.verify(text, ctx)
@@ -483,9 +483,9 @@ CASES = {
 
 
 async def main(run_case: int | None = None) -> None:
-    sep("UAAF Stock Advisory — Pattern Demo")
+    sep("RYUU Stock Advisory — Pattern Demo")
     print("""
-  Demonstrates UAAF patterns từ uaaf-framework-spec.md:
+  Demonstrates RYUU patterns từ ryuu-framework-spec.md:
     Case 1 — DirectQuery + SchemaVerifier
     Case 2 — ReAct Loop (tools: get_quote, get_signals, portfolio_summary)
     Case 3 — GroundTruthVerifier (exact / substring / word_overlap)
@@ -514,7 +514,7 @@ async def main(run_case: int | None = None) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Stock Advisory UAAF Pattern Demo")
+    parser = argparse.ArgumentParser(description="Stock Advisory RYUU Pattern Demo")
     parser.add_argument("--case", type=int, choices=list(CASES), metavar="N",
                         help="Run a single case (1-5). Omit to run all.")
     args = parser.parse_args()

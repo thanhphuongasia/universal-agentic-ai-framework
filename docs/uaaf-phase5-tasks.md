@@ -1,6 +1,6 @@
-# UAAF Phase 5 — Integration Guide + Cookbook
+# RYUU Phase 5 — Integration Guide + Cookbook
 
-**Goal**: Viết tài liệu hướng dẫn tích hợp UAAF vào product, thay thế example apps trong repo.
+**Goal**: Viết tài liệu hướng dẫn tích hợp RYUU vào product, thay thế example apps trong repo.
 
 **Scope change**: Theo quyết định của team, Phase 5 bỏ `examples/` app code và thay bằng:
 - `docs/guides/` — getting started + migration
@@ -34,7 +34,7 @@ Thay vì unit test code, dùng **doc snippet validator**:
 - Parse tất cả `docs/**/*.md`
 - Extract Python code blocks (` ```python ... ``` `)
 - `compile()` từng snippet → SyntaxError = fail
-- Import check: validate `from uaaf.X import Y` paths tồn tại trong package
+- Import check: validate `from ryuu.X import Y` paths tồn tại trong package
 
 Test file: `tests/docs/test_doc_snippets.py`
 

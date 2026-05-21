@@ -1,4 +1,4 @@
-"""Tests for uaaf.execution.tool_registry — ITool Protocol + ToolRegistry."""
+"""Tests for ryuu.execution.tool_registry — ITool Protocol + ToolRegistry."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from uaaf.execution.tool_registry import ITool, ToolRegistry
+from ryuu.execution.tool_registry import ITool, ToolRegistry
 
 # ---------------------------------------------------------------------------
 # Fixtures

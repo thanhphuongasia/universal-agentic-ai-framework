@@ -1,6 +1,6 @@
 # Execution Tier — Class Diagram
 
-`uaaf/execution/` — agent base classes, LLM loop, tool registry, agent pool.
+`ryuu/execution/` — agent base classes, LLM loop, tool registry, agent pool.
 
 ```mermaid
 classDiagram

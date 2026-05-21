@@ -1,4 +1,4 @@
-"""Tests for uaaf.intent.selector — P1-T03."""
+"""Tests for ryuu.intent.selector — P1-T03."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from uaaf.cognitive.strategy import IAgentPool, IVerifier
-from uaaf.intent.models import (
+from ryuu.cognitive.strategy import IAgentPool, IVerifier
+from ryuu.intent.models import (
     DIRECT,
     REACT,
     CognitiveResult,
@@ -15,8 +15,8 @@ from uaaf.intent.models import (
     CostEstimate,
     StructuredIntent,
 )
-from uaaf.intent.selector import StrategySelector
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.intent.selector import StrategySelector
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 def _intent(complexity: ComplexityLevel = ComplexityLevel.LOW) -> StructuredIntent:

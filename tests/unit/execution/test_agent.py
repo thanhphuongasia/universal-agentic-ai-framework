@@ -1,4 +1,4 @@
-"""Tests for uaaf.execution.agent (BaseAgent template method) — T08."""
+"""Tests for ryuu.execution.agent (BaseAgent template method) — T08."""
 
 from __future__ import annotations
 
@@ -6,18 +6,18 @@ from dataclasses import dataclass
 
 import pytest
 
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.observability.audit import AuditConfig, AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf_workflow.errors import (
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.observability.audit import AuditConfig, AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu_workflow.errors import (
     BudgetExceededError,
     DegradedError,
     FatalError,
     RetryableError,
 )
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -190,7 +190,7 @@ async def test_over_budget_raises_budget_exceeded_before_execute() -> None:
 
 @pytest.mark.anyio
 async def test_span_has_correct_correlation_id() -> None:
-    from uaaf.observability.tracer import get_current_correlation_id
+    from ryuu.observability.tracer import get_current_correlation_id
 
     captured: list[str | None] = []
 

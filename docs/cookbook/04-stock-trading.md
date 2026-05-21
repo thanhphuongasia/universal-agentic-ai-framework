@@ -38,9 +38,9 @@ MarketData / News
 Với trading system, **không bao giờ skip verifier**. Ít nhất phải có:
 
 ```python
-from uaaf.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
-from uaaf.cognitive.verifiers.ground_truth import GroundTruthVerifier
+from ryuu.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
+from ryuu.cognitive.verifiers.ground_truth import GroundTruthVerifier
 
 signal_verifier = VerifierPipeline(
     verifiers=[
@@ -63,13 +63,13 @@ signal_verifier = VerifierPipeline(
 `AuditLogger` dùng SHA-256 hash chain JSONL backend — mỗi entry hash của entry trước, tamper-detectable. `BaseAgent` tự gọi `audit_logger.log()` ở mỗi `execute()` — không cần gọi thủ công.
 
 ```python
-from uaaf.observability.audit import AuditLogger
+from ryuu.observability.audit import AuditLogger
 
 # Default: in-memory (cho testing)
 audit = AuditLogger()
 
 # Production: trỏ tới append-only storage
-# audit = AuditLogger(log_path="/var/log/uaaf/trading-audit.jsonl")
+# audit = AuditLogger(log_path="/var/log/ryuu/trading-audit.jsonl")
 ```
 
 Để đảm bảo 7-year retention:
@@ -85,18 +85,18 @@ audit = AuditLogger()
 import json
 from dataclasses import dataclass, field
 
-from uaaf._testing.fakes import FakeLLMProvider
-from uaaf.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
-from uaaf.execution.agent import AgentResult, BaseAgent, Task
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.graph.backbone import GraphBackbone
-from uaaf.observability.audit import AuditLogger
-from uaaf.observability.cost import Cost, CostPolicy, CostTracker
-from uaaf.observability.rate_limit import RateLimiter, RatePolicy
-from uaaf.observability.tracer import Tracer
-from uaaf.providers.llm import CompletionRequest, Message
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu._testing.fakes import FakeLLMProvider
+from ryuu.cognitive.verifiers.pipeline import PipelineMode, VerifierPipeline
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
+from ryuu.execution.agent import AgentResult, BaseAgent, Task
+from ryuu.knowledge.context_assembler import ContextAssembler
+from ryuu.knowledge.graph.backbone import GraphBackbone
+from ryuu.observability.audit import AuditLogger
+from ryuu.observability.cost import Cost, CostPolicy, CostTracker
+from ryuu.observability.rate_limit import RateLimiter, RatePolicy
+from ryuu.observability.tracer import Tracer
+from ryuu.providers.llm import CompletionRequest, Message
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @dataclass
@@ -203,7 +203,7 @@ async def process_signal(signal_json: str) -> None:
 Trading có thể tốn nhiều token — cần budget chặt chẽ:
 
 ```python
-from uaaf.observability.cost import CostPolicy, CostTracker
+from ryuu.observability.cost import CostPolicy, CostTracker
 
 trading_policy = CostPolicy(
     per_user_per_day_usd=5.0,       # mỗi trader tối đa $5/ngày
@@ -220,7 +220,7 @@ tracker = CostTracker(trading_policy)
 Sau mỗi tháng, verify hash chain integrity:
 
 ```python
-from uaaf.observability.audit import AuditLogger
+from ryuu.observability.audit import AuditLogger
 
 async def verify_audit_chain(log_path: str) -> bool:
     audit = AuditLogger(log_path=log_path)

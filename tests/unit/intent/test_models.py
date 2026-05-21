@@ -1,10 +1,10 @@
-"""Tests for uaaf.intent.models — P1-T01."""
+"""Tests for ryuu.intent.models — P1-T01."""
 
 from __future__ import annotations
 
 import pytest
 
-from uaaf.intent.models import (
+from ryuu.intent.models import (
     DIRECT,
     EVALUATOR_OPTIMIZER,
     REACT,

@@ -1,42 +1,42 @@
-# Phase 8.2 — uaaf-core: Zero-Dep Foundation Package
+# Phase 8.2 — ryuu-core: Zero-Dep Foundation Package
 
 > **Date**: 2026-05-20  
 > **Depends on**: Phase 8.1 complete (commit 7f72a95)  
-> **See**: `docs/architecture/uaaf-v2-architecture.md` §2–§4 for target architecture
+> **See**: `docs/architecture/ryuu-v2-architecture.md` §2–§4 for target architecture
 
 ## 0. Mối quan hệ với Phase 8.1 và v2 Architecture
 
-Phase 8.1 đặt `errors.py` + `context.py` vào `uaaf_workflow` như một bước tạm thời.  
-Phase 8.2 di chuyển chúng về đúng chỗ: `uaaf_core`.
+Phase 8.1 đặt `errors.py` + `context.py` vào `ryuu_workflow` như một bước tạm thời.  
+Phase 8.2 di chuyển chúng về đúng chỗ: `ryuu_core`.
 
 **Key insight — zero callsite migration**:  
-`uaaf_workflow` sẽ giữ `errors.py` và `context.py` nhưng đổi thành **thin re-export** từ `uaaf_core`.  
-Mọi callsite hiện tại (`from uaaf_workflow.errors import X`) tiếp tục hoạt động không đổi.  
-Chỉ **new code** viết đúng từ `uaaf_core.*`.
+`ryuu_workflow` sẽ giữ `errors.py` và `context.py` nhưng đổi thành **thin re-export** từ `ryuu_core`.  
+Mọi callsite hiện tại (`from ryuu_workflow.errors import X`) tiếp tục hoạt động không đổi.  
+Chỉ **new code** viết đúng từ `ryuu_core.*`.
 
 ## 1. Goal
 
-Tạo `uaaf-core` — package zero dependency (chỉ stdlib) chứa:
+Tạo `ryuu-core` — package zero dependency (chỉ stdlib) chứa:
 
 ```bash
-pip install uaaf-core           # zero dep — chỉ stdlib
-pip install uaaf-workflow       # depends on uaaf-core
-pip install uaaf                # depends on uaaf-core + uaaf-workflow + providers
+pip install ryuu-core           # zero dep — chỉ stdlib
+pip install ryuu-workflow       # depends on ryuu-core
+pip install ryuu                # depends on ryuu-core + ryuu-workflow + providers
 ```
 
 **Lợi ích chính**:
 - Test agent đơn giản không cần mock: `BaseAgent(agent_id="test")` với NullObject defaults.
-- Protocol definitions ở 1 chỗ — mọi package implement Protocol từ uaaf-core.
+- Protocol definitions ở 1 chỗ — mọi package implement Protocol từ ryuu-core.
 - Consumer-only install: domain logic không kéo opentelemetry/openai.
 
-## 2. Nội dung uaaf-core
+## 2. Nội dung ryuu-core
 
 ```
-packages/uaaf-core/src/uaaf_core/
+packages/ryuu-core/src/ryuu_core/
 ├── __init__.py          re-export tất cả public symbols
-├── errors.py            MOVE từ uaaf_workflow.errors (errors.py giữ nguyên)
-├── context.py           MOVE từ uaaf_workflow.context (context.py giữ nguyên)
-├── models.py            EXTRACT từ uaaf/intent/models.py + uaaf/execution/agent.py (Task, AgentResult, Cost)
+├── errors.py            MOVE từ ryuu_workflow.errors (errors.py giữ nguyên)
+├── context.py           MOVE từ ryuu_workflow.context (context.py giữ nguyên)
+├── models.py            EXTRACT từ ryuu/intent/models.py + ryuu/execution/agent.py (Task, AgentResult, Cost)
 ├── protocols.py         NEW — ICostTracker, ITracer, IAuditLogger, IRateLimiter Protocol interfaces
 └── nulls.py             NEW — NullCostTracker, NullTracer, NullAuditLogger, NullRateLimiter
 ```
@@ -46,36 +46,36 @@ packages/uaaf-core/src/uaaf_core/
 `FrameworkError`, `RetryableError`, `DegradedError`, `FatalError`,
 `BudgetExceededError`, `RateLimitTimeout`, `RetryDecision`, `retry_policy`, `classify_external_error`
 
-**Sau khi move**: `uaaf_workflow/errors.py` trở thành re-export:
+**Sau khi move**: `ryuu_workflow/errors.py` trở thành re-export:
 ```python
-# uaaf_workflow/errors.py — backward-compat re-export
-from uaaf_core.errors import *  # noqa: F401, F403
+# ryuu_workflow/errors.py — backward-compat re-export
+from ryuu_core.errors import *  # noqa: F401, F403
 ```
 
 ### 2.2 context.py — Move (không đổi nội dung)
 
 `ContextScope`, `ExecutionContext`
 
-**Sau khi move**: `uaaf_workflow/context.py` trở thành re-export:
+**Sau khi move**: `ryuu_workflow/context.py` trở thành re-export:
 ```python
-# uaaf_workflow/context.py — backward-compat re-export
-from uaaf_core.context import *  # noqa: F401, F403
+# ryuu_workflow/context.py — backward-compat re-export
+from ryuu_core.context import *  # noqa: F401, F403
 ```
 
 ### 2.3 models.py — Extract
 
 | Symbol | Từ | Dep |
 |---|---|---|
-| `Cost` | `uaaf/observability/cost.py` | pure dataclass — stdlib only |
-| `Task` | `uaaf/execution/agent.py` | depends on `Cost` |
-| `AgentResult` | `uaaf/execution/agent.py` | depends on `Cost` |
-| `StructuredIntent` | `uaaf/intent/models.py` | depends on `ComplexityLevel`, `ModelTier` |
-| `CognitiveResult` | `uaaf/intent/models.py` | stdlib only |
-| `CostEstimate` | `uaaf/intent/models.py` | stdlib only |
-| `ComplexityLevel` | `uaaf/intent/models.py` | stdlib only |
-| `ModelTier` | `uaaf/intent/models.py` | stdlib only |
+| `Cost` | `ryuu/observability/cost.py` | pure dataclass — stdlib only |
+| `Task` | `ryuu/execution/agent.py` | depends on `Cost` |
+| `AgentResult` | `ryuu/execution/agent.py` | depends on `Cost` |
+| `StructuredIntent` | `ryuu/intent/models.py` | depends on `ComplexityLevel`, `ModelTier` |
+| `CognitiveResult` | `ryuu/intent/models.py` | stdlib only |
+| `CostEstimate` | `ryuu/intent/models.py` | stdlib only |
+| `ComplexityLevel` | `ryuu/intent/models.py` | stdlib only |
+| `ModelTier` | `ryuu/intent/models.py` | stdlib only |
 
-**Sau khi extract**: Các file gốc re-import từ `uaaf_core.models`.  
+**Sau khi extract**: Các file gốc re-import từ `ryuu_core.models`.  
 ~75 callsite hiện tại không cần đổi (gốc re-export về đúng path).
 
 ### 2.4 protocols.py — NEW
@@ -138,39 +138,39 @@ class BaseAgent(ABC):
 
 | # | Quyết định | Chọn |
 |---|---|---|
-| D1 | Namespace: `uaaf_core` hay `uaaf.core`? | `uaaf_core` — giống pattern `uaaf_workflow`, standalone-friendly |
-| D2 | `uaaf_workflow.errors/context` sau khi move? | Thin re-export (backward-compat), warn sau v0.3 |
-| D3 | `uaaf/intent/models.py` và `uaaf/execution/agent.py` sau extract? | Re-import từ `uaaf_core.models`, giữ nguyên public path |
-| D4 | `Cost` move vào `uaaf_core` hay giữ ở observability? | Move vào `uaaf_core.models` — Cost là model, không phải observability logic |
-| D5 | `uaaf-workflow` dep thêm `uaaf-core`? | Có — `uaaf_workflow` import errors/context từ `uaaf_core` |
+| D1 | Namespace: `ryuu_core` hay `ryuu.core`? | `ryuu_core` — giống pattern `ryuu_workflow`, standalone-friendly |
+| D2 | `ryuu_workflow.errors/context` sau khi move? | Thin re-export (backward-compat), warn sau v0.3 |
+| D3 | `ryuu/intent/models.py` và `ryuu/execution/agent.py` sau extract? | Re-import từ `ryuu_core.models`, giữ nguyên public path |
+| D4 | `Cost` move vào `ryuu_core` hay giữ ở observability? | Move vào `ryuu_core.models` — Cost là model, không phải observability logic |
+| D5 | `ryuu-workflow` dep thêm `ryuu-core`? | Có — `ryuu_workflow` import errors/context từ `ryuu_core` |
 
 ## 4. Migration Audit
 
-### 4.1 Files moving FROM `uaaf_workflow` TO `uaaf_core`
+### 4.1 Files moving FROM `ryuu_workflow` TO `ryuu_core`
 
 | Old path | New path |
 |---|---|
-| `packages/uaaf-workflow/src/uaaf_workflow/errors.py` | `packages/uaaf-core/src/uaaf_core/errors.py` |
-| `packages/uaaf-workflow/src/uaaf_workflow/context.py` | `packages/uaaf-core/src/uaaf_core/context.py` |
+| `packages/ryuu-workflow/src/ryuu_workflow/errors.py` | `packages/ryuu-core/src/ryuu_core/errors.py` |
+| `packages/ryuu-workflow/src/ryuu_workflow/context.py` | `packages/ryuu-core/src/ryuu_core/context.py` |
 
-**uaaf_workflow/errors.py** sau đó = 2 dòng re-export. Tất cả `from uaaf_workflow.errors import X` tiếp tục hoạt động.
+**ryuu_workflow/errors.py** sau đó = 2 dòng re-export. Tất cả `from ryuu_workflow.errors import X` tiếp tục hoạt động.
 
-### 4.2 Files extracted FROM `uaaf/` — re-import tại gốc
+### 4.2 Files extracted FROM `ryuu/` — re-import tại gốc
 
-| Source | Symbols extract sang uaaf_core.models |
+| Source | Symbols extract sang ryuu_core.models |
 |---|---|
-| `uaaf/observability/cost.py` | `Cost` |
-| `uaaf/execution/agent.py` | `Task`, `AgentResult` |
-| `uaaf/intent/models.py` | `StructuredIntent`, `CognitiveResult`, `CostEstimate`, `ComplexityLevel`, `ModelTier` |
+| `ryuu/observability/cost.py` | `Cost` |
+| `ryuu/execution/agent.py` | `Task`, `AgentResult` |
+| `ryuu/intent/models.py` | `StructuredIntent`, `CognitiveResult`, `CostEstimate`, `ComplexityLevel`, `ModelTier` |
 
-Sau extract: các file gốc giữ `from uaaf_core.models import X` → public import path `from uaaf.intent.models import X` tiếp tục hoạt động.
+Sau extract: các file gốc giữ `from ryuu_core.models import X` → public import path `from ryuu.intent.models import X` tiếp tục hoạt động.
 
-### 4.3 uaaf-workflow/pyproject.toml — thêm dep
+### 4.3 ryuu-workflow/pyproject.toml — thêm dep
 
 ```toml
 dependencies = [
     "anyio>=4.0",
-    "uaaf-core>=0.2.0a1",    # ← ADD
+    "ryuu-core>=0.2.0a1",    # ← ADD
 ]
 ```
 
@@ -178,20 +178,20 @@ dependencies = [
 
 ```toml
 dependencies = [
-    "uaaf-workflow>=0.2.0a1",
-    "uaaf-core>=0.2.0a1",    # ← ADD (explicit, dù uaaf-workflow đã pull transitive)
+    "ryuu-workflow>=0.2.0a1",
+    "ryuu-core>=0.2.0a1",    # ← ADD (explicit, dù ryuu-workflow đã pull transitive)
     ...
 ]
 ```
 
 ### 4.5 BaseAgent — wiring NullObjects
 
-`uaaf/execution/agent.py`: thay 4 dep bắt buộc bằng NullObject defaults.  
+`ryuu/execution/agent.py`: thay 4 dep bắt buộc bằng NullObject defaults.  
 Existing tests không cần mock nữa — đây là kết quả TDD phải prove.
 
 ## 5. TDD Strategy
 
-> **Nguyên tắc**: Viết tests cho `uaaf-core` TRƯỚC khi copy/create code.
+> **Nguyên tắc**: Viết tests cho `ryuu-core` TRƯỚC khi copy/create code.
 
 ### RED phase (trước implement):
 
@@ -213,8 +213,8 @@ Tests pass. Sau đó chạy toàn bộ suite (604) để prove backward-compat r
 
 | Task | Acceptance Criteria | Verification |
 |---|---|---|
-| **T01** Create `packages/uaaf-core/{src/uaaf_core/, pyproject.toml, README.md, LICENSE}` skeleton | `python -c "import tomllib; tomllib.load(...)"` | tomllib parse |
-| **T02** Write `tests/unit/core/test_errors.py` (RED — import từ uaaf_core.errors) | pytest collect → ImportError (package chưa có) | `pytest tests/unit/core/test_errors.py` fails with ImportError |
+| **T01** Create `packages/ryuu-core/{src/ryuu_core/, pyproject.toml, README.md, LICENSE}` skeleton | `python -c "import tomllib; tomllib.load(...)"` | tomllib parse |
+| **T02** Write `tests/unit/core/test_errors.py` (RED — import từ ryuu_core.errors) | pytest collect → ImportError (package chưa có) | `pytest tests/unit/core/test_errors.py` fails with ImportError |
 | **T03** Write `tests/unit/core/test_context.py` (RED) | ditto | ImportError |
 | **T04** Write `tests/unit/core/test_models.py` (RED) | ditto | ImportError |
 | **T05** Write `tests/unit/core/test_protocols.py` + `test_nulls.py` (RED) | ditto | ImportError |
@@ -223,42 +223,42 @@ Tests pass. Sau đó chạy toàn bộ suite (604) để prove backward-compat r
 
 ---
 
-### Phase 8.2.B — Implement uaaf-core (GREEN)
+### Phase 8.2.B — Implement ryuu-core (GREEN)
 
 | Task | Acceptance Criteria | Verification |
 |---|---|---|
-| **T06** Copy `errors.py` + `context.py` từ `uaaf_workflow` vào `uaaf_core`, sửa internal imports | `from uaaf_core.errors import RetryableError` works | pytest T02 GREEN |
-| **T07** Write `uaaf_core/models.py` — extract Cost, Task, AgentResult, StructuredIntent, CognitiveResult, CostEstimate, ComplexityLevel, ModelTier | All symbols importable | pytest T04 GREEN |
-| **T08** Write `uaaf_core/protocols.py` — ICostTracker, ITracer, IAuditLogger, IRateLimiter | Protocol definitions importable | pytest T05 (protocol part) GREEN |
-| **T09** Write `uaaf_core/nulls.py` — NullCostTracker, NullTracer, NullAuditLogger, NullRateLimiter | `isinstance(NullCostTracker(), ICostTracker)` = True | pytest T05 (nulls part) GREEN |
-| **T10** Write `uaaf_core/__init__.py` — curated re-exports | `from uaaf_core import RetryableError, ExecutionContext, NullCostTracker` | smoke import |
+| **T06** Copy `errors.py` + `context.py` từ `ryuu_workflow` vào `ryuu_core`, sửa internal imports | `from ryuu_core.errors import RetryableError` works | pytest T02 GREEN |
+| **T07** Write `ryuu_core/models.py` — extract Cost, Task, AgentResult, StructuredIntent, CognitiveResult, CostEstimate, ComplexityLevel, ModelTier | All symbols importable | pytest T04 GREEN |
+| **T08** Write `ryuu_core/protocols.py` — ICostTracker, ITracer, IAuditLogger, IRateLimiter | Protocol definitions importable | pytest T05 (protocol part) GREEN |
+| **T09** Write `ryuu_core/nulls.py` — NullCostTracker, NullTracer, NullAuditLogger, NullRateLimiter | `isinstance(NullCostTracker(), ICostTracker)` = True | pytest T05 (nulls part) GREEN |
+| **T10** Write `ryuu_core/__init__.py` — curated re-exports | `from ryuu_core import RetryableError, ExecutionContext, NullCostTracker` | smoke import |
 
 **Checkpoint 8.2.B** — All 5 new test files GREEN, package importable.
 
 ---
 
-### Phase 8.2.C — Wire uaaf-workflow → uaaf-core
+### Phase 8.2.C — Wire ryuu-workflow → ryuu-core
 
 | Task | Acceptance Criteria | Verification |
 |---|---|---|
-| **T11** Fill `packages/uaaf-core/pyproject.toml`: `name=uaaf-core, version=0.2.0a1, deps=[]`, build wheel | Wheel builds, `unzip -l` shows correct files | `python -m build --wheel` + unzip |
-| **T12** Update `packages/uaaf-workflow/pyproject.toml`: add `uaaf-core>=0.2.0a1` dep | Dep listed | grep |
-| **T13** Replace `uaaf_workflow/errors.py` content với thin re-export từ `uaaf_core.errors` | `from uaaf_workflow.errors import RetryableError` still works | import test |
-| **T14** Replace `uaaf_workflow/context.py` content với thin re-export từ `uaaf_core.context` | `from uaaf_workflow.context import ExecutionContext` still works | import test |
+| **T11** Fill `packages/ryuu-core/pyproject.toml`: `name=ryuu-core, version=0.2.0a1, deps=[]`, build wheel | Wheel builds, `unzip -l` shows correct files | `python -m build --wheel` + unzip |
+| **T12** Update `packages/ryuu-workflow/pyproject.toml`: add `ryuu-core>=0.2.0a1` dep | Dep listed | grep |
+| **T13** Replace `ryuu_workflow/errors.py` content với thin re-export từ `ryuu_core.errors` | `from ryuu_workflow.errors import RetryableError` still works | import test |
+| **T14** Replace `ryuu_workflow/context.py` content với thin re-export từ `ryuu_core.context` | `from ryuu_workflow.context import ExecutionContext` still works | import test |
 
-**Checkpoint 8.2.C** — uaaf-workflow depends on uaaf-core, backward-compat re-exports work.
+**Checkpoint 8.2.C** — ryuu-workflow depends on ryuu-core, backward-compat re-exports work.
 
 ---
 
-### Phase 8.2.D — Wire uaaf → uaaf-core + NullObject BaseAgent
+### Phase 8.2.D — Wire ryuu → ryuu-core + NullObject BaseAgent
 
 | Task | Acceptance Criteria | Verification |
 |---|---|---|
-| **T15** `uaaf/observability/cost.py`: remove `Cost` class definition, replace with `from uaaf_core.models import Cost` | `from uaaf.observability.cost import Cost` still works | import test |
-| **T16** `uaaf/intent/models.py`: remove model definitions, replace with re-import từ `uaaf_core.models` | `from uaaf.intent.models import StructuredIntent` still works | import test |
-| **T17** `uaaf/execution/agent.py`: remove Task + AgentResult definitions, re-import từ `uaaf_core.models`. Wire NullObject defaults vào `BaseAgent` fields. | `BaseAgent(agent_id="x")` constructs without args. `isinstance(BaseAgent.cost_tracker, ICostTracker)` = True | test |
-| **T18** Root `pyproject.toml`: add `uaaf-core>=0.2.0a1` dep | grep | dep listed |
-| **T19** Full CI gate: 604 tests green, uaaf-core tests green | All pass | pytest |
+| **T15** `ryuu/observability/cost.py`: remove `Cost` class definition, replace with `from ryuu_core.models import Cost` | `from ryuu.observability.cost import Cost` still works | import test |
+| **T16** `ryuu/intent/models.py`: remove model definitions, replace with re-import từ `ryuu_core.models` | `from ryuu.intent.models import StructuredIntent` still works | import test |
+| **T17** `ryuu/execution/agent.py`: remove Task + AgentResult definitions, re-import từ `ryuu_core.models`. Wire NullObject defaults vào `BaseAgent` fields. | `BaseAgent(agent_id="x")` constructs without args. `isinstance(BaseAgent.cost_tracker, ICostTracker)` = True | test |
+| **T18** Root `pyproject.toml`: add `ryuu-core>=0.2.0a1` dep | grep | dep listed |
+| **T19** Full CI gate: 604 tests green, ryuu-core tests green | All pass | pytest |
 
 **Checkpoint 8.2.D** — Full suite green, NullObject BaseAgent works, backward-compat proven.
 
@@ -268,22 +268,22 @@ Tests pass. Sau đó chạy toàn bộ suite (604) để prove backward-compat r
 
 | Task | Acceptance Criteria | Verification |
 |---|---|---|
-| **T20** Write `scripts/test-core-isolation.sh`: fresh venv + `pip install uaaf-core`, assert `import uaaf` fails | Script exits 0 | run script |
+| **T20** Write `scripts/test-core-isolation.sh`: fresh venv + `pip install ryuu-core`, assert `import ryuu` fails | Script exits 0 | run script |
 | **T21** Update `.github/workflows/ci.yml`: add `core-isolation` job | CI has 3 jobs | review |
-| **T22** Update `packages/MIGRATION.md`: add Phase 8.2 section với note về uaaf_core.* as canonical path | File updated | review |
+| **T22** Update `packages/MIGRATION.md`: add Phase 8.2 section với note về ryuu_core.* as canonical path | File updated | review |
 | **T23** Update CHANGELOG.md v0.2.0a1 section với Phase 8.2 changes | Entry present | head CHANGELOG |
 | **T24** Update memory + todo | Files updated | ls |
 
-**Checkpoint 8.2 FINAL** — uaaf-core standalone, uaaf-workflow backward-compat, 604+ tests green.
+**Checkpoint 8.2 FINAL** — ryuu-core standalone, ryuu-workflow backward-compat, 604+ tests green.
 
 ## 7. Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | `Cost` có circular import vì `Task` depends on `Cost` và cả 2 move vào `models.py` | Low | Medium | Đặt `Cost` trước `Task` trong cùng file, tránh relative import cycles |
-| `StructuredIntent.suggested_strategy` dùng `DIRECT` string constant — cần import thêm | Medium | Low | Extract constant vào `uaaf_core.models` cùng lúc |
+| `StructuredIntent.suggested_strategy` dùng `DIRECT` string constant — cần import thêm | Medium | Low | Extract constant vào `ryuu_core.models` cùng lúc |
 | `NullTracer.span()` dùng `contextmanager` — test async context cần care | Low | Low | Test explicitly với `async with` + `await` |
-| `uaaf_workflow` re-export bằng `import *` — mypy strict có thể complain | Medium | Low | Dùng explicit re-export thay `*`: `from uaaf_core.errors import RetryableError as RetryableError` |
+| `ryuu_workflow` re-export bằng `import *` — mypy strict có thể complain | Medium | Low | Dùng explicit re-export thay `*`: `from ryuu_core.errors import RetryableError as RetryableError` |
 | `BaseAgent` NullObject fields — existing tests mock `cost_tracker` explicitly | Low | Low | NullObject mặc định không break mock — tests có inject mock vẫn hoạt động |
 
 ## 8. Estimated Effort
@@ -291,8 +291,8 @@ Tests pass. Sau đó chạy toàn bộ suite (604) để prove backward-compat r
 | Sub-phase | Hours |
 |---|---|
 | 8.2.A — Skeleton + RED tests | 1 |
-| 8.2.B — Implement uaaf-core (GREEN) | 1.5 |
-| 8.2.C — Wire uaaf-workflow → uaaf-core | 0.5 |
-| 8.2.D — Wire uaaf → uaaf-core + NullObject BaseAgent | 2 |
+| 8.2.B — Implement ryuu-core (GREEN) | 1.5 |
+| 8.2.C — Wire ryuu-workflow → ryuu-core | 0.5 |
+| 8.2.D — Wire ryuu → ryuu-core + NullObject BaseAgent | 2 |
 | 8.2.E — Isolation + CI + docs | 1 |
 | **Total** | **~6 hours** |

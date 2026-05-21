@@ -6,8 +6,8 @@ from collections.abc import Callable
 
 import pytest
 
-from uaaf._testing.fakes import FakeIntentAnalyzer, FakeLLMProvider
-from uaaf.intent.models import StructuredIntent
+from ryuu._testing.fakes import FakeIntentAnalyzer, FakeLLMProvider
+from ryuu.intent.models import StructuredIntent
 
 
 def _make_fake_analyzer():
@@ -17,7 +17,7 @@ def _make_fake_analyzer():
 def _make_llm_analyzer():
     import json
 
-    from uaaf.intent.models import DIRECT
+    from ryuu.intent.models import DIRECT
     payload = json.dumps({
         "intent_type": "query",
         "action": "search",
@@ -29,11 +29,11 @@ def _make_llm_analyzer():
         "suggested_strategy": DIRECT,
         "suggested_model_tier": "standard",
     })
-    from uaaf.providers.llm import Response, TokenUsage
+    from ryuu.providers.llm import Response, TokenUsage
     provider = FakeLLMProvider(responses=[
         Response(content=payload, model="fake", usage=TokenUsage(10, 5), finish_reason="stop"),
     ] * 20)
-    from uaaf.intent.llm_analyzer import LLMIntentAnalyzer
+    from ryuu.intent.llm_analyzer import LLMIntentAnalyzer
     return LLMIntentAnalyzer(provider=provider)
 
 

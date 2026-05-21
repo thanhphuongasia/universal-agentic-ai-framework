@@ -4,7 +4,7 @@ Stock Advisory — Domain Models
 Pattern illustrated: dataclass-first domain model, no framework coupling.
 
 All business objects live here. Framework objects (AgentResult, Cost, ...) stay
-in the agent layer — models.py knows nothing about UAAF.
+in the agent layer — models.py knows nothing about RYUU.
 """
 
 from __future__ import annotations

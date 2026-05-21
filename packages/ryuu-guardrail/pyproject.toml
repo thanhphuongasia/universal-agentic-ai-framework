@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-guardrail"
+version = "0.2.0a1"
+description = "RYUU Guardrail — rule-based PII, topic, and injection filters"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = ["ryuu-core>=0.2.0a1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_guardrail"]

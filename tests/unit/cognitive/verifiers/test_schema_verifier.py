@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from uaaf.cognitive.verifiers.schema import SchemaVerifier
-from uaaf_workflow.context import ContextScope, ExecutionContext
+from ryuu.cognitive.verifiers.schema import SchemaVerifier
+from ryuu_workflow.context import ContextScope, ExecutionContext
 
 
 @pytest.fixture()

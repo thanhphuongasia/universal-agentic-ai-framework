@@ -1,4 +1,4 @@
-# Adapter Guide — Thêm LLM Provider mới vào UAAF
+# Adapter Guide — Thêm LLM Provider mới vào RYUU
 
 Hướng dẫn implement `ILLMProvider` để kết nối bất kỳ LLM nào vào framework.
 
@@ -7,7 +7,7 @@ Hướng dẫn implement `ILLMProvider` để kết nối bất kỳ LLM nào v�
 ## 1. Contract — ILLMProvider
 
 ```python
-# uaaf/providers/llm.py
+# ryuu/providers/llm.py
 class ILLMProvider(Protocol):
     async def complete(self, request: CompletionRequest) -> Response: ...
     async def embed(self, text: str, model: str | None = None) -> Embedding: ...
@@ -59,7 +59,7 @@ class Response:
 | `content` | Text model emit (thought) | Rỗng → `on_thought` không fire (ok, có fallback synthetic) |
 | `metadata["tool_calls"]` | List tool calls — **phải đúng format** | Sai → react_loop không execute tool, trả final answer ngay |
 
-### UAAF tool_calls format
+### RYUU tool_calls format
 
 ```python
 metadata["tool_calls"] = [
@@ -85,17 +85,19 @@ metadata["tool_calls"] = [
 Mọi exception từ SDK đều phải đi qua `classify_external_error`:
 
 ```python
-from uaaf_workflow.errors import classify_external_error
+from ryuu_workflow.errors import classify_external_error
 
-try:
-    resp = await self._client.some_api_call(...)
-except Exception as exc:
-    raise classify_external_error(exc) from exc
+async def api_call_example():
+    try:
+        # resp = await self._client.some_api_call(...)
+        pass
+    except Exception as exc:
+        raise classify_external_error(exc) from exc
 ```
 
 Hàm này phân loại lỗi thành:
 
-| UAAF Error | Trigger | Caller hành động |
+| RYUU Error | Trigger | Caller hành động |
 |---|---|---|
 | `RetryableError` | rate limit, timeout, 429/503 | retry với backoff |
 | `DegradedError` | quota exceeded, service degraded | fallback sang provider khác |
@@ -108,16 +110,16 @@ Nếu provider của bạn raise exception không thuộc các loại trên, `cl
 ## 5. Skeleton đầy đủ
 
 ```python
-# uaaf/providers/adapters/my_provider.py
+# ryuu/providers/adapters/my_provider.py
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from uaaf.observability._pricing import calculate_usd
-from uaaf.observability.cost import Cost
-from uaaf_workflow.errors import classify_external_error
-from uaaf.providers.llm import (
+from ryuu.observability._pricing import calculate_usd
+from ryuu.observability.cost import Cost
+from ryuu_workflow.errors import classify_external_error
+from ryuu.providers.llm import (
     CompletionRequest,
     Embedding,
     Response,
@@ -135,7 +137,7 @@ class MyProvider:
 
     def __init__(self, api_key: str, default_model: str = "my-model-v1") -> None:
         if AsyncMyClient is None:
-            raise ImportError('pip install "uaaf[my_provider]"')
+            raise ImportError('pip install "ryuu[my_provider]"')
         self._client = AsyncMyClient(api_key=api_key)
         self._default_model = default_model
 
@@ -157,11 +159,11 @@ class MyProvider:
 
         # 2. Call SDK
         try:
-            resp = await self._client.chat((**kwargs))
+            resp = await self._client.chat(**kwargs)
         except Exception as exc:
             raise classify_external_error(exc) from exc
 
-        # 3. Map response → UAAF types
+        # 3. Map response → RYUU types
         content_text = ""
         metadata: dict[str, Any] = {}
         tool_calls = []
@@ -317,7 +319,7 @@ finish_reason = "stop"
 Không cần adapter mới — dùng `OpenAIProvider` với `base_url`:
 
 ```python
-from uaaf.providers.adapters.openai import OpenAIProvider
+from ryuu.providers.adapters.openai import OpenAIProvider
 
 # Ollama local
 provider = OpenAIProvider(
@@ -370,7 +372,7 @@ provider = OpenAIProvider(
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from uaaf.providers.llm import CompletionRequest, Message
+from ryuu.providers.llm import CompletionRequest, Message
 
 
 @pytest.mark.anyio
@@ -382,7 +384,7 @@ async def test_my_provider_complete_no_tools():
 
     with patch("my_sdk.AsyncMyClient") as MockClient:
         MockClient.return_value.chat = AsyncMock(return_value=mock_resp)
-        from uaaf.providers.adapters.my_provider import MyProvider
+        from ryuu.providers.adapters.my_provider import MyProvider
 
         provider = MyProvider(api_key="test")
         req = CompletionRequest(
@@ -398,7 +400,7 @@ async def test_my_provider_complete_no_tools():
 
 @pytest.mark.anyio
 async def test_my_provider_complete_with_tool_call():
-    mock_tc = MagicMock(type="tool_call", id="c1", name="search", arguments={"q": "uaaf"})
+    mock_tc = MagicMock(type="tool_call", id="c1", name="search", arguments={"q": "ryuu"})
     mock_resp = MagicMock()
     mock_resp.output_parts = [mock_tc]
     mock_resp.usage = MagicMock(input=20, output=10)
@@ -406,11 +408,11 @@ async def test_my_provider_complete_with_tool_call():
 
     with patch("my_sdk.AsyncMyClient") as MockClient:
         MockClient.return_value.chat = AsyncMock(return_value=mock_resp)
-        from uaaf.providers.adapters.my_provider import MyProvider
+        from ryuu.providers.adapters.my_provider import MyProvider
 
         provider = MyProvider(api_key="test")
         req = CompletionRequest(
-            messages=[Message(role="user", content="Search for uaaf")],
+            messages=[Message(role="user", content="Search for ryuu")],
             model="my-model-v1",
         )
         resp = await provider.complete(req)
@@ -418,6 +420,6 @@ async def test_my_provider_complete_with_tool_call():
     assert resp.content == ""
     tc = resp.metadata["tool_calls"][0]
     assert tc["function"]["name"] == "search"
-    assert tc["function"]["arguments"] == {"q": "uaaf"}   # dict, not string
+    assert tc["function"]["arguments"] == {"q": "ryuu"}   # dict, not string
     assert isinstance(tc["id"], str)
 ```

@@ -8,16 +8,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from examples.todo_app.models import Goal
-from uaaf.execution.agent import AgentResult, Task
-from uaaf.execution.llm_agent import LLMAgent
-from uaaf.intent.models import ModelTier
-from uaaf.knowledge.context_assembler import ContextAssembler
-from uaaf.knowledge.memory.backbone import MemoryBackbone
-from uaaf.observability._pricing import calculate_usd
-from uaaf.observability.cost import Cost
-from uaaf.prompts.registry import PromptRegistry
-from uaaf.providers.llm import CompletionRequest, ILLMProvider, TokenUsage
-from uaaf_workflow.context import ExecutionContext
+from ryuu_execution.agent import AgentResult, Task
+from ryuu_execution.llm_agent import LLMAgent
+from ryuu.intent.models import ModelTier
+from ryuu_knowledge_base.context_assembler import ContextAssembler
+from ryuu_knowledge_memory.backbone import MemoryBackbone
+from ryuu_providers._pricing import calculate_usd
+from ryuu_core.models import Cost
+from ryuu.prompts.registry import PromptRegistry
+from ryuu_providers.llm import CompletionRequest, ILLMProvider, TokenUsage
+from ryuu_workflow.context import ExecutionContext
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
 _registry = PromptRegistry(prompts_root=_PROMPTS_ROOT)
@@ -35,12 +35,12 @@ def build_provider() -> ILLMProvider:
     """Return OpenAIProvider if OPENAI_API_KEY is set, FakeLLMProvider otherwise."""
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
-        from uaaf.providers.adapters.openai import OpenAIProvider
+        from ryuu_providers.adapters.openai import OpenAIProvider
         print("  🔑 Using OpenAIProvider (OPENAI_API_KEY found)")
         return OpenAIProvider(api_key=api_key)  # type: ignore[return-value]
 
-    from uaaf._testing.fakes import FakeLLMProvider
-    from uaaf.providers.llm import Response
+    from ryuu._testing.fakes import FakeLLMProvider
+    from ryuu_providers.llm import Response
 
     def _r(t: str) -> Response:
         return Response(content=t, model="fake", usage=TokenUsage(80, 60), finish_reason="stop")

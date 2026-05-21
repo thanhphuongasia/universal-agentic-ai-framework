@@ -23,23 +23,71 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e packages/uaaf-workflow
+          pip install -e packages/ryuu-core
+          pip install -e packages/ryuu-workflow
+          pip install -e packages/ryuu-providers
+          pip install -e packages/ryuu-observability
+          pip install -e packages/ryuu-cognitive
+          pip install -e packages/ryuu-execution
+          pip install -e packages/ryuu-runtime
+          pip install -e packages/ryuu-knowledge-base
+          pip install -e packages/ryuu-knowledge-memory
+          pip install -e packages/ryuu-knowledge-graph
+          pip install -e packages/ryuu-knowledge
+          pip install -e packages/ryuu-guardrail
+          pip install -e packages/ryuu-eval
           pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check uaaf/ packages/uaaf-workflow/src/ tests/
+        run: ruff check ryuu/ packages/ryuu-core/src/ packages/ryuu-workflow/src/ packages/ryuu-providers/src/ packages/ryuu-observability/src/ packages/ryuu-cognitive/src/ packages/ryuu-execution/src/ packages/ryuu-runtime/src/ packages/ryuu-knowledge-base/src/ packages/ryuu-knowledge-memory/src/ packages/ryuu-knowledge-graph/src/ packages/ryuu-knowledge/src/ packages/ryuu-guardrail/src/ packages/ryuu-eval/src/ tests/
 
       - name: Type check
-        run: mypy uaaf/ packages/uaaf-workflow/src/
+        run: mypy ryuu/ packages/ryuu-core/src/ packages/ryuu-workflow/src/ packages/ryuu-providers/src/ packages/ryuu-observability/src/ packages/ryuu-cognitive/src/ packages/ryuu-execution/src/ packages/ryuu-runtime/src/ packages/ryuu-knowledge-base/src/ packages/ryuu-knowledge-memory/src/ packages/ryuu-knowledge-graph/src/ packages/ryuu-knowledge/src/ packages/ryuu-guardrail/src/ packages/ryuu-eval/src/
 
       - name: Test with coverage
-        run: pytest --cov=uaaf --cov=packages/uaaf-workflow/src --cov-report=xml --cov-fail-under=85
+        run: pytest --cov=ryuu --cov=packages/ryuu-workflow/src --cov=packages/ryuu-providers/src --cov=packages/ryuu-observability/src --cov=packages/ryuu-cognitive/src --cov=packages/ryuu-execution/src --cov=packages/ryuu-runtime/src --cov=packages/ryuu-knowledge-base/src --cov=packages/ryuu-knowledge-memory/src --cov=packages/ryuu-knowledge-graph/src --cov=packages/ryuu-knowledge/src --cov=packages/ryuu-guardrail/src --cov=packages/ryuu-eval/src --cov-report=xml --cov-fail-under=85
 
-      - name: Build uaaf wheel
+      - name: Build ryuu wheel
         run: python -m build
 
-      - name: Build uaaf-workflow wheel
-        run: python -m build packages/uaaf-workflow
+      - name: Build ryuu-core wheel
+        run: python -m build packages/ryuu-core
+
+      - name: Build ryuu-workflow wheel
+        run: python -m build packages/ryuu-workflow
+
+      - name: Build ryuu-providers wheel
+        run: python -m build packages/ryuu-providers
+
+      - name: Build ryuu-observability wheel
+        run: python -m build packages/ryuu-observability
+
+      - name: Build ryuu-cognitive wheel
+        run: python -m build packages/ryuu-cognitive
+
+      - name: Build ryuu-execution wheel
+        run: python -m build packages/ryuu-execution
+
+      - name: Build ryuu-runtime wheel
+        run: python -m build packages/ryuu-runtime
+
+      - name: Build ryuu-knowledge-base wheel
+        run: python -m build packages/ryuu-knowledge-base
+
+      - name: Build ryuu-knowledge-memory wheel
+        run: python -m build packages/ryuu-knowledge-memory
+
+      - name: Build ryuu-knowledge-graph wheel
+        run: python -m build packages/ryuu-knowledge-graph
+
+      - name: Build ryuu-knowledge wheel
+        run: python -m build packages/ryuu-knowledge
+
+      - name: Build ryuu-guardrail wheel
+        run: python -m build packages/ryuu-guardrail
+
+      - name: Build ryuu-eval wheel
+        run: python -m build packages/ryuu-eval
 
   workflow-isolation:
     runs-on: ubuntu-latest
@@ -52,10 +100,197 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build uaaf-workflow wheel
+      - name: Build ryuu-workflow wheel
         run: |
           pip install build
-          python -m build --wheel packages/uaaf-workflow
+          python -m build --wheel packages/ryuu-workflow
 
       - name: Run isolation test
         run: bash scripts/test-workflow-isolation.sh
+
+  core-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build ryuu-core wheel
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+
+      - name: Run core isolation test
+        run: bash scripts/test-core-isolation.sh
+
+  providers-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-providers
+
+      - name: Run providers isolation test
+        run: bash scripts/test-providers-isolation.sh
+
+  observability-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-observability
+
+      - name: Run observability isolation test
+        run: bash scripts/test-observability-isolation.sh
+
+  cognitive-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/ryuu-cognitive
+
+      - name: Run cognitive isolation test
+        run: bash scripts/test-cognitive-isolation.sh
+
+  execution-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/ryuu-execution
+
+      - name: Run execution isolation test
+        run: bash scripts/test-execution-isolation.sh
+
+  runtime-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/ryuu-cognitive
+          python -m build --wheel packages/ryuu-execution
+          python -m build --wheel packages/ryuu-runtime
+
+      - name: Run runtime isolation test
+        run: bash scripts/test-runtime-isolation.sh
+
+  knowledge-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-knowledge-base
+          python -m build --wheel packages/ryuu-knowledge-memory
+          python -m build --wheel packages/ryuu-knowledge-graph
+          python -m build --wheel packages/ryuu-knowledge
+
+      - name: Run knowledge isolation test
+        run: bash scripts/test-knowledge-isolation.sh
+
+  guardrail-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-guardrail
+
+      - name: Run guardrail isolation test
+        run: bash scripts/test-guardrail-isolation.sh
+
+  eval-isolation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheels
+        run: |
+          pip install build
+          python -m build --wheel packages/ryuu-core
+          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/ryuu-eval
+
+      - name: Run eval isolation test
+        run: bash scripts/test-eval-isolation.sh

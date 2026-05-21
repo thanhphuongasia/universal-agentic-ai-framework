@@ -1,15 +1,15 @@
-"""Tests for uaaf.observability.cost — T04."""
+"""Tests for ryuu.observability.cost — T04."""
 
 from __future__ import annotations
 
 import pytest
 
-from uaaf.observability.cost import (
+from ryuu.observability.cost import (
     Cost,
     CostPolicy,
     CostTracker,
 )
-from uaaf_workflow.errors import BudgetExceededError
+from ryuu_workflow.errors import BudgetExceededError
 
 
 def _cost(usd: float, inp: int = 10, out: int = 5) -> Cost:
