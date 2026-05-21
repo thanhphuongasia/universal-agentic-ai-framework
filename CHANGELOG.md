@@ -5,6 +5,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a14] - 2026-05-22
+
+### Added — Phase 11.x: Factory `knowledge=` integration
+
+Wire `RAGBackbone` (or any `IKnowledgeBackbone`) into `Agent()` factory for
+automatic RAG context injection on every `.run()` call.
+
+**New Agent kwargs:**
+
+```python
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Answer based on retrieved context",
+    knowledge=backbone,                          # IKnowledgeBackbone instance
+    knowledge_budget_tokens=2000,                # max context tokens (default 2000)
+    knowledge_scope_field="domain",              # "user_id"|"session_id"|"domain"
+)
+result = await agent.run("question", domain="engineering")
+```
+
+**Internal flow per `.run()`:**
+
+1. Resolve user_content (Mode 1 message OR Mode 2 user_template).
+2. If `knowledge is not None`:
+   - `scope_key = getattr(scope, knowledge_scope_field, "default")`
+   - `assembled = await knowledge.assemble_context(query, scope_key, budget)`
+   - If `assembled.text` non-empty: prepend `"Context (retrieved knowledge):\n{text}\n---\nQuery:\n{original}"`
+3. Continue normal dispatch (compatible với thinking_mode, n_samples, adaptive_compute).
+
+**Backward compat:** `knowledge=None` (default) → no injection, user_content unchanged.
+**Scope isolation:** different `domain=` per `.run()` → different scope_key → different retrieved set.
+
+**Tests:** +5 (prepend / no-injection default / scope filtering / budget respected / empty backbone graceful).
+
+**Example:** `examples/rag_agent_demo.py` — Agent + RAGBackbone end-to-end với company docs + scope isolation demo.
+
 ## [0.3.0a13] - 2026-05-22
 
 ### Added — Phase 11: `ryuu-knowledge-rag` MVP

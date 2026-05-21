@@ -167,4 +167,4 @@ class TestPublicAPIImports:
 
     def test_version_bumped(self):
         import ryuu
-        assert ryuu.__version__ == "0.3.0a13"  # Phase 11 RAG MVP
+        assert ryuu.__version__ == "0.3.0a14"  # Phase 11.x Factory knowledge=

@@ -149,6 +149,14 @@ class Agent:
     # adaptive_compute kwargs). Set to ICognitiveStrategy instance.
     strategy: Any = None
 
+    # Phase 11.x — RAG knowledge backbone (RAGBackbone or any IKnowledgeBackbone).
+    # When set, Factory pre-fetches `assemble_context(query, scope_key, budget)`
+    # on every `.run()` call and prepends to user_content for grounding.
+    # Scope key resolved from ContextScope via `knowledge_scope_field`.
+    knowledge: Any = None
+    knowledge_budget_tokens: int = 2000
+    knowledge_scope_field: Literal["user_id", "session_id", "domain"] = "domain"
+
     # Internal — built lazily, exposed for tests
     _agent: _FactoryLLMAgent = field(init=False, repr=False)
     # Mode D: cache of YAML tool defs (populated by _resolve_yaml_prompt)
@@ -384,6 +392,10 @@ class Agent:
         correlation_id = scope_kwargs.get("correlation_id") or str(uuid.uuid4())
         ctx = ExecutionContext(scope=scope, correlation_id=correlation_id)
 
+        # Phase 11.x — RAG knowledge injection. Pre-fetch context + prepend.
+        if self.knowledge is not None:
+            user_content = await self._inject_knowledge(user_content, scope)
+
         # Phase 14.3 — Adaptive compute: classify difficulty → swap tier fields
         if self.adaptive_compute:
             return await self._run_adaptive(user_content, ctx)
@@ -394,6 +406,32 @@ class Agent:
 
         task = Task(task_id=str(uuid.uuid4()), payload={"user_content": user_content})
         return await self._agent.execute(task, ctx)
+
+    async def _inject_knowledge(
+        self, user_content: str, scope: ContextScope
+    ) -> str:
+        """Phase 11.x — Pre-fetch RAG context via IKnowledgeBackbone.
+
+        Resolves scope_key from scope (default: domain). Calls
+        `knowledge.assemble_context(query, scope_key, budget_tokens)`. Prepends
+        as 'Context:\\n{text}\\n---\\nQuery:\\n{original}'.
+
+        Empty/zero results → return user_content unchanged (no leading 'Context:'
+        block when there's nothing to inject).
+        """
+        scope_key = getattr(scope, self.knowledge_scope_field, "default")
+        assembled = await self.knowledge.assemble_context(
+            query=user_content,
+            scope_key=scope_key,
+            budget_tokens=self.knowledge_budget_tokens,
+        )
+        if not assembled.text.strip():
+            return user_content
+        return (
+            f"Context (retrieved knowledge):\n{assembled.text}\n"
+            f"---\n"
+            f"Query:\n{user_content}"
+        )
 
     async def _run_adaptive(
         self, user_content: str, ctx: ExecutionContext
