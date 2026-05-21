@@ -39,6 +39,7 @@ ORDER=(
 
     # Tier 4 — depend on tier 3
     "ryuu-knowledge"
+    "ryuu-knowledge-rag"   # Phase 11 — RAG pipeline (chunker + vector store + retriever)
 
     # Tier 5 — runtime facade
     "ryuu-runtime"

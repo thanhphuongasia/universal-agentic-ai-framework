@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ryuu-knowledge-rag"
+version = "0.2.0a1"
+description = "RAG pipeline for RYUU: chunker + vector store + retriever + RAGBackbone"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "ryuu-core>=0.2.0a1",
+    "ryuu-knowledge-base>=0.2.0a1",
+    "ryuu-providers>=0.2.0a1",
+    "numpy>=1.26",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

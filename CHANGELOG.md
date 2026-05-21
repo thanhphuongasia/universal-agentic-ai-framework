@@ -5,6 +5,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a13] - 2026-05-22
+
+### Added — Phase 11: `ryuu-knowledge-rag` MVP
+
+New standalone package `packages/ryuu-knowledge-rag/` providing RAG pipeline
+components (chunker + vector store + retriever + IKnowledgeBackbone impl).
+
+**Public API:**
+
+```python
+from ryuu_knowledge_rag import (
+    Chunk, IChunker, RecursiveChunker,          # chunking
+    VectorRecord, SearchResult, IVectorStore, InMemoryVectorStore,   # vector storage
+    IRetriever, DenseRetriever,                  # retrieval
+    RAGPipeline,                                  # end-to-end ingest + retrieve
+    RAGBackbone,                                  # IKnowledgeBackbone impl
+)
+```
+
+**Components:**
+- `RecursiveChunker` — character-count splitting with overlap, walks natural
+  boundaries (`\n\n` > `\n` > `". "` > `" "`). Default chunk_size=1500, overlap=200.
+- `InMemoryVectorStore` — numpy-backed cosine similarity search with metadata
+  filtering. Lazy L2-normalization (rebuild matrix on dirty flag). Production:
+  swap for Chroma/Qdrant/Pinecone via same `IVectorStore` Protocol.
+- `DenseRetriever` — embed query + cosine top-k via vector store.
+- `RAGPipeline` — chunk + embed + upsert (`ingest`); retrieve (semantic search
+  with scope filtering). Accepts list of strings OR dicts with `text` + `metadata`.
+- `RAGBackbone` — `IKnowledgeBackbone` impl wrapping RAGPipeline. Implements
+  `write` / `query` / `assemble_context` with `budget_tokens` trimming. Pluggable
+  into Factory `knowledge=` param (integration deferred to Phase 11.x).
+
+**Tests:** +17 (4 chunker + 5 vector store + 5 pipeline + 3 backbone).
+
+**Example:** `examples/rag_demo.py` — ingest 6 docs → semantic queries →
+assemble context with budget enforcement.
+
+**Installer:** `scripts/install-dev.sh` updated with `ryuu-knowledge-rag` in
+Tier 4 (depends on tier 3+).
+
 ## [0.3.0a12] - 2026-05-21
 
 ### Added — Phase 14.1-14.4: Claude-like Thinking Patterns (2-layer architecture)

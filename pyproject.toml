@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ryuu"
-version = "0.3.0a12"
+version = "0.3.0a13"
 description = "Universal Agentic AI Framework — pluggable foundation for AI agent products"
 readme = "README.md"
 license = { file = "LICENSE" }
