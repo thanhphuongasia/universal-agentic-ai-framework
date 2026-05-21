@@ -157,6 +157,14 @@ class Agent:
     knowledge_budget_tokens: int = 2000
     knowledge_scope_field: Literal["user_id", "session_id", "domain"] = "domain"
 
+    # Phase 11.y — Structured output (JSON Schema enforcement).
+    # When set, Factory forwards to CompletionRequest.response_schema:
+    #   - OpenAI gpt-4o+: strict `response_format={"type": "json_schema", ...}`
+    #   - OpenAI legacy: basic `response_format={"type": "json_object"}` fallback
+    #   - Anthropic: tool-use trick (1 tool, forced choice) — strict enforcement
+    # AgentResult.parsed populated với json.loads(output) when successful.
+    output_schema: dict[str, Any] | None = None
+
     # Internal — built lazily, exposed for tests
     _agent: _FactoryLLMAgent = field(init=False, repr=False)
     # Mode D: cache of YAML tool defs (populated by _resolve_yaml_prompt)
@@ -220,6 +228,7 @@ class Agent:
             _fallback_providers=fallback_providers,
             _hook_registry=hook_registry,
             _thinking_mode=self.thinking_mode,
+            _output_schema=self.output_schema,
         )
 
     async def _stream_tokens(

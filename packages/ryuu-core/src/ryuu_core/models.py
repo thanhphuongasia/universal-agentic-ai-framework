@@ -53,6 +53,10 @@ class AgentResult:
     # Phase 14.1 — populated by ThinkingStrategy (Factory thinking_mode=True).
     # Empty string when thinking_mode not active. Backward-compat default.
     thinking: str = ""
+    # Phase 11.y — populated when Factory used `output_schema=` and output
+    # parses as JSON. None when no schema or parse fails (raw text stays in
+    # `output`). Backward-compat default.
+    parsed: Any = None
 
 
 # ---------------------------------------------------------------------------

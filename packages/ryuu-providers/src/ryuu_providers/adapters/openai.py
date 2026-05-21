@@ -28,6 +28,17 @@ except ImportError:  # pragma: no cover
     AsyncOpenAI = None  # type: ignore[assignment,misc]
 
 
+# Phase 11.y — OpenAI models supporting strict JSON Schema mode.
+# gpt-4o, gpt-4o-mini, o1, o3 series. Older models (gpt-3.5, gpt-4 base)
+# fall back to basic `response_format={"type": "json_object"}`.
+_STRICT_SCHEMA_PREFIXES = ("gpt-4o", "gpt-5", "o1", "o3", "o4")
+
+
+def _supports_strict_schema(model: str) -> bool:
+    """Detect if model supports `response_format={"type": "json_schema", ...}`."""
+    return any(model.startswith(prefix) for prefix in _STRICT_SCHEMA_PREFIXES)
+
+
 class OpenAIProvider:
     """ILLMProvider backed by the OpenAI API."""
 
@@ -83,7 +94,19 @@ class OpenAIProvider:
             "temperature": request.temperature,
         }
         if request.response_schema:
-            kwargs["response_format"] = {"type": "json_object"}
+            # Phase 11.y: gpt-4o family supports strict JSON Schema mode.
+            # Older models (gpt-3.5, gpt-4 base) fall back to basic json_object.
+            if _supports_strict_schema(model):
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "structured_output",
+                        "schema": request.response_schema,
+                        "strict": True,
+                    },
+                }
+            else:
+                kwargs["response_format"] = {"type": "json_object"}
         if request.tools:
             kwargs["tools"] = request.tools
 

@@ -5,6 +5,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a15] - 2026-05-22
+
+### Added — Phase 11.y: Factory `output_schema=` + OpenAI strict JSON Schema mode
+
+Expose existing provider-layer structured output support through the Factory
+ergonomic kwarg, and upgrade OpenAI adapter to use modern strict JSON Schema
+mode (gpt-4o+) instead of basic json_object fallback.
+
+**New Agent kwarg:**
+
+```python
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Extract person info from text",
+    output_schema={                              # ← NEW
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+)
+result = await agent.run("Alice is 30 years old")
+print(result.output)   # Raw JSON string: '{"name":"Alice","age":30}'
+print(result.parsed)   # Auto-parsed dict: {"name": "Alice", "age": 30}
+```
+
+**New AgentResult field:**
+- `parsed: Any = None` — populated với `json.loads(output)` when `output_schema`
+  set and parse succeeds. Strips ```json fences if model wraps output.
+  Backward-compat default None.
+
+**OpenAI adapter upgrade:**
+- Detect gpt-4o family / o1 / o3 / o4 / gpt-5 → strict mode:
+  `response_format={"type": "json_schema", "json_schema": {..., "strict": True}}`
+- Older models (gpt-3.5, gpt-4 base) → fallback to basic `json_object`.
+- Helper: `_supports_strict_schema(model: str) -> bool` (exposed for testing).
+
+**Anthropic adapter:** No change — already used tool-use trick for strict
+schema enforcement.
+
+**Internal flow per .run():**
+1. Factory forwards `output_schema` → `_FactoryLLMAgent._output_schema` field
+2. `_run_inner` passes to `CompletionRequest(response_schema=...)`
+3. Provider serializes per its API (strict vs basic vs tool-use)
+4. After LLM returns: best-effort `json.loads()` → `AgentResult.parsed`
+5. Parse fail → `parsed=None`, raw text still in `output` (graceful)
+
+**Tests:** +7 (auto-parse / strip markdown fences / invalid JSON graceful / no
+schema → parsed=None / forwarding / OpenAI strict mode detection / kwargs build).
+Total: 994 passed, 3 skipped, 0 regression from 0.3.0a14.
+
 ## [0.3.0a14] - 2026-05-22
 
 ### Added — Phase 11.x: Factory `knowledge=` integration

@@ -50,6 +50,7 @@ class _FactoryLLMAgent(LLMAgent):
     _fallback_providers: list[ILLMProvider] = field(default_factory=list)
     _hook_registry: HookRegistry | None = None
     _thinking_mode: bool = False   # Phase 14.1 — populated from Factory.thinking_mode
+    _output_schema: dict[str, Any] | None = None   # Phase 11.y — JSON Schema for structured output
 
     async def _execute(self, task: Task, context: ExecutionContext) -> AgentResult:
         # ── Fire PRE_EXECUTE ──
@@ -198,6 +199,7 @@ class _FactoryLLMAgent(LLMAgent):
             temperature=self._temperature,
             max_tokens=self._max_tokens,
             tools=tools_payload,
+            response_schema=self._output_schema,   # Phase 11.y
         )
 
         # Phase 10.6 failover: try primary, then each fallback in order.
@@ -233,10 +235,27 @@ class _FactoryLLMAgent(LLMAgent):
 
             final_output, thinking_text = parse_thinking_answer(output)
 
+        # Phase 11.y — auto-parse JSON when output_schema active.
+        # Best-effort: if parse fails, keep raw output in `output`, parsed=None.
+        parsed_obj: Any = None
+        if self._output_schema is not None:
+            import json
+            try:
+                stripped = str(final_output).strip()
+                # Strip ```json fences if model returned wrapped JSON
+                if stripped.startswith("```"):
+                    lines = stripped.split("\n")
+                    if len(lines) > 2:
+                        stripped = "\n".join(lines[1:-1])
+                parsed_obj = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                parsed_obj = None
+
         return AgentResult(
             task_id=task.task_id,
             output=final_output,
             cost=cost,
             thinking=thinking_text,
+            parsed=parsed_obj,
         )
 
