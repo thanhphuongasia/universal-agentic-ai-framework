@@ -5,6 +5,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a11] - 2026-05-21
+
+### Added — Phase 12.1: Real OpenAI Batch API implementation
+
+`BatchRunner(mode="openai_batch")` no longer stubs — implements full flow:
+
+```python
+from ryuu import Agent, BatchRunner, OpenAIBatchClient
+
+agent = Agent(model="gpt-4o-mini", instructions="Summarize")
+runner = BatchRunner(
+    agent=agent,
+    mode="openai_batch",
+    poll_interval_s=30.0,        # poll cadence
+    completion_window="24h",     # OpenAI SLA window
+)
+
+# 1000 inputs at 50% cost discount (24h SLA, usually <1h actual)
+results = await runner.run([{"id": f"doc-{i}", "input": text} for i, text in enumerate(corpus)])
+# Returns list[BatchItem(id, output, error?)] in input order
+```
+
+**Flow:**
+1. Build JSONL: one chat completion request per input (model + system + user msg)
+2. Upload via Files API (`purpose="batch"`) → input_file_id
+3. Create batch (`endpoint="/v1/chat/completions"`, `completion_window="24h"`) → batch_id
+4. Poll status every `poll_interval_s` until terminal state
+5. On `completed` → download output JSONL → parse line-by-line
+6. Map `custom_id` back to input index → results in original order
+
+**Error handling:**
+- Batch status `failed/expired/cancelled` → `RuntimeError` with batch_id + error_file_id
+- Individual line errors (rate limit, etc.) → `BatchItem.error` set; `on_error="raise"` propagates, `"collect"` continues
+
+**New public types:**
+- `BatchAPIClient` Protocol — abstraction for tests/custom impls
+- `OpenAIBatchClient` — production impl using `AsyncOpenAI` SDK
+  - Lazy import of openai SDK (only when instantiated)
+- `BatchRunner.batch_client: BatchAPIClient | None` — inject custom (e.g. fake for tests)
+- `BatchRunner.poll_interval_s: float = 30.0`
+- `BatchRunner.completion_window: str = "24h"`
+- `BatchRunner.batch_endpoint: str = "/v1/chat/completions"`
+
+**Cost benefit:** OpenAI Batch API charges 50% of standard rate for both input
+and output tokens. Use when:
+- You have ≥ 100 inputs and don't need real-time response
+- Workload tolerates 24h SLA (vast majority complete < 1h)
+
+**Tests:** +7 unit using `FakeBatchAPIClient` (no network). 930 total.
+
+## [0.3.0a10] - 2026-05-21
+
+### Added — Phase 13: PromptOptimizer (auto-tune prompts via eval loop)
+
+`ryuu.prompt_optimizer.PromptOptimizer` — auto-tune prompts by evaluating
+variants against eval cases. Inspired by DSPy + OpenAI Prompt Optimizer.
+
+```python
+from ryuu import Agent, EvalCase, PromptOptimizer
+from ryuu.prompt_optimizer import llm_variant_generator
+
+cases = [
+    EvalCase(input="What is 2+2?", expected="4"),
+    EvalCase(input="What is 10*5?", expected="50"),
+]
+
+base = Agent(model="gpt-4o-mini", instructions="You are a math tutor")
+optimizer = PromptOptimizer(
+    base_agent=base,
+    eval_cases=cases,
+    score_fn=lambda out, exp: 1.0 if exp in out else 0.0,
+    variant_generator=llm_variant_generator(provider=base._agent.llm, n_variants=3),
+    max_rounds=3,
+)
+result = await optimizer.optimize()
+print(f"Best prompt: {result.best_prompt} (score {result.best_score:.2f})")
+print(f"History: {len(result.history)} evaluations across {result.rounds_completed} rounds")
+```
+
+**Algorithm:** Greedy hill climb — each round generates N variants, picks
+highest-scoring, uses it as base for next round.
+
+**New API:**
+- `EvalCase(input, expected)` — single eval case
+- `PromptOptimizer(base_agent, eval_cases, score_fn, variant_generator, max_rounds)`
+- `OptimizationResult(best_prompt, best_score, history, rounds_completed)`
+- `llm_variant_generator(provider, n_variants=3, model=...)` — built-in paraphrase
+  generator. Parses LLM output, strips numbered/bulleted prefixes.
+
+**Variant generator contract:** `Callable[[current_prompt: str], list[str] | Awaitable[list[str]]]`
+— sync or async, user-supplied or built-in.
+
+**Score function contract:** `Callable[[output: str, expected: str], float | Awaitable[float]]`
+— return 0.0-1.0 (higher = better). Sync or async.
+
+**Top-level exports:** `from ryuu import EvalCase, PromptOptimizer, OptimizationResult`
+
+**Tests:** +8 unit (923 total).
+
+## [0.3.0a9] - 2026-05-21
+
+### Added — Phase 12: BatchRunner for processing N inputs
+
+`ryuu.batch.BatchRunner` — process list of inputs through an Agent in batch.
+Two modes:
+
+```python
+from ryuu import Agent, BatchRunner
+
+agent = Agent(model="gpt-4o-mini", instructions="Summarize")
+
+# Mode: gather (default) — concurrent via anyio task group + semaphore
+runner = BatchRunner(agent=agent, max_concurrent=10)
+results = await runner.run(["Text 1", "Text 2", "Text 3"])
+
+# With custom IDs — returns list[BatchItem] preserving id
+results = await runner.run([
+    {"id": "doc-1", "input": "Text 1"},
+    {"id": "doc-2", "input": "Text 2"},
+])
+# results[0].id == "doc-1", .output, .cost_usd
+```
+
+**Modes:**
+- `gather` (✅ shipped) — concurrent execution, works with any provider, no cost
+  savings. `max_concurrent` caps parallelism via `anyio.Semaphore`.
+- `openai_batch` (🔲 Phase 12.1 stub) — true OpenAI Batch API integration for
+  50% discount + 24h SLA. Currently raises `NotImplementedError` with
+  implementation TODO (submit JSONL, poll, parse).
+
+**Error handling:**
+- `on_error="raise"` (default) — first failure halts batch + propagates
+- `on_error="collect"` — failed items return `BatchItem(error=exc)`, batch continues
+
+**Top-level exports:** `from ryuu import BatchRunner, BatchItem`
+
+**Tests:** +8 unit (914 total: 116 Factory + new 8 batch).
+
+**See:** future `docs/guides/batch.md` for full guide.
+
 ## [0.3.0a8] - 2026-05-21
 
 ### Performance — Phase 9.3: Fix sync I/O hotspots identified in 8.8 audit

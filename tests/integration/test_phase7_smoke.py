@@ -167,4 +167,4 @@ class TestPublicAPIImports:
 
     def test_version_bumped(self):
         import ryuu
-        assert ryuu.__version__ == "0.3.0a8"  # Phase 9.3 perf fixes
+        assert ryuu.__version__ == "0.3.0a11"  # Phase 12.1 real OpenAI batch
