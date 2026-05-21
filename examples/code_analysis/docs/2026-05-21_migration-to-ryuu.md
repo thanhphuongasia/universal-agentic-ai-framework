@@ -1031,3 +1031,320 @@ Total: ~3h to clean up code after Phase 14.x ship
 
 Khi 0.3.0a12 ship, follow §16.10 migration steps để clean up.
 
+---
+
+## 17. Phase 11/11.x/11.y/14.7 — Concrete Code Analysis Refactor
+
+> **Status (2026-05-22)**: All ryuu features below ĐÃ SHIP. Apply ngay.
+> - Phase 11 (`ryuu-knowledge-rag`) → v0.3.0a13
+> - Phase 11.x (`Agent(knowledge=...)`) → v0.3.0a14
+> - Phase 11.y (`Agent(output_schema=...)` + OpenAI strict mode) → v0.3.0a15
+> - Phase 14.7 (`RuleVerifier` + `Z3Verifier`) → v0.3.0a16
+
+3 sub-sections refactor concrete cho code_analysis:
+- §17.1 — `CrudMatrixWorker.build_column_matrix_llm()` dùng `output_schema=` (replace `complete_json`)
+- §17.2 — Layer 3 anti-hallucination (13 JPA annotation rules) dùng `RuleVerifier`
+- §17.3 — Chat handlers dùng `Agent(knowledge=RAGBackbone)` cho project context
+
+### 17.1 CrudMatrixWorker — `output_schema=` Cho LLM JSON Output
+
+**Problem hiện tại** (handoff §5.2):
+```python
+# src/chat/workers/crud_matrix_worker.py
+adapter = self._adapter_factory("gpt-4o-mini")
+raw = await adapter.complete_json(
+    prompt=user_msg,
+    system_prompt=pkg.system_prompt,
+    output_schema={"type": "object", "properties": {"ops": {...}}},
+)
+ops = raw["ops"]   # manual extraction, no enforcement
+```
+
+**Refactor with Phase 11.y:**
+```python
+from ryuu import Agent
+
+CRUD_OPS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ops": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "entity":     {"type": "string"},
+                    "column":     {"type": "string"},
+                    "op":         {"type": "string", "enum": ["C", "R", "U", "D"]},
+                    "confidence": {"type": "number"},
+                    "reasoning":  {"type": "string"},
+                },
+                "required": ["entity", "column", "op"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["ops"],
+    "additionalProperties": False,
+}
+
+column_classifier = Agent(
+    model="gpt-4o-mini",
+    system=load_yaml("crud_matrix_column_classify.v1.yml").system,
+    output_schema=CRUD_OPS_SCHEMA,         # ← strict JSON Schema (OpenAI gpt-4o mode)
+)
+
+for route in routes:
+    result = await column_classifier.run(
+        self._build_route_prompt(route, context),
+        domain=project_id,                  # cost tracking per project
+    )
+    raw_ops = result.parsed["ops"]          # ✅ auto-parsed, validated
+```
+
+**Lợi ích:**
+| Aspect | Before | After |
+|---|---|---|
+| JSON parsing | Manual `complete_json` returns dict | Auto `result.parsed` |
+| Schema enforcement | Prompt-level (LLM may drift) | OpenAI strict mode refuses invalid |
+| Adapter setup | Custom `LLMAdapter` Protocol | Standard `Agent` Factory |
+| Cost tracking | Manual token bookkeeping | Automatic `result.cost.usd` |
+| Audit trail | Manual logging | `audit=True` kwarg |
+
+### 17.2 Anti-Hallucination Layer 3 — `RuleVerifier` Thay 13 JPA Rules
+
+**Problem hiện tại** (handoff §5.2.5):
+```python
+# _post_validate_annotations — 13 hardcoded if-chains
+if op["op"] == "U" and self._field_has_annotation(op, "updatable=false"):
+    continue
+if op["op"] == "C" and self._field_has_annotation(op, "@Generated"):
+    continue
+# ... 11 more
+```
+
+**Refactor with Phase 14.7:**
+```python
+# src/chat/workers/crud_matrix_rules.py — NEW
+from ryuu_reasoning import Rule, RuleVerifier
+
+JPA_ANNOTATION_RULES = [
+    Rule(
+        name="no_update_on_immutable",
+        predicate=lambda d: not (d["op"] == "U" and "updatable=false" in d.get("annotations", [])),
+        severity="critical",
+        message="@Column(updatable=false) field cannot have U op",
+    ),
+    Rule(
+        name="no_create_on_generated",
+        predicate=lambda d: not (d["op"] == "C" and "@Generated" in d.get("annotations", [])),
+        severity="critical",
+        message="@Generated field cannot have C op (auto-populated)",
+    ),
+    Rule(
+        name="no_delete_on_readonly",
+        expression="op != 'D' or 'readonly' not in annotations",
+        severity="critical",
+        message="@Readonly field cannot have D op",
+    ),
+    # ... 10 more — Rule per JPA annotation
+]
+
+jpa_verifier = RuleVerifier(rules=JPA_ANNOTATION_RULES)
+
+for op in llm_ops:
+    op_json = json.dumps({
+        **op,
+        "annotations": entity_field_specs[op["entity"]][op["column"]]["annotations"],
+    })
+    result = await jpa_verifier.verify(op_json, ctx)
+    if result.passed:
+        corrected.append(op)
+    else:
+        audit_logger.log("jpa_rule_violation", {"op": op, "feedback": result.feedback})
+```
+
+**Lợi ích:**
+| Aspect | Before (if-chain) | After (RuleVerifier) |
+|---|---|---|
+| Rule definition | 13 inline `if` statements | Declarative `Rule` list |
+| Adding new rule | Edit worker, risk breaking others | Append to list |
+| Severity levels | All-or-nothing | "critical" drops, "warning" annotates |
+| Feedback to LLM | Silent drop | `result.feedback` → refine via `Evaluator` |
+| Testability | Worker integration test | Unit test per Rule |
+| Reuse cross-worker | Copy code | Import shared `JPA_ANNOTATION_RULES` |
+
+**Bonus** — Combine với `Evaluator` cho self-correcting LLM:
+```python
+from ryuu import Evaluator
+
+evaluator = Evaluator(
+    generator=column_classifier,            # Agent(output_schema=CRUD_OPS_SCHEMA)
+    verifier=lambda out: _jpa_check(out),   # wraps RuleVerifier.verify
+    max_refines=2,
+)
+result = await evaluator.run(prompt)
+# LLM generates → JPA verify → if fail, prepend feedback to prompt → retry
+```
+
+### 17.3 Chat Handlers — `Agent(knowledge=...)` Cho Project Context
+
+**Problem hiện tại** (handoff §4.2 + §10.2):
+- 14 tools fetch project data at LLM tool-call time
+- Each ReAct iteration hits Neo4j
+- LLM sometimes calls wrong tool, wastes tokens
+
+**Refactor with Phase 11/11.x:**
+```python
+# src/chat/orchestrator_ryuu.py
+from ryuu import Agent
+from ryuu_knowledge_rag import RAGBackbone, RAGPipeline, InMemoryVectorStore
+from ryuu_providers.adapters.openai import OpenAIProvider
+
+# 1. Pre-index project knowledge (background, on commit)
+async def index_project(project_id: str, graph: GraphQueryService) -> RAGBackbone:
+    backbone = RAGBackbone(pipeline=RAGPipeline(
+        embedder=OpenAIProvider(api_key=cfg.openai_api_key),
+        vector_store=InMemoryVectorStore(),   # or Chroma for persistence
+    ))
+    for cls in await graph.list_classes(project_id):
+        await backbone.write(
+            f"Class {cls.name}: {cls.summary}. Methods: {cls.method_names}",
+            scope_key=project_id,
+            metadata={"type": "class", "id": cls.id},
+        )
+    for route in await graph.list_routes(project_id):
+        await backbone.write(
+            f"Route {route.method} {route.path}: {route.handler} ({route.entities})",
+            scope_key=project_id,
+            metadata={"type": "route", "id": route.id},
+        )
+    return backbone
+
+# 2. Configure intent agent với knowledge
+project_backbones: dict[str, RAGBackbone] = {}
+
+async def get_intent_agent(project_id: str) -> Agent:
+    if project_id not in project_backbones:
+        project_backbones[project_id] = await index_project(project_id, graph_service)
+
+    return Agent(
+        model="gpt-4o-mini",
+        system=load_yaml("symbol_explain.yml").system,
+        tools=ALL_14_TOOLS,              # still available for deep dives
+        knowledge=project_backbones[project_id],   # ← pre-injected context
+        knowledge_budget_tokens=1500,
+        knowledge_scope_field="domain",            # scope_key = project_id
+        max_iterations=8,
+    )
+
+# 3. Use
+agent = await get_intent_agent(project_id="my_app")
+result = await agent.run(user_message, domain=project_id)
+# LLM thấy context được prepend trước query → có thể không cần gọi tool
+# → Nếu cần dig sâu hơn, ReAct loop fallback tools
+```
+
+**Lợi ích:**
+| Aspect | Before (tools only) | After (RAG + tools) |
+|---|---|---|
+| LLM iterations per query | 3-8 | 1-3 |
+| Neo4j load | High (every tool call) | Low (chunk lookup, cached) |
+| Cost per query | $0.005-0.02 | $0.001-0.005 |
+| Latency | 3-15s | 1-5s |
+| Cold cache | Same | Pre-index 1× per commit |
+
+**Workflow:**
+```
+Project commit → background job re-indexes RAG (15-60s for medium repo)
+User query    → Agent uses RAG context first
+                If insufficient → ReAct tools cho deep dive
+                If still insufficient → return needs_clarification
+```
+
+### 17.4 Composed Pipeline — All Phase 11/14 Features
+
+Production-grade pipeline:
+
+```python
+from ryuu import Agent, Evaluator
+from ryuu_reasoning import RuleVerifier
+from ryuu_knowledge_rag import RAGBackbone
+
+crud_agent = Agent(
+    model="gpt-4o-mini",
+    system=load_yaml("crud_matrix.yml").system,
+    knowledge=project_backbones[project_id],    # 11.x — project context
+    knowledge_budget_tokens=1000,
+    output_schema=CRUD_OPS_SCHEMA,               # 11.y — strict JSON
+    adaptive_compute=True,                        # 14.3 — cost tiering
+    thinking_mode=True,                           # 14.1 — reasoning trail
+    audit=True,                                    # 8.4 — compliance log
+    budget_usd=0.50,                               # 8.4 — cost gate
+)
+
+jpa_verifier = RuleVerifier(rules=JPA_ANNOTATION_RULES)
+
+evaluator = Evaluator(
+    generator=crud_agent,
+    verifier=async_jpa_check_wrapper,
+    max_refines=2,
+)
+
+result = await evaluator.run(prompt, domain=project_id)
+# result.output      → final markdown
+# result.thinking    → reasoning trail
+# result.parsed      → validated CRUD ops dict
+# result.cost.usd    → tracked
+# audit jsonl        → ryuu_audit.jsonl entry
+```
+
+### 17.5 Migration Order Updated
+
+```
+Week 1: Foundation
+  Day 1:   Phase 1 (bridge) + Phase 2 (tools)
+  Day 2:   Phase 11.x (knowledge=) — index 1 project, smoke test
+  Day 3-4: Phase 11.y (output_schema=) — refactor CrudMatrixWorker
+  Day 5:   Run eval suite, measure cost reduction
+
+Week 2: Anti-hallucination
+  Day 1-2: Phase 14.7 (RuleVerifier) — port 13 JPA rules
+  Day 3:   Wrap với Evaluator (refine loop)
+  Day 4-5: A/B test rule-based vs LLM-only — measure precision/recall delta
+
+Week 3: Scale
+  Day 1-2: Index all projects into RAG, cache backbones per project_id
+  Day 3:   Phase 14.3 (adaptive_compute) — tier dispatch
+  Day 4:   Phase 14.1 (thinking_mode) — audit trail wire to UI
+  Day 5:   Performance benchmark + production rollout
+```
+
+### 17.6 Updated Effort Estimate
+
+| Component | Original handoff | After Phase 11+14.7 ryuu features |
+|---|---|---|
+| LLM Bridge | 1-2h | 1h (Phase 1 unchanged) |
+| Tools | 4-6h | 2-3h (Mode A callable wraps thin) |
+| ReAct loop | 3-4h | **0h** (built-in `LLMAgent._react_loop`) |
+| HandlerRegistry → Router | 2-3h | **30m** (`Router` facade) |
+| CrudMatrixWorker JSON parsing | (custom) | **30m** (`output_schema=`) |
+| 13 JPA annotation rules | 4-6h (if-chain) | **2h** (RuleVerifier — declarative) |
+| Project context grounding | (not in scope) | **3h** (RAG indexing + `knowledge=`) |
+| Cost optimization | (not in scope) | **30m** (`adaptive_compute=True`) |
+| Audit trail | (not in scope) | **0m** (`audit=True` kwarg) |
+| E2E testing | 4-5h | 4-5h |
+| **Total** | **17-21h** | **11-16h** + 3h RAG indexing setup |
+
+**Net win:** -7h effort + 4 production-grade features (RAG, structured output, anti-hallucination, audit) that wouldn't exist với manual port.
+
+### 17.7 Status Tracking
+
+- **All features shipped** in ryuu 0.3.0a16 (2026-05-22)
+- **Apply ngay** — không cần đợi
+- **Demo references**:
+  - Phase 11.x: `examples/rag_agent_demo.py`
+  - Phase 11.y: structured output trong tests `tests/unit/ryuu/test_factory_output_schema.py`
+  - Phase 14.7: `examples/reasoning_demo.py`
+  - Phase 14.1-14.3: `examples/code_analysis/intent_patterns_demo.py`
+- **Plan**: 3 PRs (foundation / anti-hallucination / scale) theo §17.5
+
