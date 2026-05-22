@@ -24,7 +24,9 @@ Does NOT own (Phase 9.x follow-up roadmap):
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ryuu import Agent
@@ -41,16 +43,50 @@ DEFAULT_MODEL = "gpt-4o-mini"
 _TRACE_BUDGET = 3000   # chars — keep below Telegram 4096 limit
 _MEMORY_BUDGET_TOKENS = 2000   # context space reserved for memory recall
 
-RYUU_INSTRUCTIONS = (
-    "You are Ryuu Sensei (流先生), a private personal assistant for the owner only. "
-    "You have access to long-term memory tools — use them ACTIVELY:\n"
-    "  • `remember(fact)` — when the user tells you something worth keeping across sessions "
-    "(name, preferences, goals, decisions, ongoing projects, recurring topics).\n"
-    "  • `recall(query)` — when answering questions about prior interactions or facts.\n"
-    "  • `list_memories()` — when the user asks 'what do you know about me?'.\n\n"
-    "Be concise. Keep replies under 100 words unless explicitly asked for depth. "
-    "Speak the user's language. Default to Vietnamese if unclear."
+# RYUU_INSTRUCTIONS = soul prompt loaded from markdown. Edit
+# examples/ryuu_sensei/prompts/ryuu/v1.md (or shadow via ~/.ryuu/prompts/
+# ryuu/v1.md) to tune personality without redeploying code.
+#
+# Why .md not YAML: soul is prose-heavy. Markdown is the native format for
+# human-readable personality docs. YAML is for structured prompts with
+# system+user+tools schema (see PromptRegistry).
+
+_FALLBACK_SOUL = (
+    "You are Ryuu Sensei (流先生), a private personal assistant. "
+    "Be concise. Speak the user's language. Default to Vietnamese if unclear."
 )
+
+
+def _load_soul(version: str = "v1") -> str:
+    """Load soul markdown via layered overlay (first match wins):
+      1. env var RYUU_SOUL_PATH (explicit path)
+      2. ~/.ryuu/prompts/ryuu/<version>.md (user override)
+      3. examples/ryuu_sensei/prompts/ryuu/<version>.md (bundled default)
+      4. _FALLBACK_SOUL (safety net)
+
+    Soul = personality / values / boundaries / continuity (OpenClaw pattern).
+    Memory tools (`remember`/`recall`/`list_memories`) auto-inject via
+    tool_registry — no usage instructions needed in prompt. The "Tools
+    available" section in the .md is LLM-context only, not directive.
+    """
+    env_path = os.getenv("RYUU_SOUL_PATH", "").strip()
+    if env_path:
+        p = Path(env_path).expanduser()
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+
+    user_path = Path.home() / ".ryuu" / "prompts" / "ryuu" / f"{version}.md"
+    if user_path.exists():
+        return user_path.read_text(encoding="utf-8")
+
+    bundled = Path(__file__).parent.parent / "prompts" / "ryuu" / f"{version}.md"
+    if bundled.exists():
+        return bundled.read_text(encoding="utf-8")
+
+    return _FALLBACK_SOUL
+
+
+RYUU_INSTRUCTIONS = _load_soul()
 
 
 # ---------------------------------------------------------------------------
