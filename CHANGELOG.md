@@ -5,6 +5,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a17] - 2026-05-22
+
+### Added — Phase 11.z: `NeighborGraphBackbone` in `ryuu-knowledge-graph`
+
+New `IKnowledgeBackbone` variant — neighbor-expansion mode over `IGraphStore`.
+Complements existing `GraphBackbone` (text_search mode):
+
+  | Backbone               | query() semantic                      |
+  |------------------------|---------------------------------------|
+  | GraphBackbone          | text_search(query) — semantic match    |
+  | NeighborGraphBackbone  | get_neighbors(entity_id) — graph expand|
+
+**Usage:**
+
+```python
+from ryuu_knowledge_graph import NeighborGraphBackbone, InMemoryGraphStore
+
+backbone = NeighborGraphBackbone(
+    store=neo4j_store,           # any IGraphStore impl
+    max_hops=1,
+    formatter=domain_formatter,   # optional — domain-specific text render
+)
+ctx = await backbone.assemble_context(
+    query="UserController",       # known entity_id
+    scope_key="my-project",
+    budget_tokens=500,
+)
+# ctx.text contains node + 1-hop neighbors formatted as text
+```
+
+**Use cases (pattern):**
+- Code analysis — class + dependencies/dependents as ReAct context
+- Knowledge graphs — entity + related concepts
+- Social networks — author + co-authors/followers
+- Citation networks — paper + cited/cited-by
+- Recommendation — product + bought-together items
+
+**Design notes:**
+- 3-layer architecture: Framework (Protocol + Backbone) — Infrastructure
+  (Neo4j/Memgraph adapters in app code) — Domain (formatter in app code).
+  ryuu doesn't bundle DB-specific drivers.
+- `max_hops=1` default; raises ValueError if < 1.
+- `formatter=` callable for domain rendering; default = labels + properties.
+- Budget enforcement: trim neighbors BFS-first until fits token budget.
+- `write()` adds isolated observation node (caller wires edges via IGraphStore).
+
+**Tests:** +13 (construction, query with known/unknown entity, max_hops scaling,
+top_k, assemble with budget trimming, custom formatter, write observation).
+Total: 1016 passed, 7 skipped, 0 regression.
+
+**Public API exports** (from `ryuu_knowledge_graph`):
+- `NeighborGraphBackbone` (new)
+- `GraphBackbone` (existing)
+- `InMemoryGraphStore`, `IGraphStore`, `Node`, `Edge` (existing)
+
 ## [0.3.0a16] - 2026-05-22
 
 ### Added — Phase 14.7: `ryuu-reasoning` MVP — formal verifiers
