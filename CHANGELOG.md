@@ -5,6 +5,225 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 9.0d.1: `ryuu_cognitive.recall` — composable memory retrieval
+
+Middleware/chain-style recall pipeline. Framework owns orchestration; consumer just plugs stages into a list. Adding new stages = define class implementing `IRecallStage` + insert into list. **Zero framework changes** when extending.
+
+**New layout** (sibling to existing `strategies/`, `verifiers/`, `context/`):
+
+```
+packages/ryuu-cognitive/src/ryuu_cognitive/recall/
+├── pipeline.py    RecallPipeline, RecallContext, IRecallStage, RecallResult
+├── stages.py      6 built-in stages
+└── builders.py    RecallPipelineBuilder (naive/with_expansion/full)
+```
+
+**Pipeline contract:**
+
+```python
+@runtime_checkable
+class IRecallStage(Protocol):
+    name: str
+    async def execute(
+        self, ctx: RecallContext, *, backbone: IKnowledgeBackbone,
+    ) -> RecallContext: ...
+
+@dataclass
+class RecallPipeline:
+    backbone: IKnowledgeBackbone
+    stages: list[IRecallStage] = field(default_factory=list)
+    async def recall(query, scope_key) -> RecallResult: ...
+```
+
+Stages run in order. Any stage can set `ctx.skipped=True` to short-circuit (e.g. `IntentFilterStage` skips for chitchat).
+
+**6 built-in stages:**
+
+| Stage | Purpose |
+|-------|---------|
+| `IntentFilterStage(analyzer)` | Skip pipeline for chitchat / commands (saves cost) |
+| `ExpansionStage(expander)` | Generate query paraphrases |
+| `DecompositionStage(decomposer)` | Break complex queries; gated by `intent.complexity` |
+| `MultiQueryRetrievalStage(top_k)` | Fan-out queries against backbone, dedupe |
+| `RRFusionStage(k=60)` | Reciprocal Rank Fusion across query result lists (standard from Cormack et al., used by Anthropic/Cohere) |
+| `TokenBudgetStage(budget_tokens)` | Trim final list to fit prompt budget |
+
+**3 builders for common compositions:**
+
+```python
+# Naive — just retrieve
+RecallPipelineBuilder.naive(backbone)
+
+# + paraphrases + RRF
+RecallPipelineBuilder.with_expansion(backbone, expander=...)
+
+# Full Option C — analyzer + expand + decompose + retrieve + RRF + budget
+RecallPipelineBuilder.full(
+    backbone, analyzer=..., expander=..., decomposer=...,
+)
+```
+
+**Custom stage example** (open/closed — extend without modifying framework):
+
+```python
+class RedisCacheStage:
+    name = "redis_cache"
+    def __init__(self, redis_client):
+        self.cache = redis_client
+    async def execute(self, ctx, *, backbone):
+        key = f"recall:{ctx.scope_key}:{hash(ctx.original_query)}"
+        cached = await self.cache.get(key)
+        if cached:
+            ctx.fused_results = json.loads(cached)
+            ctx.skipped = True
+            ctx.skip_reason = "cache_hit"
+        return ctx
+
+pipeline.stages.insert(0, RedisCacheStage(my_redis))   # framework untouched
+```
+
+### Changed — `RyuuHandler` now uses `RecallPipeline` instead of inline `assemble_context()`
+
+```python
+RyuuHandler(
+    memory_backbone=...,
+    recall_pipeline=RecallPipelineBuilder.full(...),    # NEW — optional
+    # Falls back to naive RecallPipeline if not provided
+)
+```
+
+`main_ryuu.py` wires `RecallPipelineBuilder.full()` when `OPENAI_API_KEY` available — analyzer (skip chitchat) + LLM expander (3 paraphrases) + decomposer + RRF fusion + token budget. Naive fallback when offline.
+
+### Added — Phase 9.0c: Auto-compaction in `RyuuHandler` + Telegram controls
+
+`RyuuHandler` now wires `LLMCompactor` automatically when `compaction_provider` + `prompt_registry` are injected. Long conversations get summarized BEFORE each LLM call instead of dropping oldest turns FIFO.
+
+**Auto-compaction flow:**
+
+```
+User sends msg
+    ↓
+handle(msg, session)
+    ↓
+estimate tokens in session.history (~40-50 per turn)
+    ↓
+if est_tokens >= compact_threshold_tokens (default 4000):
+    ↓
+    LLMCompactor.compact(history)
+        - keep last 5 turns verbatim
+        - summarize older N turns into 1 "[summary]" turn
+        - session.history = [summary_turn, *last_5_turns]
+    ↓
+build prompt with compacted history + memory recall + new msg
+    ↓
+agent.run()
+```
+
+**New `RyuuHandler` constructor args:**
+
+```python
+RyuuHandler(
+    memory_backbone=...,
+    compaction_provider=OpenAIProvider(...),    # NEW — enables auto-compact
+    prompt_registry=make_framework_registry(),   # NEW — provides compaction/v1.yaml
+    compact_keep_recent=5,                       # NEW — turns preserved verbatim
+)
+```
+
+If `compaction_provider` is None, auto-compact is silently a no-op (LLMCompactor unbuilt). `RyuuHandler` works without it; users get FIFO history truncation.
+
+**New per-scope settings** (persisted in handler_state):
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `auto_compact` | `True` | Toggle auto-trigger |
+| `compact_threshold_tokens` | `4000` | When estimated tokens exceed, compact |
+
+**New `RyuuHandler` methods:**
+
+- `await handler.set_auto_compact(scope_key, on: bool)` — toggle
+- `await handler.set_compact_threshold(scope_key, threshold: int)` — bounds: 500-100,000
+- `await handler.manual_compact(scope_key, session)` — force compact NOW; returns `{before, after, saved_turns}`
+
+**New Telegram commands** (via `TelegramAdapter.on_compact` + `on_auto_compact` callbacks):
+
+```
+/compact                  Force compaction NOW. Shows "60 turns → 6 turns (saved 54)"
+/auto_compact             Show current state (on/off, threshold)
+/auto_compact on          Enable auto-trigger
+/auto_compact off         Disable — bot still keeps full history; use /compact manually
+```
+
+**TelegramAdapter API additions:**
+
+```python
+TelegramAdapter(
+    ...,
+    on_compact: AsyncCallable[[sender_id, conv_id], str] = None,
+    on_auto_compact: AsyncCallable[[sender_id, conv_id, on: bool|None], str] = None,
+)
+```
+
+Updated `DEFAULT_HELP` text to document the 2 new commands.
+
+### Added — Phase 9.0b: `MemoryToolset` in `ryuu-knowledge-memory`
+
+Pre-built memory tools (remember/recall/list_memories + opt-in forget) with internal scope binding. Consumer code shrinks from ~120 LOC boilerplate to ~3 LOC.
+
+**Public API:**
+
+```python
+from ryuu_knowledge_memory import MemoryToolset
+
+toolset = MemoryToolset(backbone=my_backbone)
+agent = Agent(tools=toolset.tools, ...)
+
+async with toolset.bind(scope_key="owner"):
+    result = await agent.run(message=prompt)
+```
+
+**Default tools** (all safe — read or append-only):
+- `remember(fact)` — INSERT
+- `recall(query)` — SELECT (keyword overlap)
+- `list_memories()` — SELECT recent N
+
+**Opt-in tool** (destructive — requires explicit consent):
+- `forget(query)` — DELETE; pass `include_forget=True` to enable
+
+```python
+# Default — 3 safe tools, no forget
+MemoryToolset(backbone=bb)
+
+# With destructive tool — explicit opt-in
+MemoryToolset(backbone=bb, include_forget=True)
+
+# Custom subset (e.g. read-only consumer)
+MemoryToolset(backbone=bb, tool_names=("recall",))
+```
+
+**Per-instance contextvar** — multiple `MemoryToolset`s in the same process don't collide. Each has its own `_scope_var` for clean isolation.
+
+**Design rationale:** framework ships PRIMITIVES (tools + binder), product owns POLICY (when/what to write, where to inject recall). Auto-write-every-message and auto-extract-via-LLM were considered and rejected (noise + 2x cost respectively).
+
+### Changed — `RyuuHandler` refactored to use `MemoryToolset`
+
+Sample's `examples/ryuu_sensei/apps/ryuu_tools.py` (~120 LOC of contextvar plumbing + tool definitions) **deleted**. Replaced by 3 lines in `RyuuHandler.__post_init__`:
+
+```python
+def __post_init__(self):
+    if self.memory_backbone is not None:
+        self._toolset = MemoryToolset(
+            backbone=self.memory_backbone,
+            include_forget=self.include_forget_tool,
+        )
+```
+
+Per-turn binding via `async with`:
+```python
+async with self._toolset.bind(scope_key=session.scope_key):
+    result = await agent.run(message=prompt_text, ...)
+```
+
 ### Changed — Phase 8.13–8.19: Standalone package extractions (5 phases)
 
 Continuing Phase 8.x reorganization. **All old imports preserved via shims.**

@@ -48,13 +48,15 @@ DEFAULT_WELCOME = (
 
 DEFAULT_HELP = (
     "Commands:\n"
-    "  /start            — welcome banner\n"
-    "  /help             — this message\n"
-    "  /clear            — forget our conversation so far\n"
-    "  /settings         — show your current settings\n"
-    "  /status           — context size, token usage, cost so far\n"
-    "  /verbose on|off   — toggle LLM reasoning trace (💭 🔧 📋)\n"
-    "  /model            — tap a button to switch model\n\n"
+    "  /start                  — welcome banner\n"
+    "  /help                   — this message\n"
+    "  /clear                  — forget our conversation so far\n"
+    "  /settings               — show your current settings\n"
+    "  /status                 — context size, token usage, cost so far\n"
+    "  /verbose on|off         — toggle LLM reasoning trace (💭 🔧 📋)\n"
+    "  /model                  — tap a button to switch model\n"
+    "  /compact                — compact long history NOW (free up context)\n"
+    "  /auto_compact on|off    — toggle automatic compaction\n\n"
     "Or just chat naturally."
 )
 
@@ -75,11 +77,24 @@ class TelegramAdapter(IChannelAdapter):
     on_settings: Any = None      # async (sender_id, conv_id) -> str
     on_status: Any = None        # async (sender_id, conv_id) -> str
     on_current_model: Any = None # async (sender_id, conv_id) -> str
+    on_compact: Any = None       # async (sender_id, conv_id) -> str  — manual trigger
+    on_auto_compact: Any = None  # async (sender_id, conv_id, on: bool|None) -> str  — toggle / status
 
     # Customizable text + model allowlist for the inline keyboard
     welcome_text: str = DEFAULT_WELCOME
     help_text: str = DEFAULT_HELP
     allowed_models: tuple[str, ...] = ()
+
+    # Sender allowlist — restrict bot to specific Telegram user IDs.
+    # Use for single-tenant SuperBot (only owner can DM) or premium-tier gating.
+    # None (default) = open to anyone who can find the bot.
+    # set() / frozenset(...) = ONLY listed senders get responses; others see a
+    # friendly "private bot" message and message never enters the handler.
+    allowed_senders: frozenset[str] | None = None
+    rejection_message: str = (
+        "Sorry, this is a private assistant. "
+        "If you think this is wrong, contact the owner."
+    )
 
     _bot: Any = field(default=None, init=False)
     _dp: Any = field(default=None, init=False)
@@ -183,6 +198,54 @@ class TelegramAdapter(IChannelAdapter):
                 summary = f"⚠️ {type(exc).__name__}: {exc}"
             await self._bot.send_message(tg_msg.chat.id, summary)
 
+        # ── /compact — Phase 9.0c manual trigger ─────────────────────
+        @self._dp.message(Command("compact"))
+        async def _cmd_compact(tg_msg: TgMessage) -> None:
+            self._remember_chat(tg_msg)
+            ids = _ids(tg_msg)
+            if self.on_compact is None or ids is None:
+                await self._bot.send_message(tg_msg.chat.id, "(compact unavailable)")
+                return
+            await self._bot.send_chat_action(tg_msg.chat.id, "typing")
+            try:
+                reply = await self.on_compact(*ids)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_compact failed: %s", exc)
+                reply = f"⚠️ {type(exc).__name__}: {exc}"
+            await self._bot.send_message(tg_msg.chat.id, reply)
+
+        # ── /auto_compact — toggle / status ──────────────────────────
+        @self._dp.message(Command("auto_compact"))
+        async def _cmd_auto_compact(tg_msg: TgMessage) -> None:
+            self._remember_chat(tg_msg)
+            ids = _ids(tg_msg)
+            if ids is None or self.on_auto_compact is None:
+                await self._bot.send_message(tg_msg.chat.id, "(auto_compact unavailable)")
+                return
+            parts = (tg_msg.text or "").strip().split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+            on: bool | None
+            if arg == "on":
+                on = True
+            elif arg == "off":
+                on = False
+            elif arg in {"", "status"}:
+                on = None   # query current state
+            else:
+                await self._bot.send_message(
+                    tg_msg.chat.id,
+                    "Usage: `/auto_compact on|off` to toggle, or `/auto_compact` to see current state.",
+                )
+                return
+
+            try:
+                reply = await self.on_auto_compact(*ids, on)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_auto_compact failed: %s", exc)
+                reply = f"⚠️ {type(exc).__name__}: {exc}"
+            await self._bot.send_message(tg_msg.chat.id, reply)
+
         # ── /verbose ──────────────────────────────────────────────────
         @self._dp.message(Command("verbose"))
         async def _cmd_verbose(tg_msg: TgMessage) -> None:
@@ -282,10 +345,20 @@ class TelegramAdapter(IChannelAdapter):
         async def _handler(tg_msg: TgMessage) -> None:
             if not tg_msg.text:
                 return  # ignore stickers/photos/etc.
+
+            # Single-tenant gate: reject non-allowlisted senders early.
+            # Applies to free-form messages only — slash commands let users
+            # see /help even if they can't actually use the bot.
+            sender = str(tg_msg.from_user.id) if tg_msg.from_user else ""
+            if self.allowed_senders is not None and sender not in self.allowed_senders:
+                log.info("Rejecting message from non-allowlisted sender %s", sender)
+                await self._bot.send_message(tg_msg.chat.id, self.rejection_message)
+                return
+
             self._remember_chat(tg_msg)
             incoming = IncomingMessage(
                 channel=self.channel_name,
-                sender_id=str(tg_msg.from_user.id) if tg_msg.from_user else "unknown",
+                sender_id=sender or "unknown",
                 conversation_id=f"telegram:{tg_msg.chat.id}",
                 text=tg_msg.text,
                 metadata={"chat_type": tg_msg.chat.type},
