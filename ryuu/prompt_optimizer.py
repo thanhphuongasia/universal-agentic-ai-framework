@@ -45,6 +45,7 @@ __all__ = [
     "EvalCase",
     "PromptOptimizer",
     "OptimizationResult",
+    "delimiter_variant_generator",
     "llm_variant_generator",
 ]
 
@@ -201,5 +202,63 @@ def llm_variant_generator(
             if line:
                 cleaned.append(line)
         return cleaned[:n_variants]
+
+    return _gen
+
+
+def delimiter_variant_generator(
+    provider: ILLMProvider,
+    *,
+    n_variants: int = 3,
+    model: str = "gpt-4o-mini",
+    domain_instructions: str = "",
+    delimiter: str = "===VARIANT_DELIMITER===",
+    temperature: float = 0.7,
+) -> VariantGenerator:
+    """Variant generator using explicit delimiter to separate variants.
+
+    Fixes the line-split bug в ``llm_variant_generator`` (which splits by ``\\n``
+    và treats each line as separate variant — producing useless fragments for
+    multi-line prompts).
+
+    Args:
+        provider: LLM provider
+        n_variants: number of variants per call
+        model: LLM model
+        domain_instructions: project-specific guidance appended to system prompt.
+            E.g. "Add JPA rules for @GeneratedValue fields..." for CRUD prompts.
+            Empty string = generic paraphrasing.
+        delimiter: separator line between variants (must be uncommon string)
+        temperature: LLM temperature
+
+    Returns:
+        Async callable suitable for ``PromptOptimizer.variant_generator=``.
+    """
+
+    async def _gen(current_prompt: str) -> list[str]:
+        system_content = (
+            f"You are a prompt engineer. Produce exactly {n_variants} IMPROVED versions "
+            f"of the input system prompt. Each variant must be COMPLETE (multi-line OK), "
+            f"not a fragment.\n"
+        )
+        if domain_instructions:
+            system_content += f"\n{domain_instructions}\n"
+        system_content += (
+            f"\nOutput format — separate variants với this EXACT line:\n{delimiter}\n\n"
+            f"NO preamble, NO numbering, just the prompts separated by the delimiter."
+        )
+
+        request = CompletionRequest(
+            messages=[
+                Message(role="system", content=system_content),
+                Message(role="user", content=f"Improve this prompt:\n\n{current_prompt}"),
+            ],
+            model=model,
+            temperature=temperature,
+        )
+        response = await provider.complete(request)
+        parts = [p.strip() for p in response.content.split(delimiter)
+                 if p.strip() and len(p.strip()) > 80]
+        return parts[:n_variants]
 
     return _gen
