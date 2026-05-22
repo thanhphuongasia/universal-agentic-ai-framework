@@ -1674,3 +1674,244 @@ Week 4 (post-migration):
 - [ ] Streaming eval progress events — `EvalRunner.stream()` future API?
 - [ ] Multi-suite parallel run — `ryuu_eval` doesn't have orchestrator yet
 
+---
+
+## 19. Ingestion Pipeline Migration — Shared Bridge với Chat
+
+> **Update đến §9.2:** Trước đây assume eval/ingestion là subprocess không liên quan agent framework. Audit thực tế cho thấy **ingestion pipeline cũng dùng `LLMAdapter.complete_json()`** — same interface as chat. Cùng bridge (§3 Phase 1) cover được cả 2.
+
+### 19.1 LLM Usage Trong Ingestion (Audit)
+
+5 phases trong `src/phases/` dùng LLM (~3000 LLM calls per medium project):
+
+| Phase | File | LLM Call Pattern | Output Schema | Batch Size |
+|---|---|---|---|---|
+| **Phase 0** — Framework Detection | `phase0_framework_detection.py` | 1 call per ingestion | ✅ Set | N/A |
+| **Phase 1** — Class Enhancement | `phase1_class_enhancement.py` (744 lines) | N batch calls (1 per class) | ❌ None | ~200 classes/batch |
+| **Phase 1b** — Route Extraction | `phase1b_route_extraction.py` (698 lines) | N batch calls (1 per controller) | ❌ None | ~200 controllers/batch |
+| **Phase 1c** — Method Calls | `phase1c_method_calls.py` (677 lines) | N batch calls (cross-class) | ❌ None | ~200 classes/batch |
+| **Phase 2** — Gold Insight Derivation | `phase2_gold_insight_derivation.py` (466 lines) | 1 call per route | ✅ Set | N/A |
+
+**Total LOC:** ~3000 lines dùng `complete_json` + `llm_ctx` + `asyncio.gather`.
+
+**Concurrency:** Phase 1/1b/1c đã dùng `asyncio.gather(*batch_tasks)` — concurrent processing.
+
+**Cost driver:** Ingestion là **largest LLM cost** (chat thường < 10% total LLM spend).
+
+### 19.2 Migration Strategy — Shared Bridge
+
+Phase 1 bridge (§3 `RyuuLLMBridge`) cover **CẢ** chat + ingestion. Không cần bridge riêng.
+
+```python
+# src/llm/adapter_factory.py — sau Phase 1 migration
+from src.llm.ryuu_adapter_bridge import RyuuLLMBridge
+
+def get_llm_adapter(model: str, config: AppConfig) -> LLMAdapter:
+    provider = ryuu_build_provider(model, api_key=config.openai_api_key)
+    return RyuuLLMBridge(provider, model)
+```
+
+Phases instantiate via:
+```python
+# src/api/app.py wire (unchanged after bridge)
+llm = get_llm_adapter("gpt-4o-mini", cfg)
+phase0 = Phase0FrameworkDetection(llm_adapter=llm, ...)
+phase1 = Phase1ClassEnhancement(llm_adapter=llm, ...)
+# ... LLM provider underneath is ryuu OpenAI/Anthropic, không impact phase code
+```
+
+→ **Phase 1 bridge ship được cả chat + ingestion same day.** No additional refactor needed for ingestion to start using ryuu providers.
+
+### 19.3 Optional Win 1 — Add `output_schema` to Phase 1/1b/1c
+
+Phases 1/1b/1c hiện pass `output_schema=None` — relies on prompt instructions để LLM trả JSON. Rủi ro drift cao.
+
+**Fix với Phase 11.y** (OpenAI strict mode):
+
+```python
+# src/llm/prompt_registry.py
+@dataclass
+class PromptDef:
+    name: str
+    system_prompt: str
+    user_template: str
+    output_schema: dict | None   # ← NEW field
+
+CLASS_ENHANCEMENT_BATCH = PromptDef(
+    name="class_enhancement_batch",
+    system_prompt="Analyze Java classes and extract semantic info...",
+    user_template="...",
+    output_schema={                  # ← NEW
+        "type": "object",
+        "properties": {
+            "classes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "class_id": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "stereotype": {"type": "string", "enum": ["controller", "service", "repository", "entity", "dto"]},
+                        "responsibilities": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["class_id", "summary"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["classes"],
+        "additionalProperties": False,
+    },
+)
+```
+
+Phase 1 call:
+```python
+raw = await self.llm.complete_json(
+    prompt=user_msg,
+    system_prompt=prompt.system_prompt,
+    output_schema=prompt.output_schema,   # ← was None, now strict
+    schema_name=prompt.name,
+)
+```
+
+**Bridge forwards output_schema → OpenAI strict json_schema mode (Phase 11.y)** → LLM refuses invalid output.
+
+**Effort:** 2-3h per prompt (define schema từ existing parser code) × 3 phases = 6-9h
+**Reward:** Eliminate ~5-10% parse errors trong batch results (currently silently dropped trong `asyncio.gather(return_exceptions=True)`).
+
+### 19.4 Optional Win 2 — `BatchRunner` Thay `asyncio.gather`
+
+Phase 1/1b/1c hiện manual batch + gather. `ryuu.BatchRunner` (Phase 12) cung cấp:
+- Cost budget cap (auto-abort khi vượt)
+- Progress callback (per-item progress, không phải batch-level)
+- OpenAI Batch API option (50% discount cho non-realtime ingestion)
+- Retry với exponential backoff per item
+
+**Before:**
+```python
+batch_tasks = [self._process_class(cls) for cls in batch]
+batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+# Manual error filtering, no cost cap, no per-item progress
+```
+
+**After:**
+```python
+from ryuu import BatchRunner, BatchItem
+
+items = [BatchItem(input=cls.to_prompt(), metadata={"class_id": cls.id}) for cls in batch]
+runner = BatchRunner(
+    agent=Agent(model="gpt-4o-mini", output_schema=CLASS_SCHEMA),
+    budget_usd=5.0,                         # auto-abort
+    progress_callback=lambda item, result: emit_event(...),
+    max_concurrent=20,                       # rate limit
+)
+results = await runner.run(items)
+# OR for non-realtime ingestion (commit-triggered, no user waiting):
+results = await runner.run(items, mode="openai_batch")   # 50% discount, 24h SLA
+```
+
+**Cost saving cho non-realtime ingestion (overnight indexer):**
+- 5000 classes × 500 tokens × $0.15/M tokens = $0.375 baseline
+- 50% discount = $0.19 → save ~$0.18 per project
+- 100 projects/month × $0.18 = $18/month saved
+
+Small in absolute terms nhưng combine với adaptive_compute saving ~30%.
+
+**Effort:** 3-4h per phase × 3 phases = 9-12h
+**Reward:** Cost cap (safety), 50% discount option, better observability.
+
+### 19.5 Optional Win 3 — Phase 2 dùng `Agent(knowledge=...)` cho Insight
+
+Phase 2 Gold Insight Derivation generates per-route insights — currently builds prompt with hand-crafted context. RAG can replace:
+
+**Before:**
+```python
+# Manually fetch related entities, controllers, data flow into prompt
+related_classes = await graph.get_related_classes(route.id)
+prompt = build_insight_prompt(route, related_classes, ...)
+raw = await llm.complete_json(prompt, output_schema=INSIGHT_SCHEMA)
+```
+
+**After:**
+```python
+# Pre-index project graph as RAG (1× per project)
+backbone = await get_or_index(project_id, graph, cfg)
+
+insight_agent = Agent(
+    model="gpt-4o-mini",
+    instructions="Derive technical insight per route. Output JSON matching INSIGHT_SCHEMA.",
+    output_schema=INSIGHT_SCHEMA,
+    knowledge=backbone,
+    knowledge_budget_tokens=1500,
+    knowledge_scope_field="domain",
+)
+result = await insight_agent.run(
+    f"Insight for route {route.method} {route.path}",
+    domain=project_id,
+)
+insight = result.parsed
+```
+
+**Benefit:** Phase 2 inherits the same RAG cache built for chat handlers (PR 3 §17.3). Same `project_backbones[project_id]` shared.
+
+### 19.6 Updated Migration Order — Include Ingestion
+
+```
+Week 1: Foundation (same as §17.5)
+  Day 1: Phase 1 bridge — covers CHAT + INGESTION + EVAL (3 systems, 1 bridge)
+  Day 2: Tools + RAG indexer
+
+Week 2: Anti-Hallucination (same as §17.5)
+  Day 1-3: RuleVerifier + Evaluator
+  Day 4-5: A/B test + chat_intent eval port (PR 2.5)
+
+Week 3: Scale (extended)
+  Day 1-2: RAG indexing + knowledge=
+  Day 3-4: CRUD eval port (PR 3.5a)
+  Day 5: Performance benchmark
+        — Also verify ingestion pipeline still works với bridge (smoke run)
+
+Week 4 (NEW): Ingestion Optimization
+  Day 1-2: Add output_schema to phase1/1b/1c prompts (§19.3)
+  Day 3-4: Phase 1/1b/1c → BatchRunner (§19.4)
+  Day 5:   Phase 2 → Agent(knowledge=) (§19.5)
+```
+
+**Total migration: 3 weeks → 4 weeks** (add Week 4 cho ingestion optimization).
+
+### 19.7 Updated Effort Estimate (Final)
+
+| Component | Original | After all features |
+|---|---|---|
+| LLM Bridge (covers chat+ingestion+eval) | 1-2h | **1h** |
+| Tools | 4-6h | 2-3h |
+| ReAct loop | 3-4h | **0h** (built-in) |
+| HandlerRegistry → Router | 2-3h | **30m** |
+| CrudMatrixWorker output_schema | (custom) | **30m** |
+| 13 JPA annotation rules | 4-6h | **2h** |
+| Project context grounding | (not in scope) | **3h** |
+| Cost optimization (chat) | (not in scope) | **30m** |
+| Audit trail | (not in scope) | **0m** |
+| **Eval suites port (chat_intent + crud_matrix)** | (not in scope) | **10-14h** (§18) |
+| **Ingestion output_schema** | (not in scope) | **6-9h** (§19.3) |
+| **Ingestion BatchRunner** | (not in scope) | **9-12h** (§19.4) |
+| **Phase 2 knowledge=** | (not in scope) | **3h** (§19.5) |
+| E2E testing | 4-5h | 4-5h |
+| **Total** | **17-21h** | **41-52h** (full coverage all 3 systems) |
+
+**Net win:** -7h vs original baseline + 7 bonus production features (RAG, structured, anti-hallucination, audit, eval port, ingestion bridge, batch optimization).
+
+**Trade-off:** Full coverage takes 4 weeks (1 engineer FTE) but covers ALL LLM call sites (chat + eval + ingestion) — không leave orphaned code paths.
+
+### 19.8 Ingestion-Specific Open Questions
+
+- [ ] Phase 1/1b/1c batch_size = 200 — verify với new bridge không exceed OpenAI rate limits
+- [ ] OpenAI Batch API (24h SLA) — chấp nhận cho commit-triggered indexing?
+- [ ] `audit=True` cho ingestion — large audit log (10k+ events per project). Filter rules?
+- [ ] Phase 2 RAG context — same backbone as chat OR separate (different chunking)?
+- [ ] Existing `llm_ctx(phase=..., run_id=...)` context manager — preserve OR migrate to ryuu hooks?
+- [ ] Token cost per phase — currently `llm_ctx` aggregates. Use ryuu `Agent.audit=True` instead?
+- [ ] `class_fingerprint` cache — keep custom OR use ryuu RAG retrieve to dedupe?
+
+

@@ -702,6 +702,149 @@ suite_json = json.load(open(sys.argv[1]))
 
 ---
 
+## PR 4 — Ingestion Pipeline (Week 4, Day 1-5)
+
+**Goal:** Optimize ingestion pipeline LLM calls (largest cost driver — ~3000 calls/project).
+**Note:** Phase 1 bridge (PR 1.1) đã auto-migrate ingestion to ryuu providers. PR 4 chỉ adds **optimizations** (output_schema, BatchRunner, RAG).
+
+> See migration §19 cho rationale + audit table.
+
+### 4.1 Verify Phase 1 Bridge Covers Ingestion (Day 1, 1-2h)
+
+After PR 1 ships, ingestion phases automatically use ryuu. Verify smoke test:
+
+```bash
+[ ] # Run small project ingestion end-to-end
+[ ] python -m src.cli ingest --project test-proj --source /path/to/small-repo
+[ ] # Verify completes without errors
+[ ] grep "ryuu/" logs/ingestion.log    # confirms RyuuLLMBridge in use
+[ ] # Check costs match baseline (no regression)
+```
+
+### 4.2 Add `output_schema` to Phase 1/1b/1c Prompts (Day 1-2, 6-9h)
+
+**File:** `src/llm/prompt_registry.py` (MODIFY)
+
+For each of `class_enhancement_batch_prompt`, `route_extraction_batch_prompt`,
+`method_call_extraction_batch_prompt`:
+
+1. Define JSON Schema describing expected output structure
+2. Add `output_schema: dict | None = None` field to `PromptDef`
+3. Populate for the 3 batch prompts (skip per-class fallback if needed)
+
+**Code template** (see migration §19.3 for CLASS_ENHANCEMENT_BATCH).
+
+**Files MODIFY:**
+- `src/llm/prompt_registry.py` — add output_schema field + 3 new schemas
+- `src/phases/phase1_class_enhancement.py` — pass `output_schema=prompt.output_schema`
+  in `complete_json()` calls (replace `output_schema=None`)
+- `src/phases/phase1b_route_extraction.py` — same
+- `src/phases/phase1c_method_calls.py` — same
+
+**Verification:**
+```bash
+[ ] # Run ingestion on test project — should see fewer parse_errors trong logs
+[ ] grep "parse_error" logs/ingestion.log | wc -l
+    # Compare baseline. Expected: -50% to -90% parse errors (strict mode enforces shape)
+[ ] git commit -m "feat(ingest): add output_schema to phase1/1b/1c prompts (Phase 11.y)"
+```
+
+### 4.3 Migrate Phase 1/1b/1c to `BatchRunner` (Day 3-4, 9-12h)
+
+> Optional but recommended. Replaces manual `asyncio.gather` với ryuu BatchRunner.
+> Benefit: cost cap, OpenAI Batch API option (50% discount cho commit-triggered ingestion),
+> per-item progress callbacks, exponential backoff retry.
+
+**Per-phase pattern** (apply to phase1, phase1b, phase1c):
+
+```python
+# Before (current pattern in phase1_class_enhancement.py)
+batch_tasks = [self._process_class(cls) for cls in batch]
+batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+
+# After
+from ryuu import Agent, BatchRunner, BatchItem
+
+agent = Agent(
+    model="gpt-4o-mini",
+    system=CLASS_ENHANCEMENT_BATCH.system_prompt,
+    output_schema=CLASS_ENHANCEMENT_BATCH.output_schema,
+)
+items = [
+    BatchItem(input=cls.to_prompt(), metadata={"class_id": cls.id})
+    for cls in batch
+]
+runner = BatchRunner(
+    agent=agent,
+    budget_usd=5.0,                       # auto-abort if exceeded
+    max_concurrent=20,                     # rate limit
+    progress_callback=lambda item, result: emit_event(
+        "phase1_progress", {"class_id": item.metadata["class_id"]}
+    ),
+)
+batch_results = await runner.run(items)
+# OR for non-realtime (overnight indexer):
+# batch_results = await runner.run(items, mode="openai_batch")   # 50% discount
+```
+
+**Verification:**
+```bash
+[ ] # Run ingestion với BatchRunner
+[ ] # Check cost report
+[ ] # Verify progress events fire per-class (not per-batch)
+[ ] # If overnight scheduled: enable mode="openai_batch", verify 50% cost reduction
+[ ] git commit -m "feat(ingest): migrate batch processing to ryuu BatchRunner"
+```
+
+### 4.4 Phase 2 Insight Derivation với `Agent(knowledge=...)` (Day 5, 3h)
+
+> Reuse RAG backbone từ PR 3.2 — same `project_backbones[project_id]` cache.
+
+**File:** `src/phases/phase2_gold_insight_derivation.py` (MODIFY)
+
+```python
+from ryuu import Agent
+from src.chat.rag.project_indexer import get_or_index
+
+# Replace adapter call in run() method:
+async def run(self, project_id, routes, ...):
+    backbone = await get_or_index(project_id, self.graph, self.cfg)
+    insight_agent = Agent(
+        model=self.cfg.openai_model,
+        system=phase2_insight_prompt.system_prompt,
+        output_schema=phase2_insight_prompt.output_schema,
+        knowledge=backbone,
+        knowledge_budget_tokens=1500,
+        knowledge_scope_field="domain",
+    )
+
+    for route in routes:
+        result = await insight_agent.run(
+            f"Generate insight for route {route.method} {route.path}",
+            domain=project_id,
+        )
+        insight = result.parsed
+        await self.graph.store_insight(route.id, insight)
+```
+
+**Verification:**
+```bash
+[ ] # Run ingestion on test project
+[ ] # Compare insight quality vs baseline (manual review of 5-10 cases)
+[ ] # Verify RAG cache hit — should not re-index
+[ ] git commit -m "feat(ingest): Phase 2 insight derivation dùng knowledge="
+```
+
+### 4.5 PR 4 Summary
+
+- [ ] Phase 1 bridge auto-covered ingestion (verified smoke test)
+- [ ] Phase 11.y `output_schema=` on 3 batch prompts (parse error reduction)
+- [ ] Phase 12 `BatchRunner` for batch processing (cost cap + optional Batch API)
+- [ ] Phase 11.x `knowledge=` for Phase 2 insight derivation (RAG reuse)
+- [ ] **Open PR 4** với title: `feat(migration): ingestion pipeline optimization — output_schema + BatchRunner + RAG`
+
+---
+
 ## Post-Migration
 
 ### Cleanup
@@ -771,7 +914,11 @@ suite_json = json.load(open(sys.argv[1]))
 | PR 3.4 thinking trail | 4h | _____ | _____ |
 | PR 3.5a Eval CRUD → ryuu-eval | 6-8h | _____ | _____ |
 | PR 3.5 Benchmark | 4h | _____ | _____ |
-| **Total** | **37-44h** | _____ | _____ |
+| PR 4.1 Ingestion smoke test | 1-2h | _____ | _____ |
+| PR 4.2 Ingestion output_schema (3 phases) | 6-9h | _____ | _____ |
+| PR 4.3 Ingestion BatchRunner | 9-12h | _____ | _____ |
+| PR 4.4 Phase 2 knowledge= | 3h | _____ | _____ |
+| **Total** | **56-70h** | _____ | _____ |
 
 ---
 
@@ -804,6 +951,10 @@ Track unresolved decisions:
 - [ ] Eval subprocess pattern — keep OR switch to in-process (`EvalRunner` directly từ FastAPI handler)?
 - [ ] Custom `CrudPrecisionRecall` Scorer — upstream to ryuu-eval package?
 - [ ] EvalPage UI — extend to show `precision/recall` breakdown từ `ScoreResult.reason`?
+- [ ] Ingestion `output_schema` — define schemas for all 3 batch phases OR start với class_enhancement only?
+- [ ] OpenAI Batch API mode (50% discount, 24h SLA) — enable cho commit-triggered indexing?
+- [ ] Existing `llm_ctx(phase=, run_id=)` context — preserve via ryuu hooks OR rely on `audit=True` jsonl?
+- [ ] Phase 2 RAG context — share backbone với chat OR separate index (different chunking strategy)?
 
 ---
 
