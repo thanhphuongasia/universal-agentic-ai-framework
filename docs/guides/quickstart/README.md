@@ -148,6 +148,7 @@ Cho người mới (theo thứ tự):
 7. **[07-prompt-optimizer](07-prompt-optimizer.md)** — Auto-tune prompt via eval loop.
 8. **[08-framework-comparison](08-framework-comparison.md)** — Pydantic AI / OpenAI Agents / Claude SDK / CrewAI / LangChain.
 9. **[09-migration](09-migration.md)** — Day 1 prototype → Day 30 production.
+10. **[10-eval-framework](10-eval-framework.md)** — Templates + streaming + refine logging + optimization loop. Build production eval UIs in ~30 min.
 
 ---
 
