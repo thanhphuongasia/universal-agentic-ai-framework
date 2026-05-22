@@ -1348,3 +1348,329 @@ Week 3: Scale
   - Phase 14.1-14.3: `examples/code_analysis/intent_patterns_demo.py`
 - **Plan**: 3 PRs (foundation / anti-hallucination / scale) theo §17.5
 
+---
+
+## 18. Eval System Migration — `ryuu-eval` Package
+
+> **Update đến §9.2:** Trước đây nói "Eval system chạy subprocess, không liên quan agent framework". Phần này **revise** — `ryuu-eval` package (Phase 7) cung cấp native API thay cho subprocess pattern.
+
+### 18.1 Current State (Handoff §8)
+
+```
+EvalPage (React)
+  ↓ GET /api/eval/run/stream/{suite_id}
+  ↓
+asyncio.create_subprocess_exec(python run_all.py --json-out out.json)
+  ↓ stream stdout → SSE log events
+  ↓ on exit → _append_eval_history()
+  ↓
+artifacts/eval/{suite_id}.json + {suite_id}_history.jsonl
+```
+
+**Suites:**
+- `chat_intent` → `tests/eval/test_chat_intent.py`
+- `crud_matrix` → `tests/column_crud_matrix_integration/run_all.py`
+- `crud_matrix_llm` → same + `--engine llm`
+
+**Problems:**
+- Subprocess overhead (3-5s spin-up per run)
+- Stdout parsing fragile (regex-based progress events)
+- No native cost tracking (each subprocess re-initializes adapter_factory)
+- Hard to A/B test (re-run entire subprocess to swap engines)
+- Suite history is append-only JSONL — no diff view
+
+### 18.2 `ryuu-eval` Architecture (Already Shipped)
+
+```python
+from ryuu_eval import EvalRunner, EvalCase, SuiteResult, CaseResult
+from ryuu_eval.scorers import ExactMatch, Constraint, Composite, LLMJudge
+
+# Define target — any async callable returning CaseResult
+class MyTarget:
+    async def run(self, case: EvalCase) -> CaseResult: ...
+
+# Compose scorers
+runner = EvalRunner(
+    suite_id="chat_intent",
+    target=MyTarget(),
+    scorers=[ExactMatch(), LLMJudge(judge_agent)],
+    budget_usd=1.0,    # abort if cost exceeds
+)
+
+# Run + collect
+suite = await runner.run(cases)
+print(f"Pass rate: {suite.pass_rate:.1%}")
+print(f"Cost: ${suite.total_cost_usd:.4f}")
+```
+
+**Core primitives:**
+
+| Class | Purpose |
+|---|---|
+| `EvalCase` | One test case: `(case_id, input, expected, metadata)` |
+| `CaseResult` | Per-case: `(case, output, scores, cost_usd, latency_ms, error)` |
+| `SuiteResult` | All cases + total cost + `passed_count`/`pass_rate` properties |
+| `EvalTarget` Protocol | `async def run(case: EvalCase) -> CaseResult` |
+| `Scorer` Protocol | `async def score(case, output) -> ScoreResult` |
+| `EvalRunner` | Orchestrator với optional `budget_usd` cap |
+| `FixtureLoader` | Load JSON/JSONL fixtures into EvalCase list |
+
+**Built-in scorers** (`ryuu_eval.scorers`):
+- `ExactMatch` — string equality
+- `Constraint` — boolean predicate on output
+- `Threshold` — numeric score >= threshold
+- `Composite` — AND/OR combine multiple scorers
+- `LLMJudge` — delegate scoring to LLM agent
+
+### 18.3 Migration — Chat Intent Eval
+
+**Before** (`tests/eval/test_chat_intent.py` — subprocess + pytest):
+
+```python
+# Standalone Python script invoked via subprocess
+def main():
+    cfg = load_config()
+    classifier = IntentClassifier(adapter_factory=lambda m: get_llm_adapter(m, cfg))
+    results = []
+    for case in load_fixtures():
+        try:
+            classified = asyncio.run(classifier.classify(case["message"]))
+            results.append({"case": case, "predicted": classified.intent})
+        except Exception as exc:
+            results.append({"case": case, "error": str(exc)})
+    json.dump(results, open(out_path, "w"))
+
+if __name__ == "__main__":
+    main()
+```
+
+**After** (`tests/eval/test_chat_intent_ryuu.py` — native ryuu-eval):
+
+```python
+from __future__ import annotations
+import json
+import time
+
+from ryuu_eval import EvalRunner, EvalCase, CaseResult
+from ryuu_eval.scorers import ExactMatch
+from ryuu_eval.fixture_loader import FixtureLoader
+
+from src.config import load_config
+from src.chat.intent_classifier import IntentClassifier
+from src.llm.adapter_factory import get_llm_adapter   # bridge → ryuu
+
+
+class IntentTarget:
+    """EvalTarget wrapping IntentClassifier."""
+
+    def __init__(self, classifier: IntentClassifier) -> None:
+        self._classifier = classifier
+
+    async def run(self, case: EvalCase) -> CaseResult:
+        t0 = time.monotonic()
+        classified = await self._classifier.classify(case.input)
+        return CaseResult(
+            case=case,
+            output=classified.intent,
+            cost_usd=0.0,   # IntentClassifier doesn't track yet — use audit log
+            latency_ms=(time.monotonic() - t0) * 1000,
+        )
+
+
+async def main(out_path: str) -> None:
+    cfg = load_config()
+    classifier = IntentClassifier(adapter_factory=lambda m: get_llm_adapter(m, cfg))
+
+    cases = FixtureLoader().load_jsonl("tests/eval/fixtures/chat_intent.jsonl")
+    # Each fixture: {"case_id": "q1", "input": "show me users", "expected": "crud_matrix"}
+
+    runner = EvalRunner(
+        suite_id="chat_intent",
+        target=IntentTarget(classifier),
+        scorers=[ExactMatch()],
+        budget_usd=0.50,
+    )
+    suite = await runner.run(cases)
+
+    # Persist for /api/eval/results endpoint
+    output = {
+        "suite_id": suite.suite_id,
+        "pass_rate": suite.pass_rate,
+        "total_cost_usd": suite.total_cost_usd,
+        "cases": [
+            {
+                "case_id": c.case.case_id,
+                "input": c.case.input,
+                "expected": c.case.expected,
+                "output": c.output,
+                "passed": c.passed,
+                "scores": [{"id": s.scorer_id, "passed": s.passed} for s in c.scores],
+                "cost_usd": c.cost_usd,
+                "latency_ms": c.latency_ms,
+                "error": c.error,
+            }
+            for c in suite.cases
+        ],
+    }
+    json.dump(output, open(out_path, "w"), indent=2)
+
+
+if __name__ == "__main__":
+    import asyncio, sys
+    asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else "out.json"))
+```
+
+**Backward compatible:** SSE endpoint `/api/eval/run/stream/{suite_id}` vẫn dùng subprocess pattern — chỉ swap script body, output format giữ nguyên cho UI.
+
+### 18.4 Migration — CRUD Matrix Eval
+
+**Before** (`tests/column_crud_matrix_integration/run_all.py`):
+- Loads test fixtures (Java Spring Boot mock data)
+- Runs `CrudMatrixWorker.build_column_matrix_llm()` per case
+- Compares output JSON ops vs golden expectations
+- Computes precision/recall per (entity, column, op) tuple
+
+**After** (`tests/column_crud_matrix_integration/run_all_ryuu.py`):
+
+```python
+from ryuu_eval import EvalRunner, EvalCase, CaseResult
+from ryuu_eval.protocols import Scorer
+from ryuu_eval.models import ScoreResult
+
+
+class CrudMatrixTarget:
+    """EvalTarget running CrudMatrixWorker per fixture."""
+
+    def __init__(self, worker, graph) -> None:
+        self._worker = worker
+        self._graph = graph
+
+    async def run(self, case: EvalCase) -> CaseResult:
+        project_id = case.metadata["project_id"]
+        markdown, artifact_path, structured = await self._worker.build_column_matrix_llm(
+            project_id=project_id,
+            graph=self._graph,
+            # ... params from case ...
+        )
+        return CaseResult(
+            case=case,
+            output=json.dumps(structured),
+            cost_usd=0.0,   # pull from audit log if needed
+        )
+
+
+class CrudPrecisionRecall:
+    """Custom Scorer: precision/recall per CRUD op tuple."""
+
+    scorer_id = "crud_pr"
+
+    async def score(self, case: EvalCase, output: str) -> ScoreResult:
+        actual_ops = set(_extract_op_tuples(json.loads(output)))
+        expected_ops = set(_extract_op_tuples(case.expected))
+        tp = len(actual_ops & expected_ops)
+        precision = tp / len(actual_ops) if actual_ops else 0.0
+        recall = tp / len(expected_ops) if expected_ops else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+        return ScoreResult(
+            scorer_id=self.scorer_id,
+            score=f1,
+            passed=f1 >= 0.8,   # threshold
+            reason=f"P={precision:.2f} R={recall:.2f} F1={f1:.2f}",
+        )
+
+
+async def main(out_path: str, engine: str = "llm") -> None:
+    cfg = load_config()
+    worker = CrudMatrixWorker(adapter_factory=lambda m: get_llm_adapter(m, cfg))
+    graph = GraphQueryService()
+
+    cases = FixtureLoader().load_directory(
+        "tests/column_crud_matrix_integration/datasets/",
+    )
+
+    runner = EvalRunner(
+        suite_id=f"crud_matrix_{engine}",
+        target=CrudMatrixTarget(worker, graph),
+        scorers=[CrudPrecisionRecall()],
+        budget_usd=2.0,
+    )
+    suite = await runner.run(cases)
+    # ... persist same as 18.3 ...
+```
+
+### 18.5 A/B Comparison Pattern
+
+Khi rollout ryuu features (Phase 11.y output_schema, Evaluator wrap, etc.), dùng `ryuu-eval` để so sánh:
+
+```python
+async def ab_compare():
+    cases = FixtureLoader().load_directory("...")
+    target_old = CrudMatrixTarget(legacy_worker, graph)
+    target_new = CrudMatrixTarget(ryuu_evaluator_worker, graph)
+
+    suite_old = await EvalRunner("crud_old", target_old, [CrudPrecisionRecall()]).run(cases)
+    suite_new = await EvalRunner("crud_new", target_new, [CrudPrecisionRecall()]).run(cases)
+
+    print(f"OLD: pass_rate={suite_old.pass_rate:.1%} cost=${suite_old.total_cost_usd:.4f}")
+    print(f"NEW: pass_rate={suite_new.pass_rate:.1%} cost=${suite_new.total_cost_usd:.4f}")
+
+    # Per-case diff
+    for old_c, new_c in zip(suite_old.cases, suite_new.cases, strict=True):
+        if old_c.passed != new_c.passed:
+            print(f"  DIFF {old_c.case.case_id}: old={old_c.passed} new={new_c.passed}")
+```
+
+### 18.6 Renderers (Reports)
+
+`ryuu_eval.renderers` provides built-in output formats:
+
+```python
+from ryuu_eval.renderers import JsonRenderer, MarkdownRenderer, HtmlRenderer
+
+# Export suite results
+JsonRenderer().write(suite, "artifacts/eval/chat_intent.json")
+MarkdownRenderer().write(suite, "artifacts/eval/chat_intent.md")  # for PR comments
+HtmlRenderer().write(suite, "artifacts/eval/chat_intent.html")    # for /api/eval/results UI
+```
+
+Replace custom JSON serialization code in current `run_all.py`.
+
+### 18.7 Migration Order (Eval-Specific)
+
+```
+Week 2 Day 5 (combined với PR 2):
+  - Port chat_intent suite first (smallest, fastest feedback)
+  - Verify SSE endpoint /api/eval/run/stream still works (subprocess unchanged)
+  - Capture A/B baseline với both old + new scripts
+
+Week 3 Day 3-4 (during PR 3):
+  - Port crud_matrix + crud_matrix_llm suites
+  - Wire MarkdownRenderer → PR comment bot
+  - Add HtmlRenderer to /api/eval/results endpoint
+
+Week 4 (post-migration):
+  - Deprecate old run_all.py
+  - Migrate EvalPage React to use richer SuiteResult format (precision/recall breakdown)
+```
+
+### 18.8 Effort + Benefits
+
+| Aspect | Before (subprocess) | After (ryuu-eval) |
+|---|---|---|
+| Per-suite LOC | ~200 lines (custom runner + serializer) | ~80 lines (Target + Scorer + main) |
+| Cost tracking | Manual per script | Built-in `suite.total_cost_usd` |
+| Budget cap | Not implemented | `budget_usd=X` aborts when exceeded |
+| Scorer reuse | Copy code per suite | Import `ExactMatch` / `Composite` / `LLMJudge` |
+| Output formats | Custom JSON only | JSON / Markdown / HTML renderers |
+| A/B comparison | Re-run subprocess twice | Run 2 EvalRunners, diff CaseResult lists |
+| Test integration | pytest + subprocess | pytest + native async (faster CI) |
+| **Total effort** | (custom each suite) | **~4-6h** per suite migration |
+
+### 18.9 Open Questions for Eval
+
+- [ ] Keep subprocess pattern OR switch to in-process for performance?
+- [ ] Custom `CrudPrecisionRecall` Scorer — promote to ryuu-eval as built-in?
+- [ ] Eval cost tracking — use `audit=True` on agents inside Target.run()?
+- [ ] Streaming eval progress events — `EvalRunner.stream()` future API?
+- [ ] Multi-suite parallel run — `ryuu_eval` doesn't have orchestrator yet
+

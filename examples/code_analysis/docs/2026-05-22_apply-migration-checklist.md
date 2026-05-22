@@ -453,6 +453,42 @@ else:
 - [ ] A/B test passes
 - [ ] **Open PR 2** với title: `feat(migration): anti-hallucination — RuleVerifier + Evaluator refine loop`
 
+### 2.5 Port Eval Suites to `ryuu-eval` (Day 5, 4-6h per suite)
+
+> See migration §18 cho details. This sub-step covers chat_intent suite trước
+> để có A/B baseline tool ready khi PR 2 ships.
+
+**File:** `tests/eval/test_chat_intent_ryuu.py` (NEW — paste from §18.3)
+
+**Verification:**
+```bash
+[ ] python tests/eval/test_chat_intent_ryuu.py artifacts/eval/chat_intent_ryuu.json
+[ ] python scripts/compare_eval.py \
+        baseline-intent.json \
+        artifacts/eval/chat_intent_ryuu.json
+    # Expected: ≥ baseline pass_rate, comparable cost
+```
+
+**Wire into existing SSE endpoint** (`src/api/app.py`):
+```python
+# Change _SUITE_SCRIPTS:
+_SUITE_SCRIPTS = {
+    "chat_intent":     "tests/eval/test_chat_intent_ryuu.py",   # ← swap script
+    "crud_matrix":     "tests/column_crud_matrix_integration/run_all.py",
+    "crud_matrix_llm": "tests/column_crud_matrix_integration/run_all.py --engine llm",
+}
+```
+
+SSE endpoint vẫn dùng subprocess pattern — chỉ script body chuyển sang ryuu-eval. UI không cần đổi.
+
+```bash
+[ ] curl -N http://localhost:8000/api/eval/run/stream/chat_intent
+    # Verify event stream still works
+[ ] git commit -m "feat(eval): port chat_intent suite to ryuu-eval"
+```
+
+**Defer to Week 3 Day 3-4:** crud_matrix + crud_matrix_llm suites (covered in PR 3).
+
 ---
 
 ## PR 3 — Scale (Week 3, Day 1-5)
@@ -599,6 +635,51 @@ Add new event type to forward thinking events to client.
 [ ] git commit -m "feat(chat): expose thinking trail via SSE for audit UI"
 ```
 
+### 3.5a Port CRUD Eval Suites to ryuu-eval (Day 3-4, 6-8h)
+
+> See migration §18.4 cho code template. CRUD matrix suite có custom Scorer
+> (`CrudPrecisionRecall`) — port carefully để preserve scoring semantics.
+
+**File:** `tests/column_crud_matrix_integration/run_all_ryuu.py` (NEW)
+
+Copy template from migration §18.4. Adapt fixture loading + scorer threshold
+theo existing eval suite conventions.
+
+**Verification:**
+```bash
+[ ] python tests/column_crud_matrix_integration/run_all_ryuu.py \
+        artifacts/eval/crud_matrix_ryuu.json --engine llm
+[ ] python scripts/compare_eval.py \
+        baseline-crud.json \
+        artifacts/eval/crud_matrix_ryuu.json
+    # Expected: ≥ baseline precision/recall (RuleVerifier blocks bad ops)
+```
+
+**Update SSE endpoint** to use new script:
+```python
+# src/api/app.py
+_SUITE_SCRIPTS = {
+    "chat_intent":     "tests/eval/test_chat_intent_ryuu.py",
+    "crud_matrix":     "tests/column_crud_matrix_integration/run_all_ryuu.py",
+    "crud_matrix_llm": "tests/column_crud_matrix_integration/run_all_ryuu.py --engine llm",
+}
+```
+
+**Add Markdown renderer** cho PR comment bot:
+```python
+# scripts/eval_to_pr_comment.py (NEW)
+from ryuu_eval.renderers import MarkdownRenderer
+import json, sys
+
+suite_json = json.load(open(sys.argv[1]))
+# Reconstruct SuiteResult from JSON (helper utility needed)
+# ... write markdown ...
+```
+
+```bash
+[ ] git commit -m "feat(eval): port crud_matrix suites to ryuu-eval + Markdown renderer"
+```
+
 ### 3.5 Performance Benchmark (Day 5, 4h)
 
 ```bash
@@ -683,12 +764,14 @@ Add new event type to forward thinking events to client.
 | PR 2.1 JPA rules | 2h | _____ | _____ |
 | PR 2.2 Evaluator wrap | 2h | _____ | _____ |
 | PR 2.3 A/B test | 4h | _____ | _____ |
+| PR 2.5 Eval chat_intent → ryuu-eval | 4-6h | _____ | _____ |
 | PR 3.1 Index all | 4h | _____ | _____ |
 | PR 3.2 knowledge= | 3h | _____ | _____ |
 | PR 3.3 adaptive | 30m | _____ | _____ |
 | PR 3.4 thinking trail | 4h | _____ | _____ |
+| PR 3.5a Eval CRUD → ryuu-eval | 6-8h | _____ | _____ |
 | PR 3.5 Benchmark | 4h | _____ | _____ |
-| **Total** | **27-30h** | _____ | _____ |
+| **Total** | **37-44h** | _____ | _____ |
 
 ---
 
@@ -718,6 +801,9 @@ Track unresolved decisions:
 - [ ] `adaptive_compute` tier defaults OK OR need custom per-intent?
 - [ ] Streaming via `Agent.stream()` — port now OR defer post-migration?
 - [ ] Move budget_usd cap to per-user OR per-project?
+- [ ] Eval subprocess pattern — keep OR switch to in-process (`EvalRunner` directly từ FastAPI handler)?
+- [ ] Custom `CrudPrecisionRecall` Scorer — upstream to ryuu-eval package?
+- [ ] EvalPage UI — extend to show `precision/recall` breakdown từ `ScoreResult.reason`?
 
 ---
 
