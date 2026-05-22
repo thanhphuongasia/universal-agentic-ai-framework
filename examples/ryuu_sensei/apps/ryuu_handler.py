@@ -29,7 +29,6 @@ from typing import Any
 
 from ryuu import Agent
 from ryuu_cognitive.context import CompactionTurn, LLMCompactor
-from ryuu_cognitive.recall import RecallPipeline, RecallPipelineBuilder
 from ryuu_knowledge_memory.tools import MemoryToolset
 from ryuu_messaging_core import IncomingMessage, OutgoingMessage, Session, Turn
 from ryuu_storage_core import IKVStore
@@ -125,13 +124,22 @@ class RyuuHandler:
     compaction_provider: Any = None   # ryuu_providers_core.ILLMProvider
     prompt_registry: Any = None        # ryuu_prompts.PromptRegistry
 
-    # Phase 9.0d.1 — pluggable recall pipeline. If None, falls back to
-    # naive memory_backbone.assemble_context() for backward compat.
-    recall_pipeline: RecallPipeline | None = None
-
     history_turns: int = 10        # recent session turns to inject in prompt
     include_forget_tool: bool = False  # opt-in destructive memory tool
     compact_keep_recent: int = 5      # turns preserved verbatim when compacting
+
+    # Phase 9.0d.2 — warm-start pre-injects last N memory observations into
+    # the prompt (no query-specific search). Lets LLM see "what we know about
+    # user" without spending a recall tool call for obvious cases. Set to 0
+    # to disable warm-start entirely (LLM calls recall() when it decides).
+    #
+    # Why no preprocessing pipeline:
+    #   ryuu.Agent runs a ReAct loop with recall/remember tools. The LLM
+    #   naturally decomposes compound queries via parallel tool_use. Adding
+    #   pre-LLM expansion/decomposition stages on top is redundant for
+    #   agent-based handlers. (Pipeline still useful for non-agent / RAG /
+    #   batch / cost-capped use cases — see ryuu_cognitive.recall.)
+    warm_start_top_k: int = 3
 
     # Per-scope state (single-tenant, so usually just "owner" → values)
     settings: dict[str, UserSettings] = field(default_factory=dict)
@@ -151,14 +159,6 @@ class RyuuHandler:
                 backbone=self.memory_backbone,
                 include_forget=self.include_forget_tool,
             )
-            # Default recall pipeline = naive (just retrieval). Consumer can
-            # override with RecallPipelineBuilder.full(...) to add analyzer +
-            # expansion + decomposition + RRF fusion. See main_ryuu.py.
-            if self.recall_pipeline is None:
-                self.recall_pipeline = RecallPipelineBuilder.naive(
-                    backbone=self.memory_backbone,
-                    budget_tokens=_MEMORY_BUDGET_TOKENS,
-                )
         if self.compaction_provider is not None and self.prompt_registry is not None:
             self._compactor = LLMCompactor(
                 provider=self.compaction_provider,
@@ -328,21 +328,26 @@ class RyuuHandler:
             if est_tokens >= settings.compact_threshold_tokens:
                 await self._compact_session_history(scope_key, session)
 
-        # 1. Build prompt with: recall (pipeline) + recent session history + new msg.
-        # Recall pipeline composes IntentFilter → Expansion → Decomposition →
-        # Retrieval → RRF Fusion → Budget. Stages are pluggable via
-        # `RecallPipeline.stages` list — adding a new stage = define a class
-        # implementing IRecallStage and insert into the list.
+        # 1. Build prompt with: warm-start memory + recent session history + new msg.
+        # Warm-start = top-N most recent observations (no query-specific search).
+        # Agent's ReAct loop calls `recall(query)` tool for query-specific lookups.
+        # See Phase 9.0d.2 notes above — ReAct handles decomposition naturally.
         recall_context = ""
-        if self.recall_pipeline is not None:
-            result = await self.recall_pipeline.recall(
-                query=msg.text,
-                scope_key=scope_key,
-            )
-            if result.text and not result.skipped:
-                recall_context = (
-                    f"What I remember about you:\n{result.text}\n\n"
+        if self.memory_backbone is not None and self.warm_start_top_k > 0:
+            try:
+                result = await self.memory_backbone.query(
+                    "",   # empty query = recent items
+                    scope_key=scope_key,
+                    top_k=self.warm_start_top_k,
                 )
+                if result.results:
+                    recall_context = (
+                        "What I remember about you (recent):\n"
+                        + "\n".join(f"  • {r}" for r in result.results)
+                        + "\n\n"
+                    )
+            except Exception:  # noqa: BLE001 — warm-start failure shouldn't break the turn
+                pass
 
         history_lines: list[str] = []
         for turn in session.recent(self.history_turns):

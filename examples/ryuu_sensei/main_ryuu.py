@@ -39,9 +39,6 @@ from ryuu_messaging_core import (
     KVSessionStore,
     SingleTenantResolver,
 )
-from ryuu_cognitive.context import LLMQueryDecomposer, LLMQueryExpander
-from ryuu_cognitive.recall import RecallPipelineBuilder
-from ryuu_intent import LLMIntentAnalyzer
 from ryuu_prompts import make_framework_registry
 from ryuu_storage_jsonl import JsonlCollectionStore
 from ryuu_storage_sqlite import SqliteKVStore
@@ -226,28 +223,17 @@ async def run(use_telegram: bool) -> None:
     else:
         print("[ryuu-super] LLMCompactor disabled (no provider — compaction is no-op)")
 
-    # Phase 9.0d.1 — assemble full recall pipeline if provider+registry available.
-    # Stages: IntentFilter (skip chitchat) → Expansion → Decomposition →
-    # MultiQueryRetrieval → RRFusion → TokenBudget. Build composable.
-    recall_pipeline = None
-    if compaction_provider is not None and prompt_registry is not None:
-        recall_pipeline = RecallPipelineBuilder.full(
-            backbone=memory_backbone,
-            analyzer=LLMIntentAnalyzer(provider=compaction_provider, model="gpt-4o-mini"),
-            expander=LLMQueryExpander(provider=compaction_provider, registry=prompt_registry, num_variants=2),
-            decomposer=LLMQueryDecomposer(provider=compaction_provider, registry=prompt_registry, max_subqueries=3),
-            top_k=5,
-            budget_tokens=1500,
-        )
-        print("[ryuu-super] Full recall pipeline enabled (intent → expand → decompose → retrieve → RRF → budget)")
-    else:
-        print("[ryuu-super] Naive recall fallback (no provider — single-query retrieve)")
+    # Phase 9.0d.2 — Trust ReAct + tools. No preprocessing pipeline.
+    # Agent's ReAct loop calls recall(query) when it decides. Handler
+    # warm-starts with top-3 recent observations as baseline context.
+    # (For non-agent / RAG / batch contexts, use ryuu_cognitive.recall.RecallPipeline.)
+    print("[ryuu-super] ReAct paradigm: no recall preprocessing. LLM drives via tools.")
 
     handler = RyuuHandler(
         memory_backbone=memory_backbone,
         compaction_provider=compaction_provider,
         prompt_registry=prompt_registry,
-        recall_pipeline=recall_pipeline,
+        warm_start_top_k=3,
         state_store=SqliteKVStore(db_path=SUPER_DB_PATH, table="handler_state"),
     )
 

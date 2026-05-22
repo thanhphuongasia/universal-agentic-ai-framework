@@ -5,6 +5,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Phase 9.0d.2: Drop `RecallPipeline` from `RyuuHandler` default
+
+`RyuuHandler` now uses **warm-start** (top-3 recent observations pre-injected) instead of the full recall pipeline (intent → expand → decompose → retrieve → RRF). Rationale:
+
+`ryuu.Agent` runs a **ReAct loop** with `recall`/`remember`/`list_memories` tools (via `MemoryToolset`). The LLM naturally:
+- Decomposes compound queries via parallel `tool_use` (e.g. "list todos AND create flashcards" → 2 tool calls)
+- Retries with paraphrases when first retrieval misses
+- Skips recall for chitchat (it just doesn't call the tool)
+
+Pre-LLM preprocessing (RecallPipeline) was redundant on top of ReAct. Removed it from `RyuuHandler.__post_init__`. Bot now boots:
+
+```
+[ryuu-super] ReAct paradigm: no recall preprocessing. LLM drives via tools.
+```
+
+**Removed from `RyuuHandler`:**
+- `recall_pipeline: RecallPipeline | None` field
+
+**Added:**
+- `warm_start_top_k: int = 3` — top-N recent observations pre-injected. Set to 0 to disable warm-start entirely (LLM calls recall when it decides).
+
+**RecallPipeline itself stays in `ryuu_cognitive.recall`** — useful for non-agent / RAG / batch / cost-capped use cases where LLM cannot iterate. Just not default for agent handlers.
+
+### Docs — Quickstart updated with "when to use RecallPipeline"
+
+`docs/guides/quickstart/README.md` adds a new section before the Cookbook:
+- Decision tree: ReAct agent → skip pipeline; non-iterating → use pipeline
+- Why ReAct handles decomposition naturally
+- Concrete code for both paradigms (agent + tools vs RAG single-shot)
+- Use-case table (when each paradigm fits)
+
 ### Added — Phase 9.0d.1: `ryuu_cognitive.recall` — composable memory retrieval
 
 Middleware/chain-style recall pipeline. Framework owns orchestration; consumer just plugs stages into a list. Adding new stages = define class implementing `IRecallStage` + insert into list. **Zero framework changes** when extending.

@@ -290,6 +290,113 @@ print(f"Best prompt: {best.best_prompt} (score {best.best_score:.2f})")
 
 ---
 
+## 🎯 RecallPipeline — khi nào dùng, khi nào skip
+
+`ryuu_cognitive.recall.RecallPipeline` orchestrate preprocessing trước LLM (intent filter → expansion → decomposition → multi-query retrieval → RRF fusion → token budget). Nhưng **không phải mọi use case đều cần.**
+
+### Decision tree
+
+```
+LLM có chạy ReAct loop với memory/recall tools không?
+│
+├── YES (Agent factory, tool_use enabled)
+│   │
+│   └─> SKIP RecallPipeline.
+│       LLM tự decompose compound queries via parallel tool_use.
+│       LLM tự retry với paraphrase khi miss.
+│       Chỉ cần warm-start (top-N recent observations pre-injected).
+│
+└── NO (single-shot LLM call, no tools, no iteration)
+    │
+    └─> USE RecallPipeline.
+        Preprocessing là cách DUY NHẤT để cải thiện recall quality.
+```
+
+### Lý do
+
+ReAct pattern (`Agent()` factory mặc định) — LLM iterate:
+```
+User: "list todos and create flashcards"
+   ↓
+LLM Thought: "2 việc — gọi recall 2 lần"
+LLM Action: recall("todos")          ← decomposition tự nhiên
+   ↓
+LLM Action: recall("notes for flashcards")
+   ↓
+LLM synthesizes → answer
+```
+
+Pre-LLM decomposition lúc này = redundant. Cùng kết quả, thêm chi phí.
+
+### Khi nào VẪN cần RecallPipeline?
+
+| Use case | Lý do |
+|----------|-------|
+| **RAG-only** (single LLM call, no tools, no iteration) | Không có cơ hội iterate → preprocessing là cách duy nhất |
+| **`Agent(max_iterations=1)`** (cost cap) | Bị khoá ở 1 turn → cần pre-fetch context đầy đủ |
+| **Search-as-service** (expose retrieval API, không LLM) | Pipeline = the product itself |
+| **Batch processing** (offline scoring, không model conv) | Không có ReAct loop |
+| **Streaming completion** không có function calling | Same — không tool_use → preprocess |
+
+### Code: 2 paradigms
+
+**Paradigm 1 — ReAct agent (mặc định cho hầu hết products):**
+
+```python
+# RyuuHandler / TodoHandler / SuperBot — KHÔNG cần RecallPipeline
+from ryuu_knowledge_memory import MemoryBackbone, MemoryToolset
+from ryuu import Agent
+
+toolset = MemoryToolset(backbone=memory_backbone)
+agent = Agent(
+    model="gpt-4o-mini",
+    tools=toolset.tools,    # recall, remember, list_memories
+    max_iterations=4,        # ReAct loop iterates
+)
+
+async def handle(msg, session):
+    # Warm-start: top-3 recent observations (cheap, no LLM call)
+    recent = await memory_backbone.query("", scope_key=scope, top_k=3)
+    warm = "What I know:\n" + "\n".join(f"- {r}" for r in recent.results)
+    
+    async with toolset.bind(scope_key=scope):
+        result = await agent.run(f"{warm}\n\nUser: {msg.text}")
+    # Agent's ReAct loop calls recall() N times as needed
+```
+
+**Paradigm 2 — RAG / non-iterating (cần preprocessing):**
+
+```python
+# Search service / batch processor — DÙNG RecallPipeline
+from ryuu_cognitive.recall import RecallPipelineBuilder
+from ryuu_cognitive.context import LLMQueryExpander
+from ryuu_intent import LLMIntentAnalyzer
+
+pipeline = RecallPipelineBuilder.full(
+    backbone=memory_backbone,
+    analyzer=LLMIntentAnalyzer(provider=...),
+    expander=LLMQueryExpander(provider=..., registry=...),
+    decomposer=LLMQueryDecomposer(provider=..., registry=...),
+)
+
+# Each request: full preprocessing → enriched context → 1 LLM call
+async def handle_query(query):
+    result = await pipeline.recall(query=query, scope_key="...")
+    # Use result.text in single LLM call (no agent, no iteration)
+    return await llm.complete(f"Context:\n{result.text}\n\nQuery: {query}")
+```
+
+### Tóm lại
+
+```
+✅ Agent + tools + ReAct        → skip RecallPipeline, warm-start đủ
+✅ Single LLM call, RAG          → RecallPipeline.full()
+✅ Search API (no LLM)            → RecallPipeline custom stages
+✅ Batch / offline scoring        → RecallPipeline + sequential
+```
+
+---
+
 ## 🍳 Cookbook — Patterns mới (Phase 8.x + 9.x primitives)
 
 ### Override prompts WITHOUT redeploying code (Phase 8.9.E)
