@@ -12,7 +12,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== providers-isolation: installing ryuu-providers (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-core" -q
-pip install -e "$REPO_ROOT/packages/ryuu-providers" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/providers/ryuu-providers" -q
 
 echo "=== providers-isolation: verifying ryuu is NOT installed ==="
 python3 -c "

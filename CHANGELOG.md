@@ -5,6 +5,257 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Phase 8.13–8.19: Standalone package extractions (5 phases)
+
+Continuing Phase 8.x reorganization. **All old imports preserved via shims.**
+
+#### Phase 8.13 — Split `ryuu-observability` into core + OTel adapter
+
+| New package | Contents | External deps |
+|---|---|---|
+| `ryuu-observability-core` | `CostTracker`, `AuditLogger` (JSONL hash chain), `RateLimiter` — in-process primitives | none |
+| `ryuu-observability-otel` | `Tracer`, `setup_tracing` (OTLP/Jaeger/Tempo) | `opentelemetry-api>=1.20`, `opentelemetry-sdk>=1.20` |
+
+`ryuu-observability` becomes back-compat metapackage with `[otel]` extra.
+
+```python
+# Old (still works):
+from ryuu_observability import CostTracker, Tracer
+
+# New (no OTel pull-in for in-process-only use):
+from ryuu_observability_core import CostTracker
+from ryuu_observability_otel import Tracer    # only if needed
+```
+
+#### Phase 8.14 — `LLMIntentAnalyzer` moved to `ryuu-intent`
+
+`ryuu-intent` now owns the FULL intent classification surface (difficulty + analyzer). Symmetric with prompt YAMLs co-located:
+
+| Moved from | To |
+|---|---|
+| `ryuu_runtime.llm_analyzer.LLMIntentAnalyzer` | `ryuu_intent.llm_analyzer.LLMIntentAnalyzer` |
+| `ryuu_runtime/prompts/intent/v1.yaml` | `ryuu_intent/prompts/intent/v1.yaml` |
+
+Shim at `ryuu_runtime.llm_analyzer` re-exports — old imports keep working. `ryuu-intent` now depends on `ryuu-providers-core`.
+
+#### Phase 8.15 — Split `ryuu-eval` into core + scorers
+
+| New package | Contents |
+|---|---|
+| `ryuu-eval-core` | `EvalRunner`, `EvalCase`, `Scorer` Protocol, `EvalTarget` Protocol, `FixtureLoader`, renderers |
+| `ryuu-eval-scorers` | Default scorers: `ExactMatch`, `Constraint`, `Threshold`, `Composite`, `LLMJudge` |
+
+`ryuu-eval` becomes back-compat metapackage depending on both. Lets product teams ship custom scorers without bundling framework defaults.
+
+#### Phase 8.17 — DEFERRED
+
+`PromptOptimizer` extraction was attempted but reverted. Reason: tightly coupled to umbrella's `ryuu.factory.Agent` (mutates internal `_FactoryLLMAgent.system_prompt`). Requires refactor to Protocol-based agent before clean extraction. Tracked for future work.
+
+#### Phase 8.18 — Extract `ryuu/hooks.py` → `ryuu-hooks`
+
+Hook system (PRE_LLM, POST_LLM, ON_ERROR, …) — 272 LOC, clean deps (only `ryuu-core` + `ryuu-workflow`). Now standalone for product teams that want lifecycle injection without pulling the umbrella.
+
+```python
+# Old (shim works):
+from ryuu.hooks import HookEvent, HookRegistry
+
+# New:
+from ryuu_hooks import HookEvent, HookRegistry
+```
+
+#### Phase 8.19 — Factory audit (no changes)
+
+`ryuu/factory/` audited for cleanup opportunities. Verdict: **stays in umbrella as-is.** It's the public convenience facade composing `ryuu-execution`, `ryuu-providers-core`, `ryuu-hooks`, `ryuu-prompts`. Splitting would force users into lower-level APIs without ergonomic gain. No dead code, no TODOs, no smell.
+
+---
+
+### Changed — Phase 8.12: Split `ryuu-providers` into core + adapter packages
+
+`ryuu-providers` split into 3 sub-packages so users only install the SDK they need. **All old imports continue to work via back-compat shims** — no breaking change.
+
+**New packages:**
+
+| Package | Contents | External deps |
+|---------|----------|---------------|
+| `ryuu-providers-core` | `ILLMProvider` Protocol, value types (`CompletionRequest`, `Message`, `Response`, `TokenUsage`, `Embedding`), pricing (`calculate_usd`, `PRICING`, `pricing.yaml`), middleware (`CircuitBreaker`, `ModelRouter`, `ProviderFallbackChain`) | `pyyaml` only |
+| `ryuu-providers-openai` | `OpenAIProvider` adapter | `ryuu-providers-core` + `openai>=1.0` |
+| `ryuu-providers-anthropic` | `AnthropicProvider` adapter | `ryuu-providers-core` + `anthropic>=0.30` |
+
+**Original `ryuu-providers`** becomes a thin back-compat metapackage:
+- `pyproject.toml` depends on `ryuu-providers-core`; extras `[openai]`, `[anthropic]`, `[all]` pull in adapter sub-packages
+- Source files are now shims re-exporting from the new packages
+
+**Install patterns:**
+
+```bash
+# Old (still works):
+pip install 'ryuu-providers[openai]'         # → core + openai adapter
+
+# New (recommended for fine-grained):
+pip install ryuu-providers-openai            # → just OpenAI + core; never pulls anthropic
+pip install ryuu-providers-anthropic         # → just Anthropic + core
+pip install ryuu-providers-core              # → only Protocols, types, pricing, middleware
+```
+
+**Import patterns:**
+
+```python
+# Old (back-compat shims — keep working):
+from ryuu_providers.llm import ILLMProvider, CompletionRequest
+from ryuu_providers.adapters.openai import OpenAIProvider
+from ryuu_providers.adapters.anthropic import AnthropicProvider
+from ryuu_providers._pricing import calculate_usd
+from ryuu_providers.router import ModelRouter
+
+# New (preferred — direct, no shim):
+from ryuu_providers_core import ILLMProvider, CompletionRequest, ModelRouter, calculate_usd
+from ryuu_providers_openai import OpenAIProvider
+from ryuu_providers_anthropic import AnthropicProvider
+```
+
+Protocol identity is preserved (`ryuu_providers.llm.ILLMProvider is ryuu_providers_core.llm.ILLMProvider`) — code that does `isinstance(p, ILLMProvider)` works identically across both import paths.
+
+### Changed — Phase 8.11: Move providers + observability into `infrastructure/`
+
+Continuing Phase 8.10 architecture cleanup. **Import paths unchanged** — no code or back-compat shims required, only filesystem layout.
+
+| From | To |
+|------|-----|
+| `packages/ryuu-providers/` | `packages/infrastructure/providers/ryuu-providers/` |
+| `packages/ryuu-observability/` | `packages/infrastructure/observability/ryuu-observability/` |
+
+**Top-level `packages/` after Phase 8.11 contains ONLY Domain + Use Case layers (11 packages):**
+
+```
+packages/
+├── ryuu-core/                       Domain — pure types
+├── ryuu-workflow/                   Use Case — workflow engine
+├── ryuu-guardrail/                  Use Case — policy
+├── ryuu-cognitive/                  Use Cases — strategies, verifiers, context
+├── ryuu-execution/                  Use Case — agent + tool registry
+├── ryuu-knowledge-base/             Use Case — IKnowledgeBackbone Protocol
+├── ryuu-runtime/                    Use Case — orchestration
+├── ryuu-reasoning/                  Use Case — formal verifiers
+├── ryuu-intent/                     Use Case — difficulty classification
+├── ryuu-prompts/                    Use Case — versioned prompt management
+├── ryuu-eval/                       Dev tools
+└── infrastructure/                  Adapters to external systems
+    ├── providers/                   LLM API adapters (openai, anthropic, fake)
+    ├── observability/               cost/audit/trace exporters
+    ├── messaging/                   channel transport (telegram, cli)
+    ├── storage/                     KV/Collection backends (sqlite, jsonl, memory)
+    └── knowledge-impls/             concrete memory/graph/rag backbones
+```
+
+**Files updated:** `scripts/install-dev.sh`, 6 isolation scripts (cognitive, runtime, providers, eval, execution, observability), `.github/workflows/ci.yml` (13 path refs).
+
+### Changed — Phase 8.10: Clean Architecture folder reorganization
+
+7 packages moved into `packages/infrastructure/` to match Clean Architecture vertical slicing. **Import paths unchanged** — `from ryuu_knowledge_memory import …` etc. continue to work. Only the filesystem layout changed.
+
+**Folder moves:**
+
+| From | To |
+|------|-----|
+| `packages/messaging/ryuu-messaging-{core,cli,telegram}/` | `packages/infrastructure/messaging/ryuu-messaging-{core,cli,telegram}/` |
+| `packages/ryuu-knowledge-memory/` | `packages/infrastructure/knowledge-impls/ryuu-knowledge-memory/` |
+| `packages/ryuu-knowledge-graph/` | `packages/infrastructure/knowledge-impls/ryuu-knowledge-graph/` |
+| `packages/ryuu-knowledge-rag/` | `packages/infrastructure/knowledge-impls/ryuu-knowledge-rag/` |
+| `packages/ryuu-knowledge/` (hybrid) | `packages/infrastructure/knowledge-impls/ryuu-knowledge/` |
+
+**Top-level `packages/` after Phase 8.10 contains only Domain + Use Case layers:**
+
+```
+packages/
+├── ryuu-core/                       Domain — pure types
+├── ryuu-workflow/                   Use Case — workflow engine
+├── ryuu-providers/                  (LLM provider — TBD move in Phase 8.11)
+├── ryuu-observability/              (cost/audit/trace — TBD move in Phase 8.11)
+├── ryuu-guardrail/                  Use Case — policy
+├── ryuu-cognitive/                  Use Cases — strategies, verifiers, context
+├── ryuu-execution/                  Use Case — agent + tool registry
+├── ryuu-knowledge-base/             Use Case — IKnowledgeBackbone Protocol
+├── ryuu-runtime/                    Use Case — orchestration
+├── ryuu-reasoning/                  Use Case — formal verifiers
+├── ryuu-intent/                     Use Case — difficulty classification
+├── ryuu-prompts/                    Use Case — versioned prompt management
+├── ryuu-eval/                       Dev tools
+└── infrastructure/                  Adapters to external systems
+    ├── messaging/                   Channel transport (telegram, cli, slack, …)
+    ├── storage/                     KV/Collection backends (sqlite, jsonl, memory, …)
+    └── knowledge-impls/             Concrete memory/graph/rag backbones
+```
+
+**CI workflow + isolation scripts updated** — `.github/workflows/ci.yml` and `scripts/test-knowledge-isolation.sh` reference new paths.
+
+**No back-compat shims required** — packages preserve their distribution names (`ryuu-knowledge-memory`, `ryuu-messaging-telegram`, etc.) and import paths (`from ryuu_knowledge_memory import …`).
+
+### Added — Phase 8.9.E: `ryuu-prompts` + `ryuu-intent` standalone packages
+
+Two new standalone packages extracted from the umbrella `ryuu/` namespace.
+Standalone packages can now consume prompt management + difficulty
+classification without depending on the umbrella facade.
+
+**`ryuu-prompts`** (Tier 2.5 — depends on `ryuu-providers`):
+- `PromptRegistry` (moved from `ryuu/prompts/registry.py`)
+- `PromptConfig`, `PromptTemplate`, `ToolDefinition` (moved from `ryuu/prompts/models.py`)
+- **NEW:** Multi-root layered overlay — `PromptRegistry(prompts_roots=[user_dir, default_dir])`. First match wins.
+- **NEW:** `make_framework_registry()` factory auto-discovers all installed `ryuu-*` package prompts.
+- **NEW:** `package_default_root(pkg_name)` helper.
+
+**`ryuu-intent`** (Tier 1 — zero deps):
+- `Difficulty`, `normalize_difficulty()`, `DEFAULT_PROMPT` (moved from `ryuu/_difficulty_classifier.py`).
+- Ships YAML at `ryuu_intent/prompts/difficulty/v1.yaml`.
+
+### Changed — Inline prompts externalized to per-package YAML
+
+6 inline `*_PROMPT` constants converted to YAML files alongside owning packages, loaded via `PromptRegistry`. Editing YAML now takes effect on next process start — no code redeploy.
+
+| Was in | YAML now lives at |
+|--------|-------------------|
+| `ryuu_cognitive/context/compaction.py` (`DEFAULT_COMPACT_PROMPT`) | `ryuu_cognitive/prompts/compaction/v1.yaml` |
+| `ryuu_cognitive/context/query_expansion.py` (`DEFAULT_EXPAND_PROMPT`) | `ryuu_cognitive/prompts/query_expansion/v1.yaml` |
+| `ryuu_cognitive/context/query_decomposition.py` (`DEFAULT_DECOMPOSE_PROMPT`) | `ryuu_cognitive/prompts/query_decomposition/v1.yaml` |
+| `ryuu_cognitive/verifiers/llm_judge.py` (`_JUDGE_PROMPT`) | `ryuu_cognitive/prompts/judge/v1.yaml` |
+| `ryuu_runtime/llm_analyzer.py` (`INTENT_SYSTEM_PROMPT`) | `ryuu_runtime/prompts/intent/v1.yaml` |
+| `ryuu/_difficulty_classifier.py` (`DEFAULT_PROMPT`) | `ryuu_intent/prompts/difficulty/v1.yaml` |
+
+### Changed — context primitive API (breaking, with shims)
+
+`LLMCompactor` / `LLMQueryExpander` / `LLMQueryDecomposer` now take `ILLMProvider + PromptRegistry` instead of a raw `LLMCallable`:
+
+```python
+# Before (Phase 8.9 — removed):
+LLMCompactor(llm=my_callable_fn, prompt_template="...")
+
+# After (Phase 8.9.E):
+from ryuu_prompts import make_framework_registry
+from ryuu_providers.adapters.openai import OpenAIProvider
+
+registry = make_framework_registry()
+provider = OpenAIProvider(api_key=...)
+LLMCompactor(provider=provider, registry=registry)
+```
+
+Non-LLM fallbacks (`SynonymExpander`, `PatternQueryDecomposer`) unchanged.
+
+### Fixed — `TodoHandler.reset_scope` (sample) didn't persist clear
+
+`/clear` left stale stats in SQLite — a restart between `/clear` and the next message would resurrect old stats. `reset_scope` is now async, evicts the load-once cache, and writes the blank state through.
+
+### Backward compatibility
+
+All old imports continue to work via shims:
+
+```python
+from ryuu.prompts import PromptRegistry           # → ryuu_prompts (works)
+from ryuu.prompts.registry import PromptRegistry  # → ryuu_prompts.registry (works)
+from ryuu.prompts.models import PromptConfig      # → ryuu_prompts.models (works)
+from ryuu._difficulty_classifier import normalize_difficulty  # → ryuu_intent (works)
+```
+
+New code should prefer `from ryuu_prompts import ...` and `from ryuu_intent import ...`.
+
 ## [0.3.0a17] - 2026-05-22
 
 ### Added — Phase 11.z: `NeighborGraphBackbone` in `ryuu-knowledge-graph`

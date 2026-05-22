@@ -1,0 +1,16 @@
+version: "1.0"
+description: "Cheap difficulty classifier — single-token output for AdaptiveStrategy tier dispatch"
+model: "gpt-4o-mini"
+temperature: 0.0
+max_tokens: 5
+
+prompts:
+  classify:
+    system: |
+      Classify query difficulty. Output ONLY one word: trivial|medium|hard.
+        trivial = single-fact lookup, simple greeting
+        medium  = 2-3 step reasoning, definition + example
+        hard    = multi-step analysis, planning, complex synthesis
+    user: "{query}"
+
+tools: []

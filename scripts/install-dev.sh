@@ -25,30 +25,48 @@ ORDER=(
 
     # Tier 2 — depend only on ryuu-core
     "ryuu-workflow"
-    "ryuu-providers"
-    "ryuu-observability"
+    "ryuu-hooks"                                          # Phase 8.18 — extracted
+    "infrastructure/providers/ryuu-providers-core"        # Phase 8.12
+    "infrastructure/providers/ryuu-providers-openai"      # Phase 8.12
+    "infrastructure/providers/ryuu-providers-anthropic"   # Phase 8.12
+    "infrastructure/providers/ryuu-providers"             # back-compat metapackage
+    "ryuu-intent"                                         # Phase 8.14 — now deps providers-core (LLMIntentAnalyzer)
+    "infrastructure/observability/ryuu-observability-core" # Phase 8.13
+    "infrastructure/observability/ryuu-observability-otel" # Phase 8.13
+    "infrastructure/observability/ryuu-observability"      # back-compat metapackage
+    "ryuu-eval-core"                                      # Phase 8.15
+    "ryuu-eval-scorers"                                   # Phase 8.15
     "ryuu-guardrail"
     "ryuu-knowledge-base"
+
+    # Tier 2.5 — prompt management (Phase 8.9.E — depends on providers)
+    "ryuu-prompts"
 
     # Tier 3 — depend on tier 1+2
     "ryuu-cognitive"
     "ryuu-execution"
-    "ryuu-knowledge-memory"
-    "ryuu-knowledge-graph"
+    "infrastructure/knowledge-impls/ryuu-knowledge-memory"
+    "infrastructure/knowledge-impls/ryuu-knowledge-graph"
     "ryuu-eval"
 
     # Tier 4 — depend on tier 3
-    "ryuu-knowledge"
-    "ryuu-knowledge-rag"   # Phase 11 — RAG pipeline (chunker + vector store + retriever)
+    "infrastructure/knowledge-impls/ryuu-knowledge"
+    "infrastructure/knowledge-impls/ryuu-knowledge-rag"   # Phase 11 — RAG pipeline
     "ryuu-reasoning"       # Phase 14.7 — formal verifiers (RuleVerifier + optional Z3Verifier)
 
     # Tier 5 — runtime facade
     "ryuu-runtime"
 
     # Tier 6 — messaging layer (Phase 8.8 — channel-agnostic chat primitives)
-    "messaging/ryuu-messaging-core"
-    "messaging/ryuu-messaging-cli"
-    "messaging/ryuu-messaging-telegram"
+    "infrastructure/messaging/ryuu-messaging-core"
+    "infrastructure/messaging/ryuu-messaging-cli"
+    "infrastructure/messaging/ryuu-messaging-telegram"
+
+    # Tier 7 — storage primitives (Phase 8.9 — protocol + backends)
+    "infrastructure/storage/ryuu-storage-core"
+    "infrastructure/storage/ryuu-storage-memory"
+    "infrastructure/storage/ryuu-storage-sqlite"
+    "infrastructure/storage/ryuu-storage-jsonl"
 )
 
 for pkg in "${ORDER[@]}"; do

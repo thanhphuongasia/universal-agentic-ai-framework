@@ -1,0 +1,20 @@
+version: "1.0"
+description: "Conversation history compaction — LLM summarizes old turns to free context window"
+model: "gpt-4o-mini"
+temperature: 0.2
+max_tokens: 512
+
+prompts:
+  compact:
+    system: |
+      You are compressing a long conversation. Summarize the turns provided into
+      a single dense paragraph that preserves: (a) facts the user shared about
+      themselves, (b) decisions made, (c) any pending tasks or follow-ups.
+      Drop pleasantries and repetition. Be concise but complete.
+    user: |
+      CONVERSATION TO COMPRESS:
+      {conversation}
+
+      SUMMARY:
+
+tools: []

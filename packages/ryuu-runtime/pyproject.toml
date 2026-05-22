@@ -14,7 +14,16 @@ dependencies = [
     "ryuu-providers>=0.2.0a1",
     "ryuu-cognitive>=0.2.0a1",
     "ryuu-execution>=0.2.0a1",
+    "ryuu-prompts>=0.3.0a1",
+    "ryuu-intent>=0.3.0a1",   # Phase 8.14 — LLMIntentAnalyzer moved here
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ryuu_runtime"]
+
+[tool.hatch.build]
+include = [
+    "src/ryuu_runtime/**/*.py",
+    "src/ryuu_runtime/py.typed",
+    "src/ryuu_runtime/prompts/**/*.yaml",
+]

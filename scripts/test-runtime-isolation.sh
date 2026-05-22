@@ -12,7 +12,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== runtime-isolation: installing ryuu-runtime (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-core" -q
-pip install -e "$REPO_ROOT/packages/ryuu-providers" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/providers/ryuu-providers" -q
 pip install -e "$REPO_ROOT/packages/ryuu-cognitive" -q
 pip install -e "$REPO_ROOT/packages/ryuu-execution" -q
 pip install -e "$REPO_ROOT/packages/ryuu-runtime" -q

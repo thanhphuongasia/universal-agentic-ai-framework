@@ -25,27 +25,27 @@ jobs:
         run: |
           pip install -e packages/ryuu-core
           pip install -e packages/ryuu-workflow
-          pip install -e packages/ryuu-providers
-          pip install -e packages/ryuu-observability
+          pip install -e packages/infrastructure/providers/ryuu-providers
+          pip install -e packages/infrastructure/observability/ryuu-observability
           pip install -e packages/ryuu-cognitive
           pip install -e packages/ryuu-execution
           pip install -e packages/ryuu-runtime
           pip install -e packages/ryuu-knowledge-base
-          pip install -e packages/ryuu-knowledge-memory
-          pip install -e packages/ryuu-knowledge-graph
-          pip install -e packages/ryuu-knowledge
+          pip install -e packages/infrastructure/knowledge-impls/ryuu-knowledge-memory
+          pip install -e packages/infrastructure/knowledge-impls/ryuu-knowledge-graph
+          pip install -e packages/infrastructure/knowledge-impls/ryuu-knowledge
           pip install -e packages/ryuu-guardrail
           pip install -e packages/ryuu-eval
           pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check ryuu/ packages/ryuu-core/src/ packages/ryuu-workflow/src/ packages/ryuu-providers/src/ packages/ryuu-observability/src/ packages/ryuu-cognitive/src/ packages/ryuu-execution/src/ packages/ryuu-runtime/src/ packages/ryuu-knowledge-base/src/ packages/ryuu-knowledge-memory/src/ packages/ryuu-knowledge-graph/src/ packages/ryuu-knowledge/src/ packages/ryuu-guardrail/src/ packages/ryuu-eval/src/ tests/
+        run: ruff check ryuu/ packages/ryuu-core/src/ packages/ryuu-workflow/src/ packages/infrastructure/providers/ryuu-providers/src/ packages/infrastructure/observability/ryuu-observability/src/ packages/ryuu-cognitive/src/ packages/ryuu-execution/src/ packages/ryuu-runtime/src/ packages/ryuu-knowledge-base/src/ packages/infrastructure/knowledge-impls/ryuu-knowledge-memory/src/ packages/infrastructure/knowledge-impls/ryuu-knowledge-graph/src/ packages/infrastructure/knowledge-impls/ryuu-knowledge/src/ packages/ryuu-guardrail/src/ packages/ryuu-eval/src/ tests/
 
       - name: Type check
-        run: mypy ryuu/ packages/ryuu-core/src/ packages/ryuu-workflow/src/ packages/ryuu-providers/src/ packages/ryuu-observability/src/ packages/ryuu-cognitive/src/ packages/ryuu-execution/src/ packages/ryuu-runtime/src/ packages/ryuu-knowledge-base/src/ packages/ryuu-knowledge-memory/src/ packages/ryuu-knowledge-graph/src/ packages/ryuu-knowledge/src/ packages/ryuu-guardrail/src/ packages/ryuu-eval/src/
+        run: mypy ryuu/ packages/ryuu-core/src/ packages/ryuu-workflow/src/ packages/infrastructure/providers/ryuu-providers/src/ packages/infrastructure/observability/ryuu-observability/src/ packages/ryuu-cognitive/src/ packages/ryuu-execution/src/ packages/ryuu-runtime/src/ packages/ryuu-knowledge-base/src/ packages/infrastructure/knowledge-impls/ryuu-knowledge-memory/src/ packages/infrastructure/knowledge-impls/ryuu-knowledge-graph/src/ packages/infrastructure/knowledge-impls/ryuu-knowledge/src/ packages/ryuu-guardrail/src/ packages/ryuu-eval/src/
 
       - name: Test with coverage
-        run: pytest --cov=ryuu --cov=packages/ryuu-workflow/src --cov=packages/ryuu-providers/src --cov=packages/ryuu-observability/src --cov=packages/ryuu-cognitive/src --cov=packages/ryuu-execution/src --cov=packages/ryuu-runtime/src --cov=packages/ryuu-knowledge-base/src --cov=packages/ryuu-knowledge-memory/src --cov=packages/ryuu-knowledge-graph/src --cov=packages/ryuu-knowledge/src --cov=packages/ryuu-guardrail/src --cov=packages/ryuu-eval/src --cov-report=xml --cov-fail-under=85
+        run: pytest --cov=ryuu --cov=packages/ryuu-workflow/src --cov=packages/infrastructure/providers/ryuu-providers/src --cov=packages/infrastructure/observability/ryuu-observability/src --cov=packages/ryuu-cognitive/src --cov=packages/ryuu-execution/src --cov=packages/ryuu-runtime/src --cov=packages/ryuu-knowledge-base/src --cov=packages/infrastructure/knowledge-impls/ryuu-knowledge-memory/src --cov=packages/infrastructure/knowledge-impls/ryuu-knowledge-graph/src --cov=packages/infrastructure/knowledge-impls/ryuu-knowledge/src --cov=packages/ryuu-guardrail/src --cov=packages/ryuu-eval/src --cov-report=xml --cov-fail-under=85
 
       - name: Build ryuu wheel
         run: python -m build
@@ -57,10 +57,10 @@ jobs:
         run: python -m build packages/ryuu-workflow
 
       - name: Build ryuu-providers wheel
-        run: python -m build packages/ryuu-providers
+        run: python -m build packages/infrastructure/providers/ryuu-providers
 
       - name: Build ryuu-observability wheel
-        run: python -m build packages/ryuu-observability
+        run: python -m build packages/infrastructure/observability/ryuu-observability
 
       - name: Build ryuu-cognitive wheel
         run: python -m build packages/ryuu-cognitive
@@ -75,13 +75,13 @@ jobs:
         run: python -m build packages/ryuu-knowledge-base
 
       - name: Build ryuu-knowledge-memory wheel
-        run: python -m build packages/ryuu-knowledge-memory
+        run: python -m build packages/infrastructure/knowledge-impls/ryuu-knowledge-memory
 
       - name: Build ryuu-knowledge-graph wheel
-        run: python -m build packages/ryuu-knowledge-graph
+        run: python -m build packages/infrastructure/knowledge-impls/ryuu-knowledge-graph
 
       - name: Build ryuu-knowledge wheel
-        run: python -m build packages/ryuu-knowledge
+        run: python -m build packages/infrastructure/knowledge-impls/ryuu-knowledge
 
       - name: Build ryuu-guardrail wheel
         run: python -m build packages/ryuu-guardrail
@@ -142,7 +142,7 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-core
-          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/infrastructure/providers/ryuu-providers
 
       - name: Run providers isolation test
         run: bash scripts/test-providers-isolation.sh
@@ -162,7 +162,7 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-core
-          python -m build --wheel packages/ryuu-observability
+          python -m build --wheel packages/infrastructure/observability/ryuu-observability
 
       - name: Run observability isolation test
         run: bash scripts/test-observability-isolation.sh
@@ -182,7 +182,7 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-core
-          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/infrastructure/providers/ryuu-providers
           python -m build --wheel packages/ryuu-cognitive
 
       - name: Run cognitive isolation test
@@ -203,7 +203,7 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-core
-          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/infrastructure/providers/ryuu-providers
           python -m build --wheel packages/ryuu-execution
 
       - name: Run execution isolation test
@@ -224,7 +224,7 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-core
-          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/infrastructure/providers/ryuu-providers
           python -m build --wheel packages/ryuu-cognitive
           python -m build --wheel packages/ryuu-execution
           python -m build --wheel packages/ryuu-runtime
@@ -247,9 +247,9 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-knowledge-base
-          python -m build --wheel packages/ryuu-knowledge-memory
-          python -m build --wheel packages/ryuu-knowledge-graph
-          python -m build --wheel packages/ryuu-knowledge
+          python -m build --wheel packages/infrastructure/knowledge-impls/ryuu-knowledge-memory
+          python -m build --wheel packages/infrastructure/knowledge-impls/ryuu-knowledge-graph
+          python -m build --wheel packages/infrastructure/knowledge-impls/ryuu-knowledge
 
       - name: Run knowledge isolation test
         run: bash scripts/test-knowledge-isolation.sh
@@ -289,7 +289,7 @@ jobs:
         run: |
           pip install build
           python -m build --wheel packages/ryuu-core
-          python -m build --wheel packages/ryuu-providers
+          python -m build --wheel packages/infrastructure/providers/ryuu-providers
           python -m build --wheel packages/ryuu-eval
 
       - name: Run eval isolation test

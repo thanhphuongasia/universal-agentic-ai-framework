@@ -12,7 +12,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== eval-isolation: installing ryuu-eval (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-core" -q
-pip install -e "$REPO_ROOT/packages/ryuu-providers" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/providers/ryuu-providers" -q
 pip install -e "$REPO_ROOT/packages/ryuu-eval" -q
 
 echo "=== eval-isolation: verifying ryuu is NOT installed ==="

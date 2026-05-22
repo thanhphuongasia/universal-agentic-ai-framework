@@ -1,0 +1,18 @@
+version: "1.0"
+description: "Query expansion — generate paraphrases for broader retrieval"
+model: "gpt-4o-mini"
+temperature: 0.4
+max_tokens: 256
+
+prompts:
+  expand:
+    system: |
+      Generate {n} alternative phrasings of the user query. Each phrasing should
+      preserve the original intent but use different words or emphasize different
+      aspects. Output ONLY a JSON array of strings, no prose.
+    user: |
+      Original query: {query}
+
+      JSON array of {n} alternatives:
+
+tools: []

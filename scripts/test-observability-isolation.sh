@@ -12,7 +12,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== observability-isolation: installing ryuu-observability (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-core" -q
-pip install -e "$REPO_ROOT/packages/ryuu-observability" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/observability/ryuu-observability" -q
 
 echo "=== observability-isolation: verifying ryuu is NOT installed ==="
 python3 -c "

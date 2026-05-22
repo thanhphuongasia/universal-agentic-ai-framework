@@ -12,9 +12,9 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== knowledge-isolation: installing ryuu-knowledge-* packages (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-knowledge-base" -q
-pip install -e "$REPO_ROOT/packages/ryuu-knowledge-memory" -q
-pip install -e "$REPO_ROOT/packages/ryuu-knowledge-graph" -q
-pip install -e "$REPO_ROOT/packages/ryuu-knowledge" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/knowledge-impls/ryuu-knowledge-memory" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/knowledge-impls/ryuu-knowledge-graph" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/knowledge-impls/ryuu-knowledge" -q
 
 echo "=== knowledge-isolation: verifying ryuu is NOT installed ==="
 python3 -c "

@@ -12,7 +12,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== execution-isolation: installing ryuu-execution (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-core" -q
-pip install -e "$REPO_ROOT/packages/ryuu-providers" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/providers/ryuu-providers" -q
 pip install -e "$REPO_ROOT/packages/ryuu-execution" -q
 
 echo "=== execution-isolation: verifying ryuu is NOT installed ==="

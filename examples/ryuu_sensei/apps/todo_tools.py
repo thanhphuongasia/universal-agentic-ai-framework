@@ -1,23 +1,27 @@
-"""Todo app — minimal in-memory store + 4 tool functions.
+"""Todo app — async tools backed by IKVStore.
 
 Design notes:
-  • Store is keyed by user_id so multiple users in the same process don't
+  • Store is keyed by `user_id` so multiple users in the same process don't
     collide (think: one bot, many Telegram users).
-  • The current user_id lives in a contextvar set by `TodoSensei` around each
+  • The current user_id lives in a contextvar set by `TodoHandler` around each
     agent.run() call — the LLM never needs to know or pass the user_id itself.
-    Tools read it from the contextvar. This keeps tool signatures clean.
-  • Tools are plain sync functions with docstrings + type hints. ryuu.Agent's
-    factory auto-builds the JSON-schema for tool calls. Sync and async tools
-    are both supported by `_CallableWrapper.execute`.
+  • Store is `KVTodoStore` (any IKVStore backend). Default at module level is
+    in-memory; main.py injects `SqliteKVStore` for persistence.
+  • One KV key per user holds the whole list — fewer keys, atomic updates,
+    fine for the per-user N typical in a personal todo app.
 """
 
 from __future__ import annotations
 
 import contextvars
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
+
+from ryuu_storage_core import IKVStore
+from ryuu_storage_memory import InMemoryKVStore
 
 # ---------------------------------------------------------------------------
-# Current-user context — set by TodoSensei around each agent.run()
+# Current-user context — set by TodoHandler around each agent.run()
 # ---------------------------------------------------------------------------
 
 _current_user: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -26,7 +30,6 @@ _current_user: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 def set_current_user(user_id: str) -> contextvars.Token[str]:
-    """Bind the user_id tools will see for the next agent.run() call."""
     return _current_user.set(user_id)
 
 
@@ -46,43 +49,92 @@ class Todo:
 
 
 @dataclass
-class TodoStore:
-    """Per-user in-memory todo list. Swap for SQLite / KV store in real use."""
-    _next_id: int = 1
-    _items: dict[str, dict[int, Todo]] = field(default_factory=dict)
+class _UserBlob:
+    next_id: int = 1
+    items: list[Todo] = field(default_factory=list)
 
-    def _bucket(self, user_id: str) -> dict[int, Todo]:
-        return self._items.setdefault(user_id, {})
+    def to_json(self) -> str:
+        return json.dumps({
+            "next_id": self.next_id,
+            "items": [asdict(t) for t in self.items],
+        })
 
-    def add(self, user_id: str, text: str) -> Todo:
-        todo = Todo(id=self._next_id, text=text)
-        self._next_id += 1
-        self._bucket(user_id)[todo.id] = todo
+    @classmethod
+    def from_json(cls, blob: str) -> "_UserBlob":
+        d = json.loads(blob)
+        return cls(
+            next_id=int(d.get("next_id", 1)),
+            items=[Todo(**t) for t in d.get("items", [])],
+        )
+
+
+@dataclass
+class KVTodoStore:
+    """Persists per-user todo lists via any IKVStore (memory, SQLite, …).
+
+    Schema: one KV key per user (e.g. 'user:42'); value is a JSON blob holding
+    {next_id, items}. Simpler than per-todo keys, atomic mutations.
+    """
+    kv: IKVStore
+
+    async def _load(self, user_id: str) -> _UserBlob:
+        blob = await self.kv.get(f"user:{user_id}")
+        if blob is None:
+            return _UserBlob()
+        try:
+            return _UserBlob.from_json(blob)
+        except (json.JSONDecodeError, KeyError):
+            return _UserBlob()
+
+    async def _save(self, user_id: str, blob: _UserBlob) -> None:
+        await self.kv.put(f"user:{user_id}", blob.to_json())
+
+    async def add(self, user_id: str, text: str) -> Todo:
+        blob = await self._load(user_id)
+        todo = Todo(id=blob.next_id, text=text)
+        blob.next_id += 1
+        blob.items.append(todo)
+        await self._save(user_id, blob)
         return todo
 
-    def list(self, user_id: str) -> list[Todo]:
-        return list(self._bucket(user_id).values())
+    async def list(self, user_id: str) -> list[Todo]:
+        blob = await self._load(user_id)
+        return list(blob.items)
 
-    def complete(self, user_id: str, todo_id: int) -> Todo | None:
-        todo = self._bucket(user_id).get(todo_id)
-        if todo is None:
-            return None
-        todo.done = True
-        return todo
+    async def complete(self, user_id: str, todo_id: int) -> Todo | None:
+        blob = await self._load(user_id)
+        for t in blob.items:
+            if t.id == todo_id:
+                t.done = True
+                await self._save(user_id, blob)
+                return t
+        return None
 
-    def delete(self, user_id: str, todo_id: int) -> bool:
-        return self._bucket(user_id).pop(todo_id, None) is not None
+    async def delete(self, user_id: str, todo_id: int) -> bool:
+        blob = await self._load(user_id)
+        before = len(blob.items)
+        blob.items = [t for t in blob.items if t.id != todo_id]
+        if len(blob.items) == before:
+            return False
+        await self._save(user_id, blob)
+        return True
 
 
-# Singleton store for the demo. In a real app you would inject this.
-STORE = TodoStore()
+# Module-level store, defaults to in-memory. main.py swaps it via set_store().
+STORE: KVTodoStore = KVTodoStore(kv=InMemoryKVStore(table="todos"))
+
+
+def set_store(store: KVTodoStore) -> None:
+    """Inject a different KVTodoStore (e.g. SQLite-backed) at app boot."""
+    global STORE
+    STORE = store
 
 
 # ---------------------------------------------------------------------------
-# Tools — what ryuu.Agent calls. Plain functions, no framework imports.
+# Tools — async because the underlying IKVStore is async
 # ---------------------------------------------------------------------------
 
-def add_todo(text: str) -> str:
+async def add_todo(text: str) -> str:
     """Add a new todo item with the given description.
 
     Args:
@@ -92,18 +144,18 @@ def add_todo(text: str) -> str:
         A confirmation string including the new todo's ID.
     """
     user = _current_user.get()
-    todo = STORE.add(user, text)
+    todo = await STORE.add(user, text)
     return f"Added todo #{todo.id}: {todo.text}"
 
 
-def list_todos() -> str:
+async def list_todos() -> str:
     """List all todos for the current user, marking done vs open.
 
     Returns:
         A human-readable string. Empty list returns "No todos yet."
     """
     user = _current_user.get()
-    items = STORE.list(user)
+    items = await STORE.list(user)
     if not items:
         return "No todos yet."
     lines = []
@@ -113,7 +165,7 @@ def list_todos() -> str:
     return "Your todos:\n" + "\n".join(lines)
 
 
-def complete_todo(todo_id: int) -> str:
+async def complete_todo(todo_id: int) -> str:
     """Mark a todo as completed.
 
     Args:
@@ -123,13 +175,13 @@ def complete_todo(todo_id: int) -> str:
         Confirmation or 'not found' message.
     """
     user = _current_user.get()
-    todo = STORE.complete(user, todo_id)
+    todo = await STORE.complete(user, todo_id)
     if todo is None:
         return f"Todo #{todo_id} not found."
     return f"Marked todo #{todo.id} as done: {todo.text}"
 
 
-def delete_todo(todo_id: int) -> str:
+async def delete_todo(todo_id: int) -> str:
     """Delete a todo permanently.
 
     Args:
@@ -139,10 +191,15 @@ def delete_todo(todo_id: int) -> str:
         Confirmation or 'not found' message.
     """
     user = _current_user.get()
-    if STORE.delete(user, todo_id):
+    if await STORE.delete(user, todo_id):
         return f"Deleted todo #{todo_id}."
     return f"Todo #{todo_id} not found."
 
 
 # Exported for convenient wiring: `Agent(tools=TODO_TOOLS)`
 TODO_TOOLS = [add_todo, list_todos, complete_todo, delete_todo]
+
+
+# Keep the old name available for external imports (backward-compat for
+# anyone who imports `TodoStore` directly).
+TodoStore = KVTodoStore

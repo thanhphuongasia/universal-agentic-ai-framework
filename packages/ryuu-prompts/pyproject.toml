@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-prompts"
+version = "0.3.0a1"
+description = "Versioned YAML prompt management for Ryuu framework — PromptRegistry + multi-root layered overlay"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "ryuu-providers>=0.2.0a1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "anyio[trio]>=4.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.6.0",
+]
+
+[project.urls]
+Repository = "https://github.com/core-corp/ryuu-framework"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_prompts"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

@@ -18,7 +18,7 @@ cd /path/to/your_app
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 2. Install ryuu + 13 sub-packages editable (1 lần)
+# 2. Install ryuu + 33 sub-packages editable (1 lần)
 bash /path/to/uaaf-framework/scripts/install-dev.sh
 
 # 3. App giờ dùng được
@@ -42,10 +42,21 @@ pip install /path/to/uaaf-framework/dist/ryuu-0.3.0a11-py3-none-any.whl
 ### PyPI Install (Future, khi published)
 
 ```bash
-pip install ryuu
-# Hoặc cherry-pick:
-pip install ryuu-core ryuu-providers ryuu-execution
+pip install ryuu                          # all-in-one (umbrella facade)
+
+# Hoặc cherry-pick chỉ thứ bạn cần (Phase 8.x splits):
+pip install ryuu-providers-openai          # only OpenAI adapter + core
+pip install ryuu-storage-sqlite            # only SQLite KV/Collection
+pip install ryuu-messaging-telegram        # only Telegram channel
+pip install ryuu-observability-core        # only in-process cost/audit (no OTel SDK)
+pip install ryuu-eval-core                 # eval framework without default scorers
+pip install ryuu-hooks                     # lifecycle hooks only
+pip install ryuu-prompts                   # versioned YAML prompt registry
 ```
+
+> Phase 8.x đã tách framework thành **33 packages** theo Clean Architecture:
+> top-level = Domain + Use Case, `infrastructure/` = adapters tới external systems.
+> Mỗi sub-package install độc lập (pulls in dependencies theo demand).
 
 ---
 
@@ -279,6 +290,160 @@ print(f"Best prompt: {best.best_prompt} (score {best.best_score:.2f})")
 
 ---
 
+## 🍳 Cookbook — Patterns mới (Phase 8.x + 9.x primitives)
+
+### Override prompts WITHOUT redeploying code (Phase 8.9.E)
+
+Mọi prompt LLM đều ở YAML, load qua `PromptRegistry`. Edit YAML → restart process → prompt mới active.
+
+```python
+from pathlib import Path
+from ryuu_prompts import PromptRegistry, make_framework_registry
+
+# Layered overlay: user dir shadows framework defaults
+registry = make_framework_registry(
+    user_overrides_root=Path("~/.ryuu/prompts").expanduser(),
+)
+
+# Then anywhere a primitive needs prompts:
+from ryuu_cognitive.context import LLMCompactor
+from ryuu_providers_openai import OpenAIProvider
+
+compactor = LLMCompactor(
+    provider=OpenAIProvider(api_key=...),
+    registry=registry,
+    # Reads from: ~/.ryuu/prompts/compaction/v1.yaml (user shadow)
+    #         OR: <pkg>/ryuu_cognitive/prompts/compaction/v1.yaml (default)
+)
+```
+
+To override compaction prompt for your app:
+```bash
+mkdir -p ~/.ryuu/prompts/compaction
+cp <pkg>/ryuu_cognitive/prompts/compaction/v1.yaml ~/.ryuu/prompts/compaction/v1.yaml
+# edit it → restart bot → new prompt active
+```
+
+See [faq_memory_storage.md](../../faq/faq_memory_storage.md) — SQLite vs JSONL.
+
+### Recall — semantic memory with persistence (Phase 8.9.E)
+
+```python
+from ryuu_knowledge_memory import MemoryBackbone
+from ryuu_knowledge_memory.working import WorkingMemoryStore
+from ryuu_knowledge_memory.episodic import EpisodicMemoryStore
+from ryuu_storage_jsonl import JsonlCollectionStore   # append-only, OpenClaw-style
+
+bb = MemoryBackbone(layers=[
+    WorkingMemoryStore(
+        collection=JsonlCollectionStore(root_dir="~/.ryuu/memory", table="working"),
+    ),
+    EpisodicMemoryStore(
+        collection=JsonlCollectionStore(root_dir="~/.ryuu/memory", table="episodic"),
+    ),
+])
+
+# Write observation
+await bb.write("User prefers Vietnamese cuisine", scope_key="owner")
+
+# Retrieve semantically (keyword overlap; vector when knowledge-rag wired)
+result = await bb.query("food preferences", scope_key="owner", top_k=3)
+
+# Or token-budget aware context for LLM prompt
+ctx = await bb.assemble_context(
+    query="What does the user like to eat?",
+    scope_key="owner",
+    budget_tokens=2000,
+)
+prompt = f"{ctx.text}\n\nUser asks: ..."
+```
+
+### Context compaction — shrink long conversations
+
+```python
+from ryuu_cognitive.context import LLMCompactor, CompactionTurn
+
+compactor = LLMCompactor(
+    provider=openai_provider, registry=registry,
+    threshold_tokens=8000, keep_recent_turns=5,
+)
+
+# Inside handler:
+history = [CompactionTurn(role=t.role, text=t.text) for t in session.history]
+if await compactor.needs_compaction(history, approx_tokens=total_tokens):
+    history = await compactor.compact(history)   # 50 turns → 1 summary + 5 recent
+```
+
+### Query expansion + decomposition
+
+```python
+from ryuu_cognitive.context import (
+    LLMQueryExpander, SynonymExpander,
+    LLMQueryDecomposer, PatternQueryDecomposer,
+)
+
+# LLM-based (paid, high-quality)
+expander = LLMQueryExpander(provider=p, registry=r, num_variants=3)
+queries = await expander.expand("tell me about my Tokyo trip")
+# → ["tell me about my Tokyo trip", "Japan visit", "trip to Tokyo", "visiting Japan"]
+
+# Non-LLM fallback (free, predictable)
+syn = SynonymExpander(num_variants=3)
+queries = await syn.expand("buy a task")
+# → ["buy a task", "purchase a task", "buy a todo", ...]
+
+# Decompose complex query into sub-tasks
+decomposer = LLMQueryDecomposer(provider=p, registry=r, max_subqueries=5)
+subs = await decomposer.decompose(
+    "summarize my unfinished todos and create Anki cards from notes"
+)
+# → [SubQuery("list+summarize todos", intent="list"),
+#    SubQuery("create Anki cards", intent="create")]
+```
+
+### Single-tenant SuperBot pattern (private assistant — only YOU)
+
+```python
+from ryuu_messaging_core import (
+    ChannelOrchestrator, ConversationManager,
+    SingleTenantResolver, KVSessionStore,
+)
+from ryuu_messaging_telegram import TelegramAdapter
+from ryuu_storage_sqlite import SqliteKVStore
+
+cm = ConversationManager(
+    session_store=KVSessionStore(kv=SqliteKVStore(db_path="~/.ryuu/store.db", table="sessions")),
+    scope_resolver=SingleTenantResolver(scope_key="owner"),  # everyone → same scope
+)
+
+tg = TelegramAdapter(
+    bot_token=os.environ["RYUU_BOT_TOKEN"],
+    allowed_senders={os.environ["OWNER_TELEGRAM_ID"]},   # reject non-owner DMs
+    # ... callbacks ...
+)
+```
+
+### Multi-tenant product pattern (Todo / Flash / Stock — many users)
+
+```python
+from ryuu_messaging_core import DefaultScopeResolver, KVSessionStore
+
+cm = ConversationManager(
+    session_store=KVSessionStore(kv=SqliteKVStore(db_path=..., table="sessions")),
+    scope_resolver=DefaultScopeResolver(),   # → f"{channel}:{sender_id}" per-user scope
+)
+
+tg = TelegramAdapter(
+    bot_token=os.environ["TODO_BOT_TOKEN"],
+    # No allowlist — ANY Telegram user can DM
+    # Each user gets isolated scope via DefaultScopeResolver
+)
+```
+
+→ Compare: [single_tenant_assistant.md] vs [multi_tenant_product.md] cookbooks (planned).
+
+---
+
 ## Use Case Matrix
 
 | Use case | Factory | Facades | Class | BatchRunner | PromptOptimizer |
@@ -331,6 +496,46 @@ from ryuu_knowledge_rag import (
 
 # Phase 14.7 — formal verifiers (rule-based + optional Z3 SMT)
 from ryuu_reasoning import Rule, RuleVerifier, Z3Verifier   # Z3 optional dep
+
+# Phase 8.x — Standalone packages (direct imports, no umbrella overhead)
+from ryuu_providers_core import ILLMProvider, CompletionRequest, Message
+from ryuu_providers_openai import OpenAIProvider
+from ryuu_providers_anthropic import AnthropicProvider
+
+from ryuu_observability_core import CostTracker, AuditLogger, RateLimiter
+from ryuu_observability_otel import Tracer, setup_tracing      # OTel SDK adapter
+
+from ryuu_prompts import PromptRegistry, make_framework_registry
+from ryuu_intent import LLMIntentAnalyzer, normalize_difficulty, Difficulty
+from ryuu_hooks import HookEvent, HookRegistry
+
+# Phase 8.15 — eval split
+from ryuu_eval_core import EvalRunner, EvalCase, Scorer, EvalTarget, FixtureLoader
+from ryuu_eval_scorers import ExactMatch, Constraint, Threshold, LLMJudge
+
+# Phase 8.9 — storage primitives
+from ryuu_storage_core import IKVStore, ICollectionStore
+from ryuu_storage_sqlite import SqliteKVStore, SqliteCollectionStore
+from ryuu_storage_jsonl import JsonlCollectionStore
+from ryuu_storage_memory import InMemoryKVStore                # tests / dev
+
+# Phase 8.8 — messaging primitives
+from ryuu_messaging_core import (
+    ChannelOrchestrator, ConversationManager,
+    DefaultScopeResolver, SingleTenantResolver,                # multi vs single tenant
+    KVSessionStore, IncomingMessage, OutgoingMessage,
+    IChannelHandler, IChannelAdapter,
+)
+from ryuu_messaging_cli import CLIAdapter
+from ryuu_messaging_telegram import TelegramAdapter
+
+# Phase 8.x — context preprocessing (LLM-driven + non-LLM fallbacks)
+from ryuu_cognitive.context import (
+    LLMCompactor, HierarchicalCompactor,                       # shrink history
+    LLMQueryExpander, SynonymExpander,                          # paraphrase queries
+    LLMQueryDecomposer, PatternQueryDecomposer,                 # split complex queries
+    CompactionTurn, SubQuery,
+)
 ```
 
 ---
@@ -357,5 +562,7 @@ Detailed: [09-migration](09-migration.md).
 - **Đọc thêm**:
   - [Adapter Guide](../adapter-guide.md) — implement provider mới
   - [Runbook](../runbook.md) — operational tasks
+  - [faq_memory_storage.md](../../faq/faq_memory_storage.md) — SQLite vs JSONL decision matrix
+  - [faq_general.md](../../faq/faq_general.md) — general FAQ
   - [Architecture v2 rev 3](../../architecture/uaaf-v2-architecture.md) — design rationale
   - [Phase 8.8 Audit Report](../../architecture/phase-8.8-async-audit-report.md) — async non-blocking findings

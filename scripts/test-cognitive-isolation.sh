@@ -12,7 +12,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "=== cognitive-isolation: installing ryuu-cognitive (editable) ==="
 pip install -e "$REPO_ROOT/packages/ryuu-core" -q
-pip install -e "$REPO_ROOT/packages/ryuu-providers" -q
+pip install -e "$REPO_ROOT/packages/infrastructure/providers/ryuu-providers" -q
 pip install -e "$REPO_ROOT/packages/ryuu-cognitive" -q
 
 echo "=== cognitive-isolation: verifying ryuu is NOT installed ==="

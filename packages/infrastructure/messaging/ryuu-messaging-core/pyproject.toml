@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-messaging-core"
+version = "0.3.0a1"
+description = "Channel-agnostic messaging primitives — IChannelAdapter, IChannelHandler, ConversationManager"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.0",
+    "ryuu-storage-core>=0.3.0a1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "anyio[trio]>=4.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.6.0",
+]
+
+[project.urls]
+Repository = "https://github.com/core-corp/ryuu-framework"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_messaging_core"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

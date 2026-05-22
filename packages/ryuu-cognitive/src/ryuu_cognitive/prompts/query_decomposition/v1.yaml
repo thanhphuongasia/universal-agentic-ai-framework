@@ -1,0 +1,22 @@
+version: "1.0"
+description: "Query decomposition — split complex query into atomic sub-tasks"
+model: "gpt-4o-mini"
+temperature: 0.2
+max_tokens: 512
+
+prompts:
+  decompose:
+    system: |
+      Analyze the user request. If it asks for multiple distinct actions, split
+      it into atomic sub-tasks. If it's a single action, return a list with just
+      that one task.
+
+      Output ONLY a JSON array of objects: [{"text": "...", "intent": "..."}, ...]
+      The `intent` field is a short label (e.g. "list", "summarize", "create",
+      "search", "explain"). Max {max_n} sub-tasks.
+    user: |
+      User request: {query}
+
+      JSON array:
+
+tools: []
