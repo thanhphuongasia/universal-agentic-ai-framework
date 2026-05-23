@@ -1,0 +1,6 @@
+name: get_hostname
+description: Return the bot host's hostname. Useful when the user asks "what machine is this running on".
+exec:
+  type: shell
+  command: hostname
+  timeout: 5

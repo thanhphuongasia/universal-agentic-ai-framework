@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-system-tools"
+version = "0.1.0a1"
+description = "Pluggable system / host ITools for Ryuu agents — current date/time, hostname, etc. Auto-discovers user plugins from ~/.ryuu/system_tools/."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.6.0"]
+
+[project.urls]
+Repository = "https://github.com/core-corp/ryuu-framework"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_system_tools"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Bundled YAML tools must travel with the wheel — `packages = ...` alone
+# only ships .py files by default in some hatch configs.
+"src/ryuu_system_tools/bundled" = "ryuu_system_tools/bundled"
