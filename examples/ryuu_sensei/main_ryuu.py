@@ -37,6 +37,8 @@ from ryuu_messaging_core import (
     ChannelOrchestrator,
     ConversationManager,
     KVSessionStore,
+    MessageClassifier,
+    ScopeDispatcher,
     SingleTenantResolver,
 )
 from ryuu_mcp_client import (
@@ -237,6 +239,19 @@ async def run(use_telegram: bool) -> None:
     else:
         print("[ryuu-super] LLMCompactor disabled (no provider — compaction is no-op)")
 
+    # ── ScopeDispatcher — per-scope concurrent message routing ────────
+    # Reuses the OpenAI provider (gpt-4o-mini via dispatch/v3.yaml).
+    # Without a provider, falls back to keyword heuristics only —
+    # obvious STOP signals still caught; STEER/NEW edge cases → NEW.
+    dispatcher = ScopeDispatcher(
+        classifier=MessageClassifier(provider=compaction_provider),
+        provider=compaction_provider,
+    )
+    if compaction_provider:
+        print("[ryuu-super] ScopeDispatcher: LLM routing enabled (STOP / STEER / NEW)")
+    else:
+        print("[ryuu-super] ScopeDispatcher: heuristics-only (set OPENAI_API_KEY for LLM routing)")
+
     # Phase 9.0d.2 — Trust ReAct + tools. No preprocessing pipeline.
     # Agent's ReAct loop calls recall(query) when it decides. Handler
     # warm-starts with top-3 recent observations as baseline context.
@@ -287,6 +302,11 @@ async def run(use_telegram: bool) -> None:
     print(f"[ryuu-super] Prompt skills: {len(prompt_skill_registry)} loaded "
           f"({', '.join(prompt_skill_registry.names()) or 'none'})")
 
+    from ryuu_system_tools import SystemToolset
+    system_toolset = SystemToolset.from_layered()
+    print(f"[ryuu-super] System tools: {len(system_toolset.tools)} loaded "
+          f"({', '.join(system_toolset.tool_ids())})")
+
     handler = RyuuHandler(
         memory_backbone=memory_backbone,
         compaction_provider=compaction_provider,
@@ -295,12 +315,18 @@ async def run(use_telegram: bool) -> None:
         skill_toolset=skill_toolset,
         prompt_skills=prompt_skill_registry,
         prompt_skills_toolset=prompt_skills_toolset,
+        system_toolset=system_toolset,
         warm_start_top_k=3,
         state_store=SqliteKVStore(db_path=SUPER_DB_PATH, table="handler_state"),
     )
 
     # ── Orchestrator + channels ───────────────────────────────────────
-    orch = ChannelOrchestrator(conversation_manager=cm, handler=handler, name="Ryuu Super")
+    orch = ChannelOrchestrator(
+        conversation_manager=cm,
+        handler=handler,
+        name="Ryuu Super",
+        dispatcher=dispatcher,
+    )
     orch.register_channel(CLIAdapter())
 
     if use_telegram:
