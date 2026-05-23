@@ -53,6 +53,7 @@ DEFAULT_HELP = (
     "  /clear                  — forget our conversation so far\n"
     "  /settings               — show your current settings\n"
     "  /status                 — context size, token usage, cost so far\n"
+    "  /task                   — what is running right now (dispatcher state)\n"
     "  /verbose on|off         — toggle LLM reasoning trace (💭 🔧 📋)\n"
     "  /model                  — tap a button to switch model\n"
     "  /compact                — compact long history NOW (free up context)\n"
@@ -76,6 +77,7 @@ class TelegramAdapter(IChannelAdapter):
     on_model: Any = None         # async (sender_id, conv_id, model: str) -> str
     on_settings: Any = None      # async (sender_id, conv_id) -> str
     on_status: Any = None        # async (sender_id, conv_id) -> str
+    on_task_status: Any = None   # async (sender_id, conv_id) -> str  — dispatcher task state
     on_current_model: Any = None # async (sender_id, conv_id) -> str
     on_compact: Any = None       # async (sender_id, conv_id) -> str  — manual trigger
     on_auto_compact: Any = None  # async (sender_id, conv_id, on: bool|None) -> str  — toggle / status
@@ -195,6 +197,21 @@ class TelegramAdapter(IChannelAdapter):
                 summary = await self.on_status(*ids)
             except Exception as exc:  # noqa: BLE001
                 log.warning("on_status failed: %s", exc)
+                summary = f"⚠️ {type(exc).__name__}: {exc}"
+            await self._bot.send_message(tg_msg.chat.id, summary)
+
+        # ── /task — dispatcher state ──────────────────────────────────
+        @self._dp.message(Command("task"))
+        async def _cmd_task(tg_msg: TgMessage) -> None:
+            self._remember_chat(tg_msg)
+            ids = _ids(tg_msg)
+            if self.on_task_status is None or ids is None:
+                await self._bot.send_message(tg_msg.chat.id, "(task status unavailable)")
+                return
+            try:
+                summary = await self.on_task_status(*ids)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_task_status failed: %s", exc)
                 summary = f"⚠️ {type(exc).__name__}: {exc}"
             await self._bot.send_message(tg_msg.chat.id, summary)
 

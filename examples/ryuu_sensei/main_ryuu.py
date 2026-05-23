@@ -232,12 +232,40 @@ def _build_telegram_callbacks(
             f"Triggers above {s.compact_threshold_tokens:,} tokens."
         )
 
+    async def on_task_status(sender_id: str, conversation_id: str) -> str:
+        scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
+        if dispatcher is None:
+            return "Dispatcher not wired — no task tracking available."
+
+        if dispatcher.is_running(scope):
+            state = dispatcher.get_state(scope)
+            steer_pending = not state.steer_ctx.is_empty()
+            lines = [
+                "⚙️ Task running",
+                f"  • task:          {state.task_summary or '(summarising…)'}",
+                f"  • steer pending: {'yes — will apply at next step' if steer_pending else 'no'}",
+            ]
+        else:
+            session = await cm.session_store.load_or_create(
+                scope_key=scope, channel="telegram",
+                sender_id=sender_id, conversation_id=conversation_id,
+            )
+            carry = session.extra.get("_carry_steer", [])
+            lines = ["💤 Idle — no task running"]
+            if carry:
+                lines.append(f"  • carry steer:   {len(carry)} message(s) queued for next task")
+                for s in carry:
+                    lines.append(f"      · {s[:60]}")
+
+        return "\n".join(lines)
+
     return {
         "on_clear": on_clear,
         "on_verbose": on_verbose,
         "on_model": on_model,
         "on_settings": on_settings,
         "on_status": on_status,
+        "on_task_status": on_task_status,
         "on_current_model": on_current_model,
         "on_compact": on_compact,
         "on_auto_compact": on_auto_compact,
@@ -431,6 +459,7 @@ async def run(use_telegram: bool) -> None:
             on_model=cbs["on_model"],
             on_settings=cbs["on_settings"],
             on_status=cbs["on_status"],
+            on_task_status=cbs["on_task_status"],
             on_current_model=cbs["on_current_model"],
             on_compact=cbs["on_compact"],
             on_auto_compact=cbs["on_auto_compact"],
