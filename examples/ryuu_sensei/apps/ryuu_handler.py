@@ -448,19 +448,21 @@ class RyuuHandler:
         )
 
         # Drain steer messages from ScopeDispatcher (optional).
-        # Prefer _dispatcher_state (live reference, post-reset steer_ctx)
-        # over legacy _steer_ctx (pre-reset snapshot, kept for compat).
+        # live_steer: messages injected while the CURRENT task was running
+        # carry_steer: messages that arrived during the PREVIOUS task but
+        #   couldn't be applied mid-generation; carried forward by orchestrator
         steer_block = ""
         disp_state = session.extra.get("_dispatcher_state")
         steer_ctx = disp_state.steer_ctx if disp_state is not None else session.extra.get("_steer_ctx")
-        if steer_ctx is not None:
-            pending = steer_ctx.drain()
-            if pending:
-                steer_block = (
-                    "Additional context from user while I was working:\n"
-                    + "\n".join(f"  • {s}" for s in pending)
-                    + "\n\n"
-                )
+        live_steer = steer_ctx.drain() if steer_ctx is not None else []
+        carry_steer: list[str] = session.extra.pop("_carry_steer", [])
+        all_steer = live_steer + carry_steer
+        if all_steer:
+            steer_block = (
+                "Additional context from user while I was working:\n"
+                + "\n".join(f"  • {s}" for s in all_steer)
+                + "\n\n"
+            )
 
         prompt_text = (
             recall_context

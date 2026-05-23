@@ -137,6 +137,14 @@ class ChannelOrchestrator:
         async def _core() -> OutgoingMessage:
             reply = await self.handler.handle(msg, session)
             session.extra.pop("_dispatcher_state", None)  # ScopeState is not JSON-serializable
+            # Carry any steer messages that arrived mid-task but couldn't be
+            # injected (handler already built its prompt by the time they came).
+            # Saved as a plain list so it survives JSON serialisation.
+            if self.dispatcher is not None:
+                leftover = self.dispatcher.get_state(session.scope_key).steer_ctx.drain()
+                if leftover:
+                    carry = session.extra.get("_carry_steer", [])
+                    session.extra["_carry_steer"] = carry + leftover
             await self.conversation_manager.save(session)
             return reply
 
