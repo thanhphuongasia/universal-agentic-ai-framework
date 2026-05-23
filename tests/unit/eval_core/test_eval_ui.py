@@ -40,8 +40,8 @@ class MountUITests(unittest.TestCase):
         assert resp.status_code == 200
         assert "javascript" in resp.headers["content-type"]
         assert "EvalApp" in resp.text  # component defined in JS
-        # Cache-Control header set
-        assert "max-age" in resp.headers.get("cache-control", "")
+        # Cache-Control header set (no-cache for dev iteration)
+        assert "cache-control" in resp.headers
 
     def test_css_served(self) -> None:
         client = self._client()

@@ -77,6 +77,7 @@ def build_eval_router(
     template_registry: dict[str, EvalCaseTemplate],
     cases_dir: Path = Path("artifacts/eval/cases"),
     refine_log_dir: Path = Path("artifacts/eval/refine_history"),
+    fixtures_dir: Path | None = None,
     require_auth: Callable[..., Any] | None = None,
     optimizer_callback: Callable[[str, dict], dict] | None = None,
     serve_ui: bool = False,
@@ -193,6 +194,43 @@ def build_eval_router(
         out_path.unlink()
         return {"ok": True, "deleted": str(out_path)}
 
+    # ── Fixture cases (read-only from fixtures_dir) ────────────────────
+
+    @r.get("/fixtures/{suite_id}", dependencies=auth_dep)
+    def list_fixtures(suite_id: str) -> list[dict]:
+        """Read-only fixture cases from fixtures_dir/<suite_id>/*.yml."""
+        if fixtures_dir is None:
+            return []
+        suite_path = fixtures_dir / suite_id
+        if not suite_path.exists():
+            return []
+        cases: list[dict] = []
+        for f in sorted(suite_path.glob("*.yml")):
+            try:
+                loaded = FixtureLoader.load(f)
+                cases.extend([{
+                    "case_id": c.case_id,
+                    "input": c.input,
+                    "expected": c.expected,
+                    "metadata": c.metadata,
+                    "_source": "fixture",
+                    "_file": f.name,
+                } for c in loaded])
+            except Exception as exc:  # noqa: BLE001
+                cases.append({"case_id": f.stem, "error": str(exc), "_source": "fixture", "_file": f.name})
+        return cases
+
+    def _load_all_cases(suite_id: str) -> list[dict]:
+        """Combine UI-created cases + fixture cases; UI case wins on duplicate case_id."""
+        ui_cases = list_suite_cases(suite_id)
+        if fixtures_dir is None:
+            return ui_cases
+        ui_ids = {c["case_id"] for c in ui_cases if "error" not in c}
+        for fc in list_fixtures(suite_id):
+            if "error" not in fc and fc["case_id"] not in ui_ids:
+                ui_cases.append(fc)
+        return ui_cases
+
     # ── Run (blocking + streaming) ─────────────────────────────────────
 
     @r.post("/run", dependencies=auth_dep)
@@ -203,7 +241,7 @@ def build_eval_router(
             raise HTTPException(400, "suite_id required")
         log_path = refine_log_dir / f"{suite_id}.jsonl"
         runner = runner_factory(suite_id, log_path)
-        cases = list_suite_cases(suite_id)
+        cases = _load_all_cases(suite_id)
         eval_cases = FixtureLoader.load_json([{
             "case_id": c["case_id"],
             "input": c["input"],
@@ -217,7 +255,7 @@ def build_eval_router(
     async def stream_suite(suite_id: str) -> StreamingResponse:
         log_path = refine_log_dir / f"{suite_id}.jsonl"
         runner = runner_factory(suite_id, log_path)
-        cases = list_suite_cases(suite_id)
+        cases = _load_all_cases(suite_id)
         eval_cases = FixtureLoader.load_json([{
             "case_id": c["case_id"],
             "input": c["input"],
@@ -235,6 +273,29 @@ def build_eval_router(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @r.post("/run/single", dependencies=auth_dep)
+    async def run_single_case(payload: dict) -> dict:
+        """Run one ad-hoc case — editor's '▶ Run this case' button."""
+        suite_id = str(payload.get("suite_id", "")).strip()
+        if not suite_id:
+            raise HTTPException(400, "suite_id required")
+        case_id = str(payload.get("case_id", "adhoc")).strip() or "adhoc"
+        log_path = refine_log_dir / f"{suite_id}.jsonl"
+        runner = runner_factory(suite_id, log_path)
+        eval_cases = FixtureLoader.load_json([{
+            "case_id": case_id,
+            "input": payload.get("input", {}),
+            "expected": payload.get("expected"),
+            "metadata": payload.get("metadata", {}),
+        }])
+        result = await runner.run(eval_cases)
+        if not result.cases:
+            return _dataclass_dict(result)
+        case_result = result.cases[0]
+        case_dict = _dataclass_dict(case_result)
+        case_dict["passed"] = case_result.passed  # @property not included by asdict
+        return case_dict
 
     # ── Refine history ─────────────────────────────────────────────────
 
@@ -279,6 +340,7 @@ def build_eval_router(
             "templates_count": len(template_registry),
             "cases_dir": str(cases_dir),
             "refine_log_dir": str(refine_log_dir),
+            "fixtures_dir": str(fixtures_dir) if fixtures_dir is not None else None,
             "ui_served": serve_ui,
         }
 
