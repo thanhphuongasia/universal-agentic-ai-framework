@@ -571,38 +571,57 @@ LLM gọi 5 tools sau qua chat:
 | `install_skill(name, params?)` | "Cài fetch skill cho tôi" |
 | `uninstall_skill(name)` | "Gỡ skill X" |
 | `reload_skills` | Sau khi user edit `skills.yaml` thủ công |
+| `reauth_skill(name)` | "Gmail báo lỗi auth" — bot tự spawn `auth_command`, browser mở, respawn server với token mới |
 
 **Quan trọng:** sau `install_skill` thành công, tool mới available **ngay turn LLM tiếp theo** — `MCPToolset.add_listener` fire callback để invalidate Agent cache, không cần restart bot.
 
 #### Skill không nằm trong registry — 3 cách
 
-**Cách 1 — Custom registry file (recommend nếu sẽ dùng lại nhiều lần):**
+**Cách 1 — Modular registry directory (RECOMMEND — mỗi skill 1 file):**
 
-Tạo `~/.ryuu/skill_registry.json` (cùng schema với bundled):
+Layout `~/.ryuu/skill_registry.d/<key>.json`, mỗi skill nằm trong file riêng — sửa skill này không đụng skill khác. Bot scan tất cả `*.json` khi boot:
+
+```
+~/.ryuu/skill_registry.d/
+├── gmail.json
+├── todoist.json
+└── my_blog_reader.json
+```
+
+Mỗi file dùng **bare form** — chỉ là body của skill, key tự suy từ filename:
 
 ```json
+// ~/.ryuu/skill_registry.d/my_blog_reader.json
 {
-  "skills": {
-    "my_blog_reader": {
-      "description": "Custom MCP server đọc bài Medium subscriptions",
-      "command": "npx",
-      "args": ["-y", "my-org/medium-mcp-server"],
-      "params": [],
-      "env_required": [
-        {"name": "MEDIUM_TOKEN", "from_env": "MEDIUM_TOKEN",
-         "description": "API token từ medium.com/me/settings"}
-      ]
-    }
-  }
+  "description": "Custom MCP server đọc bài Medium subscriptions",
+  "command": "npx",
+  "args": ["-y", "my-org/medium-mcp-server"],
+  "params": [],
+  "env_required": [
+    {"name": "MEDIUM_TOKEN", "from_env": "MEDIUM_TOKEN",
+     "description": "API token từ medium.com/me/settings"}
+  ]
 }
 ```
 
-Bot tự pickup khi boot — `SkillRegistry.from_layered()` merge bundled + user file (user wins on collision). Sau đó LLM cài qua chat bình thường: *"install my_blog_reader"*.
+Với OAuth-based MCP (Gmail, Google Drive...) thêm `auth_command` để bot có thể `reauth_skill(name)` khi token hết hạn:
 
-Hoặc trỏ env var:
-```bash
-export RYUU_SKILL_REGISTRY=/path/to/my_registry.json
+```json
+// ~/.ryuu/skill_registry.d/gmail.json
+{
+  "description": "Gmail — read inbox, search, send. OAuth tokens expire every 7 days in Testing mode.",
+  "homepage": "https://github.com/GongRzhe/Gmail-MCP-Server",
+  "command": "npx",
+  "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
+  "auth_command": ["npx", "-y", "@gongrzhe/server-gmail-autoauth-mcp", "auth"]
+}
 ```
+
+Lookup order (later wins): bundled → legacy `skill_registry.json` → `skill_registry.d/*.json`. Sau đó trong chat: *"install gmail"* hoặc khi token hết hạn: *"re-auth gmail"* → LLM gọi `reauth_skill`, browser tự mở.
+
+**Cách 1b — Monolithic file (legacy, vẫn support):**
+
+Một file `~/.ryuu/skill_registry.json` với envelope `{"skills": {key: {...}}}` — tiện cho dotfiles repo nhưng sửa 1 skill phải mở cả file. Có thể trỏ env: `export RYUU_SKILL_REGISTRY=/path/to/file`.
 
 **Cách 2 — Edit skills.yaml thủ công + `reload_skills` (one-off / experimental):**
 
