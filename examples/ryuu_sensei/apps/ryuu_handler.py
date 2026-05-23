@@ -447,10 +447,12 @@ class RyuuHandler:
             if history_lines else ""
         )
 
-        # Drain any steer messages injected by ScopeDispatcher (optional).
-        # Orchestrator stores them in session.extra["_steer_ctx"] when wired.
+        # Drain steer messages from ScopeDispatcher (optional).
+        # Prefer _dispatcher_state (live reference, post-reset steer_ctx)
+        # over legacy _steer_ctx (pre-reset snapshot, kept for compat).
         steer_block = ""
-        steer_ctx = session.extra.get("_steer_ctx")
+        disp_state = session.extra.get("_dispatcher_state")
+        steer_ctx = disp_state.steer_ctx if disp_state is not None else session.extra.get("_steer_ctx")
         if steer_ctx is not None:
             pending = steer_ctx.drain()
             if pending:

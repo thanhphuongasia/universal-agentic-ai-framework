@@ -74,7 +74,9 @@ class ChannelOrchestrator:
 
             if label == DispatchLabel.STOP and state is not None:
                 state.cancel_task()
-                # Give the task 2 s to handle CancelledError cleanly
+                # Give the task 2 s to handle CancelledError cleanly.
+                # Use shield so this wait can't be itself cancelled.
+                # DON'T call finish_task here — _run_handler's finally does it.
                 if state._task is not None:
                     try:
                         await asyncio.wait_for(
@@ -82,8 +84,8 @@ class ChannelOrchestrator:
                         )
                     except (asyncio.CancelledError, asyncio.TimeoutError):
                         pass
+                # task_summary is still intact (finish_task not yet called)
                 stop_text = await self.dispatcher.stop_summary(scope_key)
-                self.dispatcher.finish_task(scope_key)
                 return OutgoingMessage(
                     conversation_id=msg.conversation_id, text=stop_text,
                 )
@@ -118,16 +120,16 @@ class ChannelOrchestrator:
             return await _core()
 
         scope_key = session.scope_key
-        # Expose dispatcher primitives to handlers via session.extra.
-        # Handlers (e.g. RyuuHandler) drain steer_ctx to inject pending
-        # steer messages into the prompt. cancel_token is available for
-        # fine-grained cooperative cancellation checks between steps.
+        # Store the ScopeState OBJECT (not field copies) so that when
+        # start_task resets the state, handlers always drain the correct
+        # (post-reset) steer_ctx regardless of scheduling order.
         state = self.dispatcher.get_state(scope_key)
-        session.extra["_steer_ctx"]    = state.steer_ctx
-        session.extra["_cancel_token"] = state.cancel_token
+        session.extra["_dispatcher_state"] = state
 
         task = asyncio.create_task(_core(), name=f"handler:{scope_key}")
         await self.dispatcher.start_task(scope_key, task, first_message=msg.text)
+        # After start_task: state.steer_ctx / cancel_token are new objects;
+        # session.extra["_dispatcher_state"] IS state, so handlers see them.
         try:
             return await task
         except asyncio.CancelledError:

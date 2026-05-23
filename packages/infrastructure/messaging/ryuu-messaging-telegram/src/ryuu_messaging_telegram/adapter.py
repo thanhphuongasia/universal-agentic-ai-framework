@@ -399,7 +399,9 @@ class TelegramAdapter(IChannelAdapter):
                 raise ValueError(
                     f"Cannot resolve chat_id from conversation_id={msg.conversation_id!r}"
                 ) from e
-        await self._bot.send_message(chat_id, msg.text or "(empty)")
+        if not msg.text:
+            return  # suppress empty replies (e.g. STOP already sent its own summary)
+        await self._bot.send_message(chat_id, msg.text)
 
     async def send_typing(self, conversation_id: str) -> None:
         if self._bot is None:

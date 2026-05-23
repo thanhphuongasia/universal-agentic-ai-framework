@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
+import logging.handlers
 import os
 import sys
 from pathlib import Path
@@ -73,6 +75,8 @@ def _build_compaction_provider():
     except ImportError:
         return None
 
+
+LOG_PATH = Path(os.getenv("RYUU_LOG", str(Path.home() / ".ryuu" / "ryuu.log")))
 
 SUPER_DB_PATH = Path(os.getenv("RYUU_SUPER_DB", str(Path.home() / ".ryuu" / "super.db")))
 MEMORY_DIR = Path(os.getenv("RYUU_MEMORY_DIR", str(Path.home() / ".ryuu" / "memory")))
@@ -195,7 +199,32 @@ def _build_telegram_callbacks(
     }
 
 
+def _setup_logging() -> None:
+    """Write INFO+ to stdout and DEBUG+ to ~/.ryuu/ryuu.log (rotating, 5 MB × 3)."""
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s")
+
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(fmt)
+
+    fh = logging.handlers.RotatingFileHandler(
+        LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
+    )
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fmt)
+
+    root.addHandler(sh)
+    root.addHandler(fh)
+    print(f"[ryuu-super] Logging to {LOG_PATH}")
+
+
 async def run(use_telegram: bool) -> None:
+    _setup_logging()
+
     if not os.getenv("OPENAI_API_KEY"):
         print(
             "[ryuu-super] ⚠️  OPENAI_API_KEY not set. "
