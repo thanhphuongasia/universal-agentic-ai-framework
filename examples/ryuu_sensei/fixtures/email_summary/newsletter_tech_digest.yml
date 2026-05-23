@@ -1,0 +1,66 @@
+cases:
+  - case_id: newsletter-microsoft-uber-2026-05-22
+    input:
+      message: "tóm tắt email này"
+      email_id: "mock-microsoft-uber-001"
+    expected:
+      must_mention:
+        - "Microsoft"
+        - "Alibaba"
+        - "Qwen"
+        - "OpenAI"
+        - "Codex"
+        - "ClickUp"
+      must_not_mention:
+        - "IBM Bob"  # đây là quảng cáo — skill phải lọc ra
+    metadata:
+      skill: email_summary
+      email_subject: "Microsoft and Uber ditch Claude Code"
+      email_from: "The Code <thecode@mail.joinsuperhuman.ai>"
+      email_date: "May 22, 2026"
+      email_body: |
+        Subject: Microsoft and Uber ditch Claude Code
+        From: The Code <thecode@mail.joinsuperhuman.ai>
+        Date: May 22, 2026
+
+        Welcome back. If you're stressing about your Claude Code bill, you're not alone.
+        Microsoft just cut off access to Claude Code for their teams, citing rising costs.
+        And they're not the first — Uber recently said they've already blown through their
+        planned AI budget for the year. No wonder Anthropic's revenue is reportedly set to
+        more than double to $10.9 billion in Q2 2026.
+
+        Also: How to stop agents from losing context, the most-used skill by Cursor engineers,
+        and why ClickUp cut 22% to pay AI engineers $1M.
+
+        TODAY IN PROGRAMMING
+
+        Alibaba unveils a new model for long-horizon coding: The Chinese cloud giant just
+        rolled out Qwen3.7-Max, a closed-weight model that uses thousands of steps for deep
+        reasoning. Its million-token context is four times larger than the previous version,
+        which is enough to handle an entire mid-sized repository. The model now sits fifth on
+        the Artificial Analysis Intelligence Index, ahead of Gemini 3.5 Flash but trailing
+        Claude Opus 4.7 and GPT-5.5. Developers can sign up for API access now.
+
+        OpenAI ships goal-tracking and Mac shortcuts to Codex: The ChatGPT maker just released
+        its sixth weekly batch of Codex updates. A new Mac feature called Appshots lets
+        engineers attach any app window to a thread with a quick shortcut, pulling in a
+        screenshot plus the full text, even content that's off-screen. Additionally, the /goal
+        command is no longer experimental, letting Codex chase a single milestone for hours or
+        days while developers simply check in or provide guidance.
+
+        Microsoft drops Anthropic's coding tool over rising costs: The Windows maker is
+        reportedly cutting Claude Code from its engineering teams by June 30, citing
+        token-based costs that have become too expensive to sustain. The move sends thousands
+        of developers across Windows, Office, Outlook, Teams, and Surface back to the GitHub
+        Copilot CLI, despite internal preference for Anthropic's tool over in-house options.
+        Claude models will remain available inside Copilot CLI.
+
+        PRESENTED BY IBM
+        IBM Bob is the AI Development partner built for the modernization work you need to
+        get done. Java upgrades, COBOL refactors, RPG, Mainframe modernization.
+
+        ClickUp cuts 22% of staff to hire AI engineers at $1M salary: The project management
+        startup laid off roughly 250 employees while simultaneously posting roles for AI
+        engineers with compensation packages reaching $1 million annually. CEO Zeb Evans
+        framed the move as a necessary "AI-first" pivot, acknowledging the human cost while
+        arguing the company must restructure to remain competitive.
