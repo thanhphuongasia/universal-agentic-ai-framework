@@ -30,6 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 from ryuu_messaging_core import (
     CancelToken,
     ChannelOrchestrator,
+    ClassifyResult,
     DispatchLabel,
     MessageClassifier,
     ScopeDispatcher,
@@ -188,43 +189,50 @@ class TestScopeState(unittest.TestCase):
 class TestMessageClassifier(unittest.IsolatedAsyncioTestCase):
     async def test_stop_keyword_short_message(self) -> None:
         clf = MessageClassifier()
-        label = await clf.classify("stop", "Draft Q3 report")
-        self.assertEqual(label, DispatchLabel.STOP)
+        result = await clf.classify("stop", "Draft Q3 report")
+        self.assertIsInstance(result, ClassifyResult)
+        self.assertEqual(result.label, DispatchLabel.STOP)
+        self.assertEqual(result.layer, "heuristic")
 
     async def test_stop_vietnamese_short(self) -> None:
         clf = MessageClassifier()
-        label = await clf.classify("thôi đi", "analyzing data")
-        self.assertEqual(label, DispatchLabel.STOP)
+        result = await clf.classify("thôi đi", "analyzing data")
+        self.assertEqual(result.label, DispatchLabel.STOP)
+        self.assertEqual(result.layer, "heuristic")
 
     async def test_long_stop_message_goes_to_llm_fallback(self) -> None:
         # Long message with stop keyword but no LLM → NEW (fallback)
         clf = MessageClassifier()
-        label = await clf.classify(
+        result = await clf.classify(
             "please stop what you are doing right now because I changed my mind",
             "analyzing data",
         )
         # Without LLM, heuristic catches "stop" in ≤8 words only; this is 14 words → NEW
-        self.assertEqual(label, DispatchLabel.NEW)
+        self.assertEqual(result.label, DispatchLabel.NEW)
+        self.assertEqual(result.layer, "fallback")
 
     async def test_llm_layer_steer(self) -> None:
         provider = _make_llm_provider("STEER")
         clf = MessageClassifier(provider=provider)
-        label = await clf.classify("actually use a formal tone", "Draft Q3 report")
-        self.assertEqual(label, DispatchLabel.STEER)
+        result = await clf.classify("actually use a formal tone", "Draft Q3 report")
+        self.assertEqual(result.label, DispatchLabel.STEER)
+        self.assertEqual(result.layer, "llm")
         provider.complete.assert_called_once()
 
     async def test_llm_layer_new(self) -> None:
         provider = _make_llm_provider("NEW")
         clf = MessageClassifier(provider=provider)
-        label = await clf.classify("what's the weather in Tokyo?", "Draft Q3 report")
-        self.assertEqual(label, DispatchLabel.NEW)
+        result = await clf.classify("what's the weather in Tokyo?", "Draft Q3 report")
+        self.assertEqual(result.label, DispatchLabel.NEW)
+        self.assertEqual(result.layer, "llm")
 
     async def test_llm_failure_falls_back_to_new(self) -> None:
         provider = AsyncMock()
         provider.complete = AsyncMock(side_effect=RuntimeError("timeout"))
         clf = MessageClassifier(provider=provider)
-        label = await clf.classify("some ambiguous message here today", "task")
-        self.assertEqual(label, DispatchLabel.NEW)
+        result = await clf.classify("some ambiguous message here today", "task")
+        self.assertEqual(result.label, DispatchLabel.NEW)
+        self.assertEqual(result.layer, "fallback")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

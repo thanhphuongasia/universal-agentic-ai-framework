@@ -18,6 +18,7 @@ from typing import Any
 
 from ryuu_messaging_core.conversation import ConversationManager
 from ryuu_messaging_core.dispatcher import DispatchLabel, ScopeDispatcher
+from ryuu_messaging_core.event_logger import ErrorEvent, IDispatchLogger, MessageEvent
 from ryuu_messaging_core.messages import IncomingMessage, OutgoingMessage
 from ryuu_messaging_core.protocols import IChannelAdapter, IChannelHandler
 
@@ -30,6 +31,7 @@ class ChannelOrchestrator:
     handler: IChannelHandler
     name: str = "Ryuu Sensei"
     dispatcher: ScopeDispatcher | None = None
+    logger: IDispatchLogger | None = None
     _channels: dict[str, IChannelAdapter] = field(default_factory=dict)
     _tasks: list[asyncio.Task] = field(default_factory=list)
 
@@ -65,8 +67,29 @@ class ChannelOrchestrator:
     # Dispatch — single entry point every adapter calls
     # ------------------------------------------------------------------ #
     async def _on_message(self, msg: IncomingMessage) -> OutgoingMessage:
+        try:
+            return await self._dispatch(msg)
+        except Exception as exc:
+            if self.logger is not None:
+                self.logger.on_error(ErrorEvent(
+                    scope_key=msg.conversation_id,
+                    exc_type=type(exc).__name__,
+                    message=str(exc),
+                    context="orchestrator._on_message",
+                ))
+            raise
+
+    async def _dispatch(self, msg: IncomingMessage) -> OutgoingMessage:
         session   = await self.conversation_manager.get_session(msg)
         scope_key = session.scope_key
+
+        if self.logger is not None:
+            active = self.dispatcher is not None and self.dispatcher.is_running(scope_key)
+            self.logger.on_message(MessageEvent(
+                scope_key=scope_key,
+                text_preview=(msg.text or "")[:80],
+                active_task=active,
+            ))
 
         # ── Dispatcher routing (only when a task is already running) ──
         if self.dispatcher is not None and self.dispatcher.is_running(scope_key):

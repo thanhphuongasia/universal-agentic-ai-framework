@@ -34,6 +34,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ryuu_messaging_core.event_logger import (
+    DispatchEvent,
+    IDispatchLogger,
+    TaskEvent,
+    _Timer,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -46,6 +53,16 @@ class DispatchLabel(str, enum.Enum):
     STOP  = "STOP"   # cancel current task; generate stop summary
     STEER = "STEER"  # inject context into current task; ack quickly
     NEW   = "NEW"    # unrelated; queue or reject until task finishes
+
+
+@dataclass(frozen=True)
+class ClassifyResult:
+    """Output of MessageClassifier.classify() — label + provenance metadata."""
+    label: DispatchLabel
+    layer: str           # "heuristic" | "llm" | "fallback"
+    reasoning: str = ""  # LLM chain-of-thought (populated when layer="llm")
+    model: str = ""      # LLM model used (populated when layer="llm")
+    latency_ms: float = 0.0
 
 
 @dataclass
@@ -184,8 +201,9 @@ class MessageClassifier:
             return None
 
     # ------------------------------------------------------------------
-    async def classify(self, message: str, task_summary: str) -> DispatchLabel:
+    async def classify(self, message: str, task_summary: str) -> ClassifyResult:
         """Classify a message relative to the currently-running task."""
+        timer      = _Timer()
         stripped   = message.strip()
         lower      = stripped.lower()
         word_count = len(stripped.split())
@@ -194,18 +212,26 @@ class MessageClassifier:
         if word_count <= 8:
             for phrase in _STOP_PHRASES:
                 if phrase in lower:
-                    return DispatchLabel.STOP
+                    return ClassifyResult(
+                        label=DispatchLabel.STOP, layer="heuristic",
+                        latency_ms=timer.elapsed_ms(),
+                    )
 
         # ── Layer 2: LLM CoT ─────────────────────────────────────────
         if self._provider is not None:
             cfg = self._load_cfg()
             if cfg is not None:
-                return await self._llm_classify(stripped, task_summary, cfg)
+                return await self._llm_classify(stripped, task_summary, cfg, timer)
 
         # ── Fallback: no LLM → NEW ───────────────────────────────────
-        return DispatchLabel.NEW
+        return ClassifyResult(
+            label=DispatchLabel.NEW, layer="fallback",
+            latency_ms=timer.elapsed_ms(),
+        )
 
-    async def _llm_classify(self, message: str, task_summary: str, cfg: Any) -> DispatchLabel:
+    async def _llm_classify(
+        self, message: str, task_summary: str, cfg: Any, timer: _Timer,
+    ) -> ClassifyResult:
         try:
             from ryuu_providers.llm import CompletionRequest, Message
 
@@ -224,10 +250,19 @@ class MessageClassifier:
             response = await self._provider.complete(request)
             raw      = (response.content or "").strip()
             data     = json.loads(raw)
-            return DispatchLabel(str(data.get("label", "NEW")).upper())
+            label     = DispatchLabel(str(data.get("label", "NEW")).upper())
+            reasoning = str(data.get("reasoning", ""))
+            return ClassifyResult(
+                label=label, layer="llm",
+                reasoning=reasoning, model=cfg.model,
+                latency_ms=timer.elapsed_ms(),
+            )
         except Exception as exc:
             log.warning("LLM classify failed (%s) — defaulting to NEW", exc)
-            return DispatchLabel.NEW
+            return ClassifyResult(
+                label=DispatchLabel.NEW, layer="fallback",
+                latency_ms=timer.elapsed_ms(),
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -251,9 +286,11 @@ class ScopeDispatcher:
         self,
         classifier: MessageClassifier | None = None,
         provider: Any | None = None,
+        logger: IDispatchLogger | None = None,
     ) -> None:
         self._classifier = classifier or MessageClassifier()
         self._provider   = provider
+        self._logger     = logger
         self._states: dict[str, ScopeState] = {}
 
     # ------------------------------------------------------------------
@@ -287,12 +324,23 @@ class ScopeDispatcher:
         state.reset()
         state.attach_task(task)                              # register first
         state.task_summary = await self._summarize(first_message)   # then summarize
+        if self._logger is not None:
+            self._logger.on_task(TaskEvent(
+                scope_key=scope_key, kind="start",
+                task_summary=state.task_summary,
+            ))
         return state
 
     def finish_task(self, scope_key: str) -> None:
         """Mark scope as idle. Called in a finally block after the task completes."""
         s = self._states.get(scope_key)
         if s:
+            if self._logger is not None:
+                kind = "cancel" if (s._task is not None and s._task.cancelled()) else "finish"
+                self._logger.on_task(TaskEvent(
+                    scope_key=scope_key, kind=kind,
+                    task_summary=s.task_summary,
+                ))
             s.reset()
 
     # ------------------------------------------------------------------
@@ -312,9 +360,20 @@ class ScopeDispatcher:
         if not self.is_running(scope_key):
             return DispatchLabel.NEW, None
 
-        state = self.get_state(scope_key)
-        label = await self._classifier.classify(message, state.task_summary)
-        return label, state
+        state  = self.get_state(scope_key)
+        result = await self._classifier.classify(message, state.task_summary)
+        if self._logger is not None:
+            self._logger.on_dispatch(DispatchEvent(
+                scope_key=scope_key,
+                label=result.label.value,
+                message_preview=message[:80],
+                task_summary=state.task_summary[:60],
+                layer=result.layer,
+                reasoning=result.reasoning,
+                model=result.model,
+                latency_ms=result.latency_ms,
+            ))
+        return result.label, state
 
     # ------------------------------------------------------------------
     # LLM helpers
@@ -379,6 +438,7 @@ class ScopeDispatcher:
 
 __all__ = [
     "CancelToken",
+    "ClassifyResult",
     "DispatchLabel",
     "MessageClassifier",
     "ScopeDispatcher",

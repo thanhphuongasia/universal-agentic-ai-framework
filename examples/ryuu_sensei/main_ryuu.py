@@ -42,6 +42,7 @@ from ryuu_messaging_core import (
     MessageClassifier,
     ScopeDispatcher,
     SingleTenantResolver,
+    StandardDispatchLogger,
 )
 from ryuu_mcp_client import (
     MCPSkillsLoader,
@@ -272,9 +273,11 @@ async def run(use_telegram: bool) -> None:
     # Reuses the OpenAI provider (gpt-4o-mini via dispatch/v3.yaml).
     # Without a provider, falls back to keyword heuristics only —
     # obvious STOP signals still caught; STEER/NEW edge cases → NEW.
+    dispatch_logger = StandardDispatchLogger()
     dispatcher = ScopeDispatcher(
         classifier=MessageClassifier(provider=compaction_provider),
         provider=compaction_provider,
+        logger=dispatch_logger,
     )
     if compaction_provider:
         print("[ryuu-super] ScopeDispatcher: LLM routing enabled (STOP / STEER / NEW)")
@@ -355,6 +358,7 @@ async def run(use_telegram: bool) -> None:
         handler=handler,
         name="Ryuu Super",
         dispatcher=dispatcher,
+        logger=dispatch_logger,
     )
     orch.register_channel(CLIAdapter())
 
