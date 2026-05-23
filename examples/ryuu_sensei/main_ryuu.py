@@ -31,6 +31,33 @@ import os
 import sys
 from pathlib import Path
 
+
+def _load_dotenv() -> None:
+    """Load secrets from ~/.ryuu/.env (or $RYUU_ENV_FILE) into os.environ.
+
+    Persistent secrets (RYUU_BOT_TOKEN, OPENAI_API_KEY, etc.) live in this
+    file so the user doesn't have to re-export them every restart. Existing
+    env vars take precedence — pre-set vars from the shell are not overwritten.
+
+    Format is the standard one — `KEY=value` per line, blank lines and
+    `#` comments skipped, optional surrounding quotes stripped.
+    """
+    env_path = Path(os.environ.get("RYUU_ENV_FILE", str(Path.home() / ".ryuu" / ".env"))).expanduser()
+    if not env_path.exists():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        # Shell-exported vars win — only fill in missing ones.
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
 from ryuu_knowledge_memory.backbone import MemoryBackbone
 from ryuu_knowledge_memory.episodic import EpisodicMemoryStore
 from ryuu_knowledge_memory.working import WorkingMemoryStore
@@ -56,8 +83,25 @@ from ryuu_prompts import (
     PromptSkillsToolset,
     make_framework_registry,
 )
-from ryuu_storage_jsonl import JsonlCollectionStore
-from ryuu_storage_sqlite import SqliteKVStore
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+if DATABASE_URL:
+    from ryuu_storage_postgres import PostgresCollectionStore, PostgresKVStore
+
+    def _kv(table: str):
+        return PostgresKVStore(dsn=DATABASE_URL, table=table)
+
+    def _coll(table: str):
+        return PostgresCollectionStore(dsn=DATABASE_URL, table=table)
+else:
+    from ryuu_storage_jsonl import JsonlCollectionStore
+    from ryuu_storage_sqlite import SqliteKVStore
+
+    def _kv(table: str):
+        return SqliteKVStore(db_path=SUPER_DB_PATH, table=table)
+
+    def _coll(table: str):
+        return JsonlCollectionStore(root_dir=MEMORY_DIR, table=table)
 
 from examples.ryuu_sensei.apps.ryuu_handler import ALLOWED_MODELS, RyuuHandler
 
@@ -232,29 +276,31 @@ async def run(use_telegram: bool) -> None:
             "Tools won't fire with the fake provider — set the key for the full demo.\n"
         )
 
-    SUPER_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-
-    print(f"[ryuu-super] SQLite store:  {SUPER_DB_PATH}")
-    print(f"[ryuu-super] Memory dir:    {MEMORY_DIR}")
+    if DATABASE_URL:
+        print(f"[ryuu-super] Storage:       Postgres ({DATABASE_URL.split('@')[-1]})")
+    else:
+        SUPER_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"[ryuu-super] SQLite store:  {SUPER_DB_PATH}")
+        print(f"[ryuu-super] Memory dir:    {MEMORY_DIR}")
 
     # ── Layer 2 — single-tenant conversation manager ──────────────────
     cm = ConversationManager(
         session_store=KVSessionStore(
-            kv=SqliteKVStore(db_path=SUPER_DB_PATH, table="sessions"),
+            kv=_kv("sessions"),
             max_turns=20,
         ),
         scope_resolver=SingleTenantResolver(scope_key="owner"),
     )
 
-    # ── Long-term memory: JSONL per-scope files (OpenClaw pattern) ────
+    # ── Long-term memory ──────────────────────────────────────────────
     memory_backbone = MemoryBackbone(layers=[
         WorkingMemoryStore(
-            collection=JsonlCollectionStore(root_dir=MEMORY_DIR, table="working"),
+            collection=_coll("working"),
             max_entries=50,
         ),
         EpisodicMemoryStore(
-            collection=JsonlCollectionStore(root_dir=MEMORY_DIR, table="episodic"),
+            collection=_coll("episodic"),
             max_entries=500,
         ),
     ])
@@ -349,7 +395,7 @@ async def run(use_telegram: bool) -> None:
         prompt_skills_toolset=prompt_skills_toolset,
         system_toolset=system_toolset,
         warm_start_top_k=3,
-        state_store=SqliteKVStore(db_path=SUPER_DB_PATH, table="handler_state"),
+        state_store=_kv("handler_state"),
     )
 
     # ── Orchestrator + channels ───────────────────────────────────────

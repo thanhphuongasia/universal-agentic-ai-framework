@@ -294,3 +294,38 @@ jobs:
 
       - name: Run eval isolation test
         run: bash scripts/test-eval-isolation.sh
+
+  postgres-storage:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: ryuu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ryuu-storage-postgres
+        run: |
+          pip install -e packages/infrastructure/storage/ryuu-storage-core
+          pip install -e "packages/infrastructure/storage/ryuu-storage-postgres[dev]"
+
+      - name: Run Postgres storage tests
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost/ryuu_test
+        run: pytest packages/infrastructure/storage/ryuu-storage-postgres/tests/ -v

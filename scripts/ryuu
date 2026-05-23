@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# ryuu — CLI wrapper for the Ryuu Sensei bot.
+#
+# Reads ~/.ryuu/.env for RYUU_PROJECT + secrets. Tracks the running bot's
+# PID in ~/.ryuu/bot.pid so start/stop/restart can be invoked from anywhere.
+#
+# Commands:
+#   ryuu bot start            launch in background, redirect logs
+#   ryuu bot stop             SIGTERM the tracked PID
+#   ryuu bot restart          stop + start
+#   ryuu bot status           PID + uptime + cmdline if alive
+#   ryuu bot logs [-f]        tail the log file
+#   ryuu env                  print resolved settings (token redacted)
+set -euo pipefail
+
+RYUU_HOME="${RYUU_HOME:-$HOME/.ryuu}"
+ENV_FILE="${RYUU_ENV_FILE:-$RYUU_HOME/.env}"
+PID_FILE="$RYUU_HOME/bot.pid"
+LOG_FILE="$RYUU_HOME/bot.log"
+
+# Load .env so RYUU_PROJECT etc. are available. Parse line-by-line rather
+# than `source`-ing so values can contain quotes / apostrophes safely
+# (e.g. paths with "Con't" in them). Existing shell env vars take precedence.
+if [[ -f "$ENV_FILE" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Strip leading whitespace, skip blanks/comments
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
+        [[ "$line" != *"="* ]] && continue
+        key="${line%%=*}"
+        val="${line#*=}"
+        # Trim one pair of wrapping quotes (use pattern removal — portable across
+        # bash 3.2 on macOS where negative substring indices aren't supported).
+        case "$val" in
+            \"*\") val="${val#\"}"; val="${val%\"}" ;;
+            \'*\') val="${val#\'}"; val="${val%\'}" ;;
+        esac
+        # Only set if shell hasn't already exported one
+        if [[ -z "${!key:-}" ]]; then
+            export "$key=$val"
+        fi
+    done < "$ENV_FILE"
+fi
+
+if [[ -z "${RYUU_PROJECT:-}" ]]; then
+    echo "ryuu: RYUU_PROJECT not set. Add it to $ENV_FILE." >&2
+    exit 2
+fi
+
+_pid_alive() {
+    [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+bot_start() {
+    if _pid_alive; then
+        echo "Bot already running (PID $(cat "$PID_FILE")). Use 'ryuu bot restart' to reload."
+        exit 0
+    fi
+    # Kill any orphan instances that weren't tracked via PID file.
+    pkill -f "examples.ryuu_sensei.main_ryuu" >/dev/null 2>&1 || true
+    cd "$RYUU_PROJECT"
+    nohup python3 -m examples.ryuu_sensei.main_ryuu --telegram \
+        >"$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    echo "Bot started (PID $!) — logs: $LOG_FILE"
+    sleep 2
+    if _pid_alive; then
+        # Tail the first few lines so the user sees the startup banner.
+        head -n 20 "$LOG_FILE" 2>/dev/null || true
+    else
+        echo "Bot exited within 2s — check the log:" >&2
+        tail -n 30 "$LOG_FILE" >&2 || true
+        rm -f "$PID_FILE"
+        exit 1
+    fi
+}
+
+bot_stop() {
+    if _pid_alive; then
+        PID=$(cat "$PID_FILE")
+        kill "$PID" 2>/dev/null || true
+        # Wait up to 5s for graceful exit; then SIGKILL.
+        for _ in 1 2 3 4 5; do
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 1
+        done
+        kill -9 "$PID" 2>/dev/null || true
+        echo "Bot stopped (PID $PID)"
+    else
+        # No tracked PID — kill any matching orphan.
+        if pkill -f "examples.ryuu_sensei.main_ryuu" 2>/dev/null; then
+            echo "Bot stopped (matched by pattern — no pidfile)"
+        else
+            echo "Bot was not running."
+        fi
+    fi
+    rm -f "$PID_FILE"
+}
+
+bot_restart() {
+    bot_stop
+    sleep 1
+    bot_start
+}
+
+bot_status() {
+    if _pid_alive; then
+        PID=$(cat "$PID_FILE")
+        echo "Bot running"
+        ps -p "$PID" -o pid,etime,command 2>/dev/null || true
+    else
+        echo "Bot not running."
+        [[ -f "$PID_FILE" ]] && echo "(stale pidfile at $PID_FILE)"
+    fi
+}
+
+bot_logs() {
+    if [[ ! -f "$LOG_FILE" ]]; then
+        echo "No log file yet at $LOG_FILE."
+        exit 0
+    fi
+    if [[ "${1:-}" == "-f" ]]; then
+        tail -f "$LOG_FILE"
+    else
+        tail -n 50 "$LOG_FILE"
+    fi
+}
+
+cmd_env() {
+    echo "RYUU_HOME      = $RYUU_HOME"
+    echo "RYUU_ENV_FILE  = $ENV_FILE"
+    echo "RYUU_PROJECT   = $RYUU_PROJECT"
+    echo "PID_FILE       = $PID_FILE"
+    echo "LOG_FILE       = $LOG_FILE"
+    if [[ -n "${RYUU_BOT_TOKEN:-}" ]]; then
+        echo "RYUU_BOT_TOKEN = ${RYUU_BOT_TOKEN:0:10}…(redacted)"
+    fi
+}
+
+usage() {
+    cat <<EOF
+ryuu — CLI for the Ryuu Sensei bot
+
+Usage:
+  ryuu bot start            Start the bot in the background
+  ryuu bot stop             Stop the bot
+  ryuu bot restart          Restart the bot (stop + start)
+  ryuu bot status           Show whether the bot is running
+  ryuu bot logs [-f]        Tail the log file (-f to follow)
+  ryuu env                  Print resolved settings (token redacted)
+
+Files:
+  Secrets:  $ENV_FILE
+  Logs:     $LOG_FILE
+  PID file: $PID_FILE
+EOF
+}
+
+case "${1:-}" in
+    bot)
+        case "${2:-}" in
+            start)   bot_start ;;
+            stop)    bot_stop ;;
+            restart) bot_restart ;;
+            status)  bot_status ;;
+            logs)    bot_logs "${3:-}" ;;
+            *)       usage; exit 1 ;;
+        esac
+        ;;
+    env) cmd_env ;;
+    ""|help|-h|--help) usage ;;
+    *) usage; exit 1 ;;
+esac

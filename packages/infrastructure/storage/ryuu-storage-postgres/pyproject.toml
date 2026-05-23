@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ryuu-storage-postgres"
+version = "0.3.0a1"
+description = "PostgreSQL IKVStore + ICollectionStore — asyncpg-backed, multi-process safe."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "ryuu-storage-core>=0.3.0a1",
+    "asyncpg>=0.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.6.0",
+]
+
+[project.urls]
+Repository = "https://github.com/core-corp/ryuu-framework"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ryuu_storage_postgres"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
