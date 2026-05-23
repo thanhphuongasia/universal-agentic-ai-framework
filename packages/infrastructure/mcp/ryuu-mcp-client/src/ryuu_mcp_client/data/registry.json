@@ -1,0 +1,125 @@
+{
+  "$schema_version": "1",
+  "$description": "Curated catalog of official + community MCP servers. add_skill tool uses this to install skills by name without editing skills.yaml manually.",
+  "skills": {
+    "filesystem": {
+      "description": "Local filesystem — read, write, list, search files. Sandboxed to declared directories.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "params": [
+        {
+          "name": "paths",
+          "type": "list[str]",
+          "required": true,
+          "description": "Absolute paths the server may access. Server is sandboxed — bot cannot escape these.",
+          "append_to_args": true
+        }
+      ],
+      "env_required": []
+    },
+    "github": {
+      "description": "GitHub API — read/search issues, PRs, code, commits.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "params": [],
+      "env_required": [
+        {
+          "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "from_env": "GITHUB_TOKEN",
+          "description": "Personal access token from https://github.com/settings/tokens (scope: repo, read:org)"
+        }
+      ]
+    },
+    "brave": {
+      "description": "Web search via Brave Search API. Free tier: 2000 queries/month.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "params": [],
+      "env_required": [
+        {
+          "name": "BRAVE_API_KEY",
+          "from_env": "BRAVE_API_KEY",
+          "description": "API key from https://api.search.brave.com/"
+        }
+      ]
+    },
+    "fetch": {
+      "description": "Fetch arbitrary URLs — one-off article reads, HTML→markdown conversion.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "params": [],
+      "env_required": []
+    },
+    "postgres": {
+      "description": "PostgreSQL read-only queries (SELECT statements).",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "params": [
+        {
+          "name": "connection_string",
+          "type": "str",
+          "required": true,
+          "description": "postgresql://user:pass@host:port/db",
+          "append_to_args": true
+        }
+      ],
+      "env_required": []
+    },
+    "sqlite": {
+      "description": "SQLite query/inspect — any local .sqlite file.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite"],
+      "params": [
+        {
+          "name": "db_path",
+          "type": "str",
+          "required": true,
+          "description": "Absolute path to .sqlite file",
+          "append_to_args": true
+        }
+      ],
+      "env_required": []
+    },
+    "memory": {
+      "description": "Anthropic's reference memory server — knowledge graph over entities/relations.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "params": [],
+      "env_required": []
+    },
+    "puppeteer": {
+      "description": "Browser automation — navigate pages, screenshot, scrape rendered content.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "params": [],
+      "env_required": []
+    },
+    "slack": {
+      "description": "Slack — read channel messages, post messages, search.",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "params": [],
+      "env_required": [
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "from_env": "SLACK_BOT_TOKEN",
+          "description": "Bot token starting with xoxb- from your Slack app config"
+        },
+        {
+          "name": "SLACK_TEAM_ID",
+          "from_env": "SLACK_TEAM_ID",
+          "description": "Team/workspace ID (T0XXXXXX)"
+        }
+      ]
+    }
+  }
+}
