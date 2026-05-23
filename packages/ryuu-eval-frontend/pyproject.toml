@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ryuu-eval-frontend"
+version = "0.1.0a1"
+description = "Pre-built eval workbench UI — serves at /api/eval/ui via FastAPI."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ryuu contributors" }]
+keywords = ["llm", "eval", "ui", "prompt-optimization"]
+
+# No Python runtime deps — pure static asset package.
+# Project's FastAPI app (which already has fastapi installed) serves the bundle.
+dependencies = []
+
+[project.urls]
+Documentation = "https://github.com/anthropics/ryuu/blob/main/docs/guides/quickstart/10-eval-framework.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ryuu_eval_frontend = ["dist/*", "dist/**/*"]

@@ -222,9 +222,11 @@ templates = FixtureLoader.list_templates("artifacts/eval/cases/intent_classifier
 
 ---
 
-## 6. HTTP Router — `build_eval_router`
+## 6. HTTP Router — `build_eval_router` + Pre-Built UI
 
-Mount once, get 11 endpoints:
+Mount once, get 11 API endpoints + (optionally) a full eval workbench UI:
+
+### 6.1 Backend only (default)
 
 ```python
 from ryuu_eval.http import build_eval_router
@@ -254,6 +256,57 @@ app.include_router(router, prefix="/api/eval")
 | GET | `/refine_history/{suite_id}` | Recent refine events + stats |
 | POST | `/optimize/{suite_id}` | Manual fire PromptOptimizer (Q3 = C) |
 | GET | `/status` | Framework status + cron flag |
+
+### 6.2 Backend + Pre-Built UI (Tier 1)
+
+Add `serve_ui=True` để get a full eval workbench UI at no extra effort:
+
+```python
+# Install: pip install ryuu-eval-frontend
+app.include_router(build_eval_router(
+    runner_factory=my_factory,
+    template_registry={...},
+    serve_ui=True,       # ← serves UI at /api/eval/ui
+), prefix="/api/eval")
+```
+
+Open `http://localhost:8000/api/eval/ui` → working workbench:
+- Sidebar: suite picker, template gallery (filter by tags), case list
+- Editor: split input/expected JSON, save case persists as YAML
+- Live SSE progress log
+- Diff view (actual vs expected, highlighted mismatches)
+- Refine history panel (LLM mistakes + per-iteration feedback)
+- Optimize button → fires `POST /api/eval/optimize/{suite_id}` → diff modal
+
+**Tech stack (no build step needed):**
+- Pure static HTML/JS/CSS bundle (~30KB total)
+- Preact + htm loaded via esm.sh CDN (cached)
+- Zero npm install for consumers
+
+**Custom prefix:**
+```python
+build_eval_router(..., serve_ui=True, ui_prefix="/workbench")
+# → UI at /api/eval/workbench
+```
+
+**Override config (in project's HTML wrapper if iframing):**
+```html
+<script>
+  window.RYUU_EVAL_CONFIG = {
+    apiPrefix: "/api/v2/eval",
+    defaultSuiteId: "intent_classifier",
+  };
+</script>
+```
+
+### 6.3 Tier 2/3 (Future)
+
+For projects với existing React app or non-HTTP consumers:
+
+- **Tier 2** — `@ryuu/eval-frontend-react` npm package — composable React
+  components (planned)
+- **Tier 3** — `ryuu_eval.mcp` — MCP server exposing eval as tools/resources
+  to Claude desktop / agent clients (planned)
 
 ---
 

@@ -79,6 +79,8 @@ def build_eval_router(
     refine_log_dir: Path = Path("artifacts/eval/refine_history"),
     require_auth: Callable[..., Any] | None = None,
     optimizer_callback: Callable[[str, dict], dict] | None = None,
+    serve_ui: bool = False,
+    ui_prefix: str = "/ui",
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -277,7 +279,14 @@ def build_eval_router(
             "templates_count": len(template_registry),
             "cases_dir": str(cases_dir),
             "refine_log_dir": str(refine_log_dir),
+            "ui_served": serve_ui,
         }
+
+    # ── Static UI (Tier 1) ─────────────────────────────────────────────
+
+    if serve_ui:
+        from ryuu_eval.http.ui import mount_ui
+        mount_ui(r, prefix=ui_prefix)
 
     return r
 
