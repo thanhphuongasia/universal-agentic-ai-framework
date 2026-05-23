@@ -25,8 +25,20 @@ Quick start:
 from ryuu_mcp_client.client import MCPClient
 from ryuu_mcp_client.loader import MCPSkillsLoader
 from ryuu_mcp_client.mcp_tool import MCPTool
+from ryuu_mcp_client.registry import (
+    SkillEnvVar,
+    SkillParam,
+    SkillRegistry,
+    SkillSpec,
+)
+from ryuu_mcp_client.skill_manager import SkillManager, SkillManagerToolset
 from ryuu_mcp_client.toolset import MCPToolset
 
-__version__ = "0.3.0a1"
+__version__ = "0.3.0a2"
 
-__all__ = ["MCPClient", "MCPTool", "MCPToolset", "MCPSkillsLoader"]
+__all__ = [
+    "MCPClient", "MCPTool", "MCPToolset", "MCPSkillsLoader",
+    # Phase 8.11 — runtime skill management
+    "SkillRegistry", "SkillSpec", "SkillParam", "SkillEnvVar",
+    "SkillManager", "SkillManagerToolset",
+]

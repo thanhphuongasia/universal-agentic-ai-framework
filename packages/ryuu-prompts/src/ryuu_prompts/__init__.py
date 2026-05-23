@@ -22,8 +22,15 @@ from ryuu_prompts.registry import (
     make_framework_registry,
     package_default_root,
 )
+from ryuu_prompts.skills import (
+    PromptSkill,
+    PromptSkillRegistry,
+    PromptSkillsToolset,
+    list_prompt_skills_tool,
+    parse_skill_file,
+)
 
-__version__ = "0.3.0a1"
+__version__ = "0.3.0a2"
 
 __all__ = [
     "PromptConfig",
@@ -32,4 +39,10 @@ __all__ = [
     "ToolDefinition",
     "make_framework_registry",
     "package_default_root",
+    # Phase 8.12 — Prompt Skills (Claude Code-style task templates)
+    "PromptSkill",
+    "PromptSkillRegistry",
+    "PromptSkillsToolset",
+    "parse_skill_file",
+    "list_prompt_skills_tool",
 ]

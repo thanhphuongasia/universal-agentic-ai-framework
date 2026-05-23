@@ -15,8 +15,8 @@ import mimetypes
 from typing import Any
 
 try:
-    from fastapi import APIRouter, HTTPException
-    from fastapi.responses import HTMLResponse, Response
+    from fastapi import APIRouter, HTTPException, Request
+    from fastapi.responses import HTMLResponse, RedirectResponse, Response
 except ImportError as exc:
     raise ImportError(
         "FastAPI required for ryuu_eval.http.ui. Install: pip install fastapi"
@@ -56,13 +56,19 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
     js_content = (dist / "ryuu-eval.js").read_text(encoding="utf-8")
     css_content = (dist / "ryuu-eval.css").read_text(encoding="utf-8")
 
-    @router.get(prefix, response_class=HTMLResponse, include_in_schema=False)
-    def _serve_index() -> str:
-        return index_html
+    # No-trailing-slash → redirect to /ui/ so that browser resolves relative
+    # asset URLs (ryuu-eval.js, ryuu-eval.css) against the correct base dir.
+    # Without redirect, browser thinks base = parent of /ui (e.g. /api/eval2/)
+    # and fetches /api/eval2/ryuu-eval.js → 404, UI stays stuck on "Loading…".
+    @router.get(prefix, include_in_schema=False)
+    def _serve_index_redirect(request: Request) -> RedirectResponse:
+        target = request.url.path + "/"
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(url=target, status_code=307)
 
-    # Trailing-slash variant (browsers may navigate to /ui/)
     @router.get(f"{prefix}/", response_class=HTMLResponse, include_in_schema=False)
-    def _serve_index_slash() -> str:
+    def _serve_index() -> str:
         return index_html
 
     @router.get(f"{prefix}/ryuu-eval.js", include_in_schema=False)
@@ -70,7 +76,7 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
         return Response(
             content=js_content,
             media_type="application/javascript; charset=utf-8",
-            headers={"Cache-Control": "public, max-age=3600"},
+            headers={"Cache-Control": "no-cache, must-revalidate"},
         )
 
     @router.get(f"{prefix}/ryuu-eval.css", include_in_schema=False)
@@ -78,7 +84,7 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
         return Response(
             content=css_content,
             media_type="text/css; charset=utf-8",
-            headers={"Cache-Control": "public, max-age=3600"},
+            headers={"Cache-Control": "no-cache, must-revalidate"},
         )
 
     # Generic asset fallback (for future assets — images, fonts, etc.)
@@ -96,7 +102,7 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
         return Response(
             content=content,
             media_type=mime or "application/octet-stream",
-            headers={"Cache-Control": "public, max-age=3600"},
+            headers={"Cache-Control": "no-cache, must-revalidate"},
         )
 
 

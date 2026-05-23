@@ -15,22 +15,38 @@ Lifecycle:
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from ryuu_mcp_core import IMCPClient, MCPToolSpec
 
+from ryuu_mcp_client.client import MCPClient
 from ryuu_mcp_client.mcp_tool import MCPTool
 
 log = logging.getLogger("ryuu_mcp_client.toolset")
 
+# Callback invoked after tools added/removed at runtime. Used by the host
+# (e.g. RyuuHandler) to invalidate any cached Agent instances so the next
+# turn rebuilds with the new tool set.
+ToolsetChangeListener = Callable[["MCPToolset"], Awaitable[None] | None]
+
 
 @dataclass
 class MCPToolset:
-    """Bundle of MCP tools sourced from multiple servers."""
+    """Bundle of MCP tools sourced from multiple servers.
+
+    Lifecycle:
+        toolset = MCPToolset(clients=[...])
+        await toolset.start_all()            # boot all configured at construction
+        await toolset.add_server(cfg)        # hot-add (Phase 8.11)
+        await toolset.remove_server("name")  # hot-remove
+        await toolset.stop_all()
+    """
     clients: list[IMCPClient]
     _tools: list[MCPTool] = field(default_factory=list, init=False)
     _started: bool = field(default=False, init=False)
+    _listeners: list[ToolsetChangeListener] = field(default_factory=list, init=False)
 
     async def start_all(self) -> None:
         """Launch all servers + collect their tools into a unified list.
@@ -80,5 +96,83 @@ class MCPToolset:
             summary[t.spec.server_name] = summary.get(t.spec.server_name, 0) + 1
         return summary
 
+    # ----- Phase 8.11 — hot install/uninstall --------------------------- #
 
-__all__ = ["MCPToolset"]
+    def has_server(self, name: str) -> bool:
+        return any(c.config.name == name for c in self.clients)
+
+    def add_listener(self, fn: ToolsetChangeListener) -> None:
+        """Register a callback fired AFTER tools are added/removed.
+
+        Host uses this to invalidate cached Agent instances. Callback may be
+        sync or async — both are awaited if async.
+        """
+        self._listeners.append(fn)
+
+    async def _notify_listeners(self) -> None:
+        for fn in self._listeners:
+            try:
+                result = fn(self)
+                if hasattr(result, "__await__"):
+                    await result  # type: ignore[misc]
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Toolset change listener raised: %s", exc)
+
+    async def add_server(self, config: Any) -> list[MCPToolSpec]:
+        """Hot-install a new MCP server. Returns the discovered tool specs.
+
+        If a server with the same name already exists, raises ValueError.
+        On startup failure, the (un-started) client is removed and exception
+        is re-raised — toolset state stays consistent.
+        """
+        from ryuu_mcp_core import MCPServerConfig  # local import to avoid cycle
+
+        if not isinstance(config, MCPServerConfig):
+            raise TypeError(f"add_server() expects MCPServerConfig, got {type(config).__name__}")
+        if self.has_server(config.name):
+            raise ValueError(f"Server {config.name!r} already installed — uninstall first")
+
+        client = MCPClient(config=config)
+        self.clients.append(client)
+        try:
+            await client.start()
+            specs = await client.list_tools()
+        except Exception:
+            # Roll back: remove from list, attempt cleanup
+            self.clients.remove(client)
+            try:
+                await client.stop()
+            except Exception:  # noqa: BLE001 — best effort
+                pass
+            raise
+
+        for spec in specs:
+            self._tools.append(MCPTool(client=client, spec=spec))
+        log.info("MCPToolset hot-added %r (%d tools)", config.name, len(specs))
+        await self._notify_listeners()
+        return specs
+
+    async def remove_server(self, name: str) -> int:
+        """Hot-uninstall a server by name. Returns tool count removed.
+
+        Stops the client subprocess and drops its tools from the bundle.
+        Raises KeyError if no such server.
+        """
+        client = next((c for c in self.clients if c.config.name == name), None)
+        if client is None:
+            raise KeyError(f"No server named {name!r}")
+
+        before = len(self._tools)
+        self._tools = [t for t in self._tools if t.client is not client]
+        removed = before - len(self._tools)
+        self.clients.remove(client)
+        try:
+            await client.stop()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Stop of %r failed during remove: %s", name, exc)
+        log.info("MCPToolset hot-removed %r (%d tools)", name, removed)
+        await self._notify_listeners()
+        return removed
+
+
+__all__ = ["MCPToolset", "ToolsetChangeListener"]

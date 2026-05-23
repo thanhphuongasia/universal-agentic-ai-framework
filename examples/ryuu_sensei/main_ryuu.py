@@ -39,8 +39,18 @@ from ryuu_messaging_core import (
     KVSessionStore,
     SingleTenantResolver,
 )
-from ryuu_mcp_client import MCPSkillsLoader, MCPToolset
-from ryuu_prompts import make_framework_registry
+from ryuu_mcp_client import (
+    MCPSkillsLoader,
+    MCPToolset,
+    SkillManager,
+    SkillManagerToolset,
+    SkillRegistry,
+)
+from ryuu_prompts import (
+    PromptSkillRegistry,
+    PromptSkillsToolset,
+    make_framework_registry,
+)
 from ryuu_storage_jsonl import JsonlCollectionStore
 from ryuu_storage_sqlite import SqliteKVStore
 
@@ -65,6 +75,8 @@ def _build_compaction_provider():
 SUPER_DB_PATH = Path(os.getenv("RYUU_SUPER_DB", str(Path.home() / ".ryuu" / "super.db")))
 MEMORY_DIR = Path(os.getenv("RYUU_MEMORY_DIR", str(Path.home() / ".ryuu" / "memory")))
 SKILLS_PATH = Path(os.getenv("RYUU_SKILLS_PATH", str(Path.home() / ".ryuu" / "skills.yaml")))
+PROMPT_SKILLS_USER_DIR = Path(os.getenv("RYUU_PROMPT_SKILLS_DIR", str(Path.home() / ".ryuu" / "skills")))
+PROMPT_SKILLS_BUNDLED_DIR = Path(__file__).parent / "skills"
 
 
 def _build_telegram_callbacks(
@@ -232,28 +244,57 @@ async def run(use_telegram: bool) -> None:
     print("[ryuu-super] ReAct paradigm: no recall preprocessing. LLM drives via tools.")
 
     # Phase 8.10 — Load MCP skills (filesystem, GitHub, etc.) from skills.yaml.
-    # User edits ~/.ryuu/skills.yaml to add capabilities.
-    mcp_toolset: MCPToolset | None = None
+    # User edits ~/.ryuu/skills.yaml to add capabilities — OR (Phase 8.11)
+    # the LLM installs them at runtime via install_skill / uninstall_skill.
     if SKILLS_PATH.exists():
         loader = MCPSkillsLoader.from_path(SKILLS_PATH)
         clients = loader.build_clients()
-        if clients:
-            mcp_toolset = MCPToolset(clients=clients)
-            await mcp_toolset.start_all()
-            summary = mcp_toolset.server_summary()
-            total = sum(summary.values())
-            print(f"[ryuu-super] MCP skills: {total} tools from {len(summary)} servers — {summary}")
-        else:
-            print(f"[ryuu-super] {SKILLS_PATH} found but no enabled servers configured")
     else:
-        print(f"[ryuu-super] No MCP skills config at {SKILLS_PATH}")
-        print(f"             (copy examples/ryuu_sensei/skills.example.yaml to enable)")
+        clients = []
+        print(f"[ryuu-super] No MCP skills config at {SKILLS_PATH} — starting with empty toolset")
+
+    # Always construct the toolset (even if zero clients) so the LLM has a
+    # live target to install_skill into via chat.
+    mcp_toolset: MCPToolset = MCPToolset(clients=clients)
+    await mcp_toolset.start_all()
+    summary = mcp_toolset.server_summary()
+    total = sum(summary.values())
+    if total:
+        print(f"[ryuu-super] MCP skills: {total} tools from {len(summary)} servers — {summary}")
+    else:
+        print(f"[ryuu-super] MCP skills: none active (use install_skill in chat to add)")
+
+    # Phase 8.11 — Skill management tools. LLM can `list_available_skills` then
+    # `install_skill('github', params={...})` without code edits or restart.
+    # `from_layered` also merges ~/.ryuu/skill_registry.json (or $RYUU_SKILL_REGISTRY)
+    # so users can curate their own skills installable via chat.
+    skill_registry = SkillRegistry.from_layered()
+    skill_manager = SkillManager(
+        registry=skill_registry,
+        toolset=mcp_toolset,
+        yaml_path=SKILLS_PATH,
+    )
+    skill_toolset = SkillManagerToolset(manager=skill_manager)
+    print(f"[ryuu-super] Skill registry: {len(skill_registry)} installable skills")
+
+    # Phase 8.12 — Prompt Skills (Claude Code-style task templates).
+    # User dir (wins) → bundled defaults. Hot-reload via mtime in handler.
+    prompt_skill_registry = PromptSkillRegistry.from_dirs([
+        PROMPT_SKILLS_USER_DIR,
+        PROMPT_SKILLS_BUNDLED_DIR,
+    ])
+    prompt_skills_toolset = PromptSkillsToolset(registry=prompt_skill_registry)
+    print(f"[ryuu-super] Prompt skills: {len(prompt_skill_registry)} loaded "
+          f"({', '.join(prompt_skill_registry.names()) or 'none'})")
 
     handler = RyuuHandler(
         memory_backbone=memory_backbone,
         compaction_provider=compaction_provider,
         prompt_registry=prompt_registry,
         mcp_toolset=mcp_toolset,
+        skill_toolset=skill_toolset,
+        prompt_skills=prompt_skill_registry,
+        prompt_skills_toolset=prompt_skills_toolset,
         warm_start_top_k=3,
         state_store=SqliteKVStore(db_path=SUPER_DB_PATH, table="handler_state"),
     )
@@ -306,8 +347,7 @@ async def run(use_telegram: bool) -> None:
         pass
     finally:
         await orch.stop()
-        if mcp_toolset is not None:
-            await mcp_toolset.stop_all()
+        await mcp_toolset.stop_all()
 
 
 def main() -> int:

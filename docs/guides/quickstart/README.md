@@ -531,6 +531,245 @@ tg = TelegramAdapter(
 )
 ```
 
+### MCP skills — add capabilities via chat, no code edits (Phase 8.11)
+
+`ryuu-mcp-client` ship một **curated registry** 9 MCP servers (filesystem, github, brave, fetch, postgres, sqlite, memory, puppeteer, slack). LLM cài đặt qua chat — không sửa code, không restart.
+
+```python
+from ryuu_mcp_client import (
+    MCPSkillsLoader, MCPToolset,
+    SkillRegistry, SkillManager, SkillManagerToolset,
+)
+
+# 1. Existing skills.yaml (nếu có) — load như cũ
+loader = MCPSkillsLoader.from_path("~/.ryuu/skills.yaml")
+mcp_toolset = MCPToolset(clients=loader.build_clients())
+await mcp_toolset.start_all()
+
+# 2. Skill registry (bundled + user overrides nếu có)
+registry = SkillRegistry.from_layered()
+manager = SkillManager(
+    registry=registry,
+    toolset=mcp_toolset,
+    yaml_path=Path("~/.ryuu/skills.yaml").expanduser(),
+)
+skill_toolset = SkillManagerToolset(manager=manager)
+
+# 3. Inject vào Agent — LLM thấy 5 management tools mới
+agent = Agent(
+    model="gpt-4o-mini",
+    tools=[*memory.tools, *mcp_toolset.tools, *skill_toolset.tools],
+)
+```
+
+LLM gọi 5 tools sau qua chat:
+
+| Tool | Khi nào gọi |
+|---|---|
+| `list_available_skills` | User hỏi "cài được skill gì?" |
+| `list_installed_skills` | "Skill nào đang chạy?" |
+| `install_skill(name, params?)` | "Cài fetch skill cho tôi" |
+| `uninstall_skill(name)` | "Gỡ skill X" |
+| `reload_skills` | Sau khi user edit `skills.yaml` thủ công |
+
+**Quan trọng:** sau `install_skill` thành công, tool mới available **ngay turn LLM tiếp theo** — `MCPToolset.add_listener` fire callback để invalidate Agent cache, không cần restart bot.
+
+#### Skill không nằm trong registry — 3 cách
+
+**Cách 1 — Custom registry file (recommend nếu sẽ dùng lại nhiều lần):**
+
+Tạo `~/.ryuu/skill_registry.json` (cùng schema với bundled):
+
+```json
+{
+  "skills": {
+    "my_blog_reader": {
+      "description": "Custom MCP server đọc bài Medium subscriptions",
+      "command": "npx",
+      "args": ["-y", "my-org/medium-mcp-server"],
+      "params": [],
+      "env_required": [
+        {"name": "MEDIUM_TOKEN", "from_env": "MEDIUM_TOKEN",
+         "description": "API token từ medium.com/me/settings"}
+      ]
+    }
+  }
+}
+```
+
+Bot tự pickup khi boot — `SkillRegistry.from_layered()` merge bundled + user file (user wins on collision). Sau đó LLM cài qua chat bình thường: *"install my_blog_reader"*.
+
+Hoặc trỏ env var:
+```bash
+export RYUU_SKILL_REGISTRY=/path/to/my_registry.json
+```
+
+**Cách 2 — Edit skills.yaml thủ công + `reload_skills` (one-off / experimental):**
+
+User tự viết entry vào `~/.ryuu/skills.yaml`:
+
+```yaml
+mcp_servers:
+  experimental_server:
+    command: uvx
+    args: ["some-new-mcp-server"]
+    env:
+      API_KEY: ${MY_API_KEY}
+```
+
+Trong chat: *"tôi vừa thêm experimental_server vào skills.yaml, reload đi"*. LLM gọi `reload_skills` → bot hot-add server mới, không restart. Cách này **bypass registry** vì user tự viết YAML (chịu trách nhiệm).
+
+**Cách 3 — Restart bot:**
+
+Vẫn work. Edit `skills.yaml`, kill bot, start lại. Đơn giản nhất nhưng mất context conversation.
+
+#### YAML persistence model
+
+Khi LLM `install_skill("github")`, bot ghi vào `~/.ryuu/skills.yaml`:
+
+```yaml
+mcp_servers:
+  github:
+    command: npx
+    args: [-y, "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}    # ← placeholder, không phải secret
+```
+
+Secret luôn lưu dạng `${ENV_VAR}` placeholder — file an toàn để commit vào dotfiles repo. Loader resolve env tại boot time.
+
+#### Security model
+
+Layered defense:
+
+```
+┌──────────────────────────────────────────────────────┐
+│ Cài qua chat (LLM tự call install_skill)             │
+│   → CHỈ skills trong registry (bundled + custom)     │
+│   → Validate env vars + params trước khi spawn       │
+│                                                       │
+│ Cài tuỳ ý (custom MCP server không có registry)      │
+│   → User TỰ edit skills.yaml + reload_skills          │
+│   → Bypass registry — user chịu trách nhiệm           │
+│                                                       │
+│ MCP server itself (sandbox internal)                  │
+│   → filesystem MCP chỉ access allowed_dirs            │
+│   → github MCP chỉ access repos token cho phép        │
+│   → Defense-in-depth — không tin LLM tuyệt đối        │
+└──────────────────────────────────────────────────────┘
+```
+
+LLM **không bao giờ** spawn được arbitrary subprocess từ chat — chỉ install từ catalog đã duyệt. Cài custom thì cần human-in-the-loop edit file.
+
+### Prompt Skills — task templates (Phase 8.12, Claude Code-style)
+
+**Khác biệt với MCP skill:**
+
+| | MCP skill (Phase 8.11) | Prompt skill (Phase 8.12) |
+|---|---|---|
+| Bản chất | Subprocess + tool functions | Markdown task template, LLM tự apply |
+| Khi dùng | Cần subprocess/API (filesystem, github) | Reusable task pattern (tóm tắt bài, tạo flashcard, code review) |
+| Effort/skill | Cần code Python/Node MCP server | 1 file .md, 0 code |
+| Lifecycle | Spawn process, JSON-RPC, list_tools | Read .md, inject vào system prompt |
+
+→ Pattern Claude Code đặt trong `.claude/skills/`. Ryuu cùng concept, dùng cho personal bots.
+
+#### Skill file format
+
+`~/.ryuu/skills/article_summary.md`:
+
+```markdown
+---
+name: article_summary
+description: Tóm tắt bài viết từ URL theo template TL;DR + Key Points + Bài học
+triggers: ["tóm tắt bài", "summarize", "tldr"]
+requires_tools: [fetch_fetch]
+---
+
+# Body — instructions LLM follows on trigger match
+
+1. Gọi `fetch_fetch(url=...)` lấy nội dung
+2. Output theo format:
+
+📰 **Tiêu đề:** ...
+**📌 TL;DR:** ...
+**🎯 Key Points:**
+- ...
+**💡 Bài học rút ra:**
+- ...
+**⚠️ Điểm cần chú ý:**
+- ...
+```
+
+#### Wiring (handler)
+
+```python
+from ryuu_prompts import PromptSkillRegistry, PromptSkillsToolset
+
+# Layered: user dir wins, bundled defaults fallback
+skill_reg = PromptSkillRegistry.from_dirs([
+    Path("~/.ryuu/skills"),                # user shadow
+    Path("./examples/ryuu_sensei/skills"), # bundled
+])
+
+# Inject into system prompt (handler does this — see ryuu_handler.py)
+instructions = soul_prose + "\n\n" + skill_reg.render_context()
+
+# Inject inspection tools (list_prompt_skills, reload_prompt_skills)
+prompt_skills_toolset = PromptSkillsToolset(registry=skill_reg)
+agent = Agent(
+    model="gpt-4o-mini",
+    instructions=instructions,
+    tools=[..., *prompt_skills_toolset.tools],
+)
+```
+
+#### Runtime flow
+
+```
+User: "tóm tắt bài https://example.com/post"
+       │
+       ▼
+Handler.handle()
+  • skill_reg.reload_if_changed()    ← mtime check, hot-reload nếu sửa
+  • Agent với system_prompt = soul + skill_catalog
+       │
+       ▼
+LLM sees: "Available skills: article_summary (triggers: tóm tắt bài, ...)"
+LLM matches → follows article_summary body
+  • fetch_fetch(url=...)
+  • Format output theo template
+       │
+       ▼
+User nhận structured summary (TL;DR + Key Points + Bài học + Caveats)
+```
+
+#### Hot-reload
+
+Sửa `~/.ryuu/skills/article_summary.md` → restart KHÔNG cần. Handler check mtime mỗi turn, re-scan nếu thấy thay đổi, clear cache Agent.
+
+#### Bundled skills
+
+`examples/ryuu_sensei/skills/`:
+- `article_summary.md` — tóm tắt bài viết
+- `flashcard_gen.md` — tạo flashcard từ note/article (theo StudyBuddy quality rules)
+
+Tạo skill mới: copy template, edit `name` / `triggers` / `body`, drop vào `~/.ryuu/skills/`. Bot tự pickup.
+
+#### Khi nào dùng prompt skill vs MCP skill?
+
+```
+Bạn cần truy cập external resource (FS, API, DB, browser)?
+├── YES → MCP skill (Phase 8.11) — install_skill('github') hoặc custom registry
+└── NO
+    │
+    ├── Cần LLM follow template/format cố định khi gặp trigger?
+    │   └── YES → Prompt skill (Phase 8.12) — viết file .md
+    │
+    └── Cần LLM nhớ preference / fact ngắn?
+        └── Memory backbone — remember("user thích coffee đen")
+```
+
 ### Multi-tenant product pattern (Todo / Flash / Stock — many users)
 
 ```python

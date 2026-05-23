@@ -164,6 +164,17 @@ class RyuuHandler:
     # If provided, MCP tools are merged with memory tools when building agents.
     mcp_toolset: Any = None    # ryuu_mcp_client.MCPToolset
 
+    # Phase 8.11 — SkillManagerToolset lets the LLM install/uninstall MCP
+    # skills via chat. install_skill / uninstall_skill / list_available_skills
+    # / list_installed_skills are surfaced as tools to the LLM.
+    skill_toolset: Any = None  # ryuu_mcp_client.SkillManagerToolset
+
+    # Phase 8.12 — PromptSkillRegistry (markdown task templates, Claude
+    # Code-style). Body is appended to system prompt so the LLM auto-applies
+    # them on trigger match. Hot-reload happens on each turn via mtime check.
+    prompt_skills: Any = None  # ryuu_prompts.PromptSkillRegistry
+    prompt_skills_toolset: Any = None  # ryuu_prompts.PromptSkillsToolset
+
     history_turns: int = 10        # recent session turns to inject in prompt
     include_forget_tool: bool = False  # opt-in destructive memory tool
     compact_keep_recent: int = 5      # turns preserved verbatim when compacting
@@ -206,6 +217,14 @@ class RyuuHandler:
                 threshold_tokens=4000,         # default; per-scope override at call time
                 keep_recent_turns=self.compact_keep_recent,
             )
+        # Phase 8.11 — listen for MCP toolset changes (install/uninstall via
+        # chat) so cached Agents are rebuilt with the new tool list.
+        if self.mcp_toolset is not None and hasattr(self.mcp_toolset, "add_listener"):
+            self.mcp_toolset.add_listener(self._on_mcp_tools_changed)
+
+    def _on_mcp_tools_changed(self, _toolset: Any) -> None:
+        """Drop cached Agent instances — next turn rebuilds with fresh tool list."""
+        self._agents.clear()
 
     # ------------------------------------------------------------------ #
     # State persistence (lazy-load + write-through)
@@ -334,19 +353,34 @@ class RyuuHandler:
     # ------------------------------------------------------------------ #
     # Agent factory — cache per (model, verbose). Each agent has memory tools.
     # ------------------------------------------------------------------ #
+    def _build_instructions(self) -> str:
+        """Soul prose + prompt-skill catalog (if registry wired)."""
+        base = RYUU_INSTRUCTIONS
+        if self.prompt_skills is not None and len(self.prompt_skills) > 0:
+            skill_block = self.prompt_skills.render_context()
+            if skill_block:
+                return base + "\n\n" + skill_block
+        return base
+
     def _get_agent(self, settings: UserSettings) -> Agent:
         key = (settings.model, settings.verbose)
         agent = self._agents.get(key)
         if agent is None:
             # Memory tools (framework primitives) + MCP tools (external skills)
+            # + skill management tools (install/uninstall MCP skills via chat)
+            # + prompt-skills inspection tools (list/reload markdown task patterns)
             tools: list[Any] = []
             if self._toolset is not None:
                 tools.extend(self._toolset.tools)
             if self.mcp_toolset is not None:
                 tools.extend(self.mcp_toolset.tools)
+            if self.skill_toolset is not None:
+                tools.extend(self.skill_toolset.tools)
+            if self.prompt_skills_toolset is not None:
+                tools.extend(self.prompt_skills_toolset.tools)
             agent = Agent(
                 model=settings.model,
-                instructions=RYUU_INSTRUCTIONS,
+                instructions=self._build_instructions(),
                 tools=tools,
                 budget_usd=1.0,
                 max_iterations=4,
@@ -362,6 +396,14 @@ class RyuuHandler:
         scope_key = session.scope_key
         await self._load_state(scope_key)
         settings = self.get_settings(scope_key)
+
+        # Phase 8.12 — hot-reload prompt skills if any .md file changed. Cheap
+        # mtime check per turn; only re-scans on actual change. Cache is then
+        # cleared so the next _get_agent rebuilds with refreshed catalog.
+        if self.prompt_skills is not None:
+            if self.prompt_skills.reload_if_changed() > 0:
+                self._agents.clear()
+
         agent = self._get_agent(settings)
 
         # Phase 9.0c — auto-compact session history if threshold exceeded.
