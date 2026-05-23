@@ -136,6 +136,7 @@ class ChannelOrchestrator:
 
         async def _core() -> OutgoingMessage:
             reply = await self.handler.handle(msg, session)
+            session.extra.pop("_dispatcher_state", None)  # ScopeState is not JSON-serializable
             await self.conversation_manager.save(session)
             return reply
 
