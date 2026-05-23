@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from typing import Any
 
 from ryuu_messaging_core.conversation import ConversationManager
+from ryuu_messaging_core.dispatcher import DispatchLabel, ScopeDispatcher
 from ryuu_messaging_core.messages import IncomingMessage, OutgoingMessage
 from ryuu_messaging_core.protocols import IChannelAdapter, IChannelHandler
 
@@ -27,6 +29,7 @@ class ChannelOrchestrator:
     conversation_manager: ConversationManager
     handler: IChannelHandler
     name: str = "Ryuu Sensei"
+    dispatcher: ScopeDispatcher | None = None
     _channels: dict[str, IChannelAdapter] = field(default_factory=dict)
     _tasks: list[asyncio.Task] = field(default_factory=list)
 
@@ -62,10 +65,76 @@ class ChannelOrchestrator:
     # Dispatch — single entry point every adapter calls
     # ------------------------------------------------------------------ #
     async def _on_message(self, msg: IncomingMessage) -> OutgoingMessage:
-        session = await self.conversation_manager.get_session(msg)
-        reply = await self.handler.handle(msg, session)
-        await self.conversation_manager.save(session)
-        return reply
+        session   = await self.conversation_manager.get_session(msg)
+        scope_key = session.scope_key
+
+        # ── Dispatcher routing (only when a task is already running) ──
+        if self.dispatcher is not None and self.dispatcher.is_running(scope_key):
+            label, state = await self.dispatcher.route(msg.text, scope_key)
+
+            if label == DispatchLabel.STOP and state is not None:
+                state.cancel_task()
+                # Give the task 2 s to handle CancelledError cleanly
+                if state._task is not None:
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(state._task), timeout=2.0,
+                        )
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+                stop_text = await self.dispatcher.stop_summary(scope_key)
+                self.dispatcher.finish_task(scope_key)
+                return OutgoingMessage(
+                    conversation_id=msg.conversation_id, text=stop_text,
+                )
+
+            if label == DispatchLabel.STEER and state is not None:
+                state.steer_ctx.add(msg.text)
+                return OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text="Got it — I'll keep that in mind for the current task.",
+                )
+
+            # NEW while running — let the user know
+            return OutgoingMessage(
+                conversation_id=msg.conversation_id,
+                text="Still working on the previous task. I'll handle this one right after.",
+            )
+
+        # ── Normal path — run handler (tracked by dispatcher if present) ──
+        return await self._run_handler(msg, session)
+
+    async def _run_handler(
+        self, msg: IncomingMessage, session: Any,
+    ) -> OutgoingMessage:
+        """Execute handler + save session; register with dispatcher when present."""
+
+        async def _core() -> OutgoingMessage:
+            reply = await self.handler.handle(msg, session)
+            await self.conversation_manager.save(session)
+            return reply
+
+        if self.dispatcher is None:
+            return await _core()
+
+        scope_key = session.scope_key
+        # Expose dispatcher primitives to handlers via session.extra.
+        # Handlers (e.g. RyuuHandler) drain steer_ctx to inject pending
+        # steer messages into the prompt. cancel_token is available for
+        # fine-grained cooperative cancellation checks between steps.
+        state = self.dispatcher.get_state(scope_key)
+        session.extra["_steer_ctx"]    = state.steer_ctx
+        session.extra["_cancel_token"] = state.cancel_token
+
+        task = asyncio.create_task(_core(), name=f"handler:{scope_key}")
+        await self.dispatcher.start_task(scope_key, task, first_message=msg.text)
+        try:
+            return await task
+        except asyncio.CancelledError:
+            # Task was cancelled by a STOP that arrived during _summarize window
+            return OutgoingMessage(conversation_id=msg.conversation_id, text="")
+        finally:
+            self.dispatcher.finish_task(scope_key)
 
     # ------------------------------------------------------------------ #
     # Helpers exposed to adapter command callbacks (/clear etc.)

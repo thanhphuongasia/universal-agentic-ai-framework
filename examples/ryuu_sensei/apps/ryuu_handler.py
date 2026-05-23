@@ -174,6 +174,7 @@ class RyuuHandler:
     # them on trigger match. Hot-reload happens on each turn via mtime check.
     prompt_skills: Any = None  # ryuu_prompts.PromptSkillRegistry
     prompt_skills_toolset: Any = None  # ryuu_prompts.PromptSkillsToolset
+    system_toolset: Any = None         # examples.ryuu_sensei.apps.system_tools.SystemToolset
 
     history_turns: int = 10        # recent session turns to inject in prompt
     include_forget_tool: bool = False  # opt-in destructive memory tool
@@ -378,6 +379,8 @@ class RyuuHandler:
                 tools.extend(self.skill_toolset.tools)
             if self.prompt_skills_toolset is not None:
                 tools.extend(self.prompt_skills_toolset.tools)
+            if self.system_toolset is not None:
+                tools.extend(self.system_toolset.tools)
             agent = Agent(
                 model=settings.model,
                 instructions=self._build_instructions(),
@@ -444,9 +447,23 @@ class RyuuHandler:
             if history_lines else ""
         )
 
+        # Drain any steer messages injected by ScopeDispatcher (optional).
+        # Orchestrator stores them in session.extra["_steer_ctx"] when wired.
+        steer_block = ""
+        steer_ctx = session.extra.get("_steer_ctx")
+        if steer_ctx is not None:
+            pending = steer_ctx.drain()
+            if pending:
+                steer_block = (
+                    "Additional context from user while I was working:\n"
+                    + "\n".join(f"  • {s}" for s in pending)
+                    + "\n\n"
+                )
+
         prompt_text = (
             recall_context
             + history_block
+            + steer_block
             + f"User now says: {msg.text}"
         )
 

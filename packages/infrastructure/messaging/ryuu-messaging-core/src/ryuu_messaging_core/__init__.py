@@ -27,6 +27,14 @@ See README.md for usage.
 """
 
 from ryuu_messaging_core.conversation import ConversationManager
+from ryuu_messaging_core.dispatcher import (
+    CancelToken,
+    DispatchLabel,
+    MessageClassifier,
+    ScopeDispatcher,
+    ScopeState,
+    SteeringContext,
+)
 from ryuu_messaging_core.messages import (
     Action,
     Attachment,
@@ -49,14 +57,16 @@ from ryuu_messaging_core.session import (
     KVSessionStore,
 )
 
-__version__ = "0.3.0a1"
+__version__ = "0.3.0a2"
 
 __all__ = [
     "Action",
     "Attachment",
+    "CancelToken",
     "ChannelOrchestrator",
     "ConversationManager",
     "DefaultScopeResolver",
+    "DispatchLabel",
     "IChannelAdapter",
     "IChannelHandler",
     "IScopeResolver",
@@ -64,9 +74,13 @@ __all__ = [
     "InMemorySessionStore",
     "KVSessionStore",
     "IncomingMessage",
+    "MessageClassifier",
     "OnMessageHandler",
     "OutgoingMessage",
+    "ScopeDispatcher",
+    "ScopeState",
     "Session",
     "SingleTenantResolver",
+    "SteeringContext",
     "Turn",
 ]

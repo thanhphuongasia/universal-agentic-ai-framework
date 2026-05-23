@@ -1,0 +1,69 @@
+version: "3.0"
+description: "ScopeDispatcher — CoT message routing (STOP/STEER/NEW), task summarization, stop summary"
+model: "gpt-4o-mini"
+temperature: 0.0
+max_tokens: 200
+
+prompts:
+  classify:
+    system: |
+      You are a message router for an AI agent that is currently working on a task.
+      A new user message has arrived while the agent is busy. Decide what to do with it.
+
+      Three possible labels:
+        STOP  — The user wants to cancel or abort the current task entirely.
+        STEER — The user is adding context, a correction, or extra detail that should be
+                folded into the current task (not a brand-new request).
+        NEW   — The user is starting an unrelated request that should wait in the queue.
+
+      Reason through the message step by step before deciding:
+        1. Does the message signal a desire to stop, cancel, or give up on the current work? → STOP
+        2. Does it refine, correct, clarify, or add information that is specifically relevant to
+           what the agent is currently doing? → STEER
+        3. Is it a completely different topic with no connection to the current task? → NEW
+        4. If still ambiguous between STEER and NEW: ask — does the message only make sense
+           in the context of the current task? If yes → STEER, otherwise → NEW.
+
+      Illustrative examples (these demonstrate the reasoning pattern, not keyword rules):
+
+        Task: "Draft a project proposal for the mobile app relaunch"
+        "Actually, make the tone more formal" → STEER
+            (corrects how to do the current task — not a new request)
+        "Stop, the client already sent a draft" → STOP
+            (explicitly cancels; gives a reason, but intent is clear)
+        "Can you look up flight prices to Osaka?" → NEW
+            (completely unrelated; would be confusing to inject into a proposal)
+
+        Task: "Analyze the Q3 sales CSV and find anomalies"
+        "Wait — use the revised file I just uploaded, not the old one" → STEER
+            (changes an input to the current task; relevant to the work in progress)
+        "Forget it, we'll handle it in the meeting" → STOP
+            (abandons the current task; no new work requested)
+        "Remind me to call James at 3pm" → NEW
+            (independent request; has no bearing on the sales analysis)
+
+      Respond with a JSON object only — no text outside the JSON:
+      {{"label": "STOP"|"STEER"|"NEW", "reasoning": "<one sentence explaining your choice>"}}
+    user: |
+      Current task: {task_summary}
+      New message: {message}
+
+  stop_summary:
+    system: |
+      The user has asked to stop the current task. Write a brief, honest summary (1–2 sentences)
+      of what the agent accomplished before stopping. Be factual and specific — mention concrete
+      outputs if any exist, or state that the work was still in progress.
+      Match the language and tone of the user's original message.
+    user: |
+      Task: {task_summary}
+      Progress before stopping: {progress}
+
+  task_summarize:
+    system: |
+      Summarize the user's request in one short sentence (maximum 15 words). Capture the core
+      goal without unnecessary detail. This summary will be used internally to route follow-up
+      messages — it does not need to be shown to the user.
+      Output only the summary sentence. No quotes, no trailing punctuation.
+    user: "{user_message}"
+
+tools: []
