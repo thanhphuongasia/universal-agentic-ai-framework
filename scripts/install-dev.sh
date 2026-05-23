@@ -67,6 +67,10 @@ ORDER=(
     "infrastructure/storage/ryuu-storage-memory"
     "infrastructure/storage/ryuu-storage-sqlite"
     "infrastructure/storage/ryuu-storage-jsonl"
+
+    # Tier 8 — MCP (Phase 8.10 — Model Context Protocol integration)
+    "infrastructure/mcp/ryuu-mcp-core"
+    "infrastructure/mcp/ryuu-mcp-client"
 )
 
 for pkg in "${ORDER[@]}"; do

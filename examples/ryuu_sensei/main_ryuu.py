@@ -39,6 +39,7 @@ from ryuu_messaging_core import (
     KVSessionStore,
     SingleTenantResolver,
 )
+from ryuu_mcp_client import MCPSkillsLoader, MCPToolset
 from ryuu_prompts import make_framework_registry
 from ryuu_storage_jsonl import JsonlCollectionStore
 from ryuu_storage_sqlite import SqliteKVStore
@@ -63,6 +64,7 @@ def _build_compaction_provider():
 
 SUPER_DB_PATH = Path(os.getenv("RYUU_SUPER_DB", str(Path.home() / ".ryuu" / "super.db")))
 MEMORY_DIR = Path(os.getenv("RYUU_MEMORY_DIR", str(Path.home() / ".ryuu" / "memory")))
+SKILLS_PATH = Path(os.getenv("RYUU_SKILLS_PATH", str(Path.home() / ".ryuu" / "skills.yaml")))
 
 
 def _build_telegram_callbacks(
@@ -229,10 +231,29 @@ async def run(use_telegram: bool) -> None:
     # (For non-agent / RAG / batch contexts, use ryuu_cognitive.recall.RecallPipeline.)
     print("[ryuu-super] ReAct paradigm: no recall preprocessing. LLM drives via tools.")
 
+    # Phase 8.10 — Load MCP skills (filesystem, GitHub, etc.) from skills.yaml.
+    # User edits ~/.ryuu/skills.yaml to add capabilities.
+    mcp_toolset: MCPToolset | None = None
+    if SKILLS_PATH.exists():
+        loader = MCPSkillsLoader.from_path(SKILLS_PATH)
+        clients = loader.build_clients()
+        if clients:
+            mcp_toolset = MCPToolset(clients=clients)
+            await mcp_toolset.start_all()
+            summary = mcp_toolset.server_summary()
+            total = sum(summary.values())
+            print(f"[ryuu-super] MCP skills: {total} tools from {len(summary)} servers — {summary}")
+        else:
+            print(f"[ryuu-super] {SKILLS_PATH} found but no enabled servers configured")
+    else:
+        print(f"[ryuu-super] No MCP skills config at {SKILLS_PATH}")
+        print(f"             (copy examples/ryuu_sensei/skills.example.yaml to enable)")
+
     handler = RyuuHandler(
         memory_backbone=memory_backbone,
         compaction_provider=compaction_provider,
         prompt_registry=prompt_registry,
+        mcp_toolset=mcp_toolset,
         warm_start_top_k=3,
         state_store=SqliteKVStore(db_path=SUPER_DB_PATH, table="handler_state"),
     )
@@ -285,6 +306,8 @@ async def run(use_telegram: bool) -> None:
         pass
     finally:
         await orch.stop()
+        if mcp_toolset is not None:
+            await mcp_toolset.stop_all()
 
 
 def main() -> int:

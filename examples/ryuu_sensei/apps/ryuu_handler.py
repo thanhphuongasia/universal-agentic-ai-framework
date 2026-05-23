@@ -160,6 +160,10 @@ class RyuuHandler:
     compaction_provider: Any = None   # ryuu_providers_core.ILLMProvider
     prompt_registry: Any = None        # ryuu_prompts.PromptRegistry
 
+    # Phase 8.10 — MCP toolset for external skills (filesystem, GitHub, etc).
+    # If provided, MCP tools are merged with memory tools when building agents.
+    mcp_toolset: Any = None    # ryuu_mcp_client.MCPToolset
+
     history_turns: int = 10        # recent session turns to inject in prompt
     include_forget_tool: bool = False  # opt-in destructive memory tool
     compact_keep_recent: int = 5      # turns preserved verbatim when compacting
@@ -334,7 +338,12 @@ class RyuuHandler:
         key = (settings.model, settings.verbose)
         agent = self._agents.get(key)
         if agent is None:
-            tools = self._toolset.tools if self._toolset is not None else []
+            # Memory tools (framework primitives) + MCP tools (external skills)
+            tools: list[Any] = []
+            if self._toolset is not None:
+                tools.extend(self._toolset.tools)
+            if self.mcp_toolset is not None:
+                tools.extend(self.mcp_toolset.tools)
             agent = Agent(
                 model=settings.model,
                 instructions=RYUU_INSTRUCTIONS,

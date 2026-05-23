@@ -1,0 +1,56 @@
+# Ryuu Sensei — MCP skills configuration
+#
+# Copy this file to ~/.ryuu/skills.yaml and customize.
+# Each entry under `mcp_servers:` launches one MCP server as a subprocess.
+# Bot auto-discovers tools and exposes to LLM. Restart bot to pick up changes.
+#
+# Environment variables: ${VAR_NAME} or $VAR_NAME → resolved from os.environ
+# Set `enabled: false` to skip a server without removing the entry.
+
+mcp_servers:
+
+  # Local filesystem access — read/write/search files
+  # https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
+  filesystem:
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-filesystem"
+      - /Users/macbook/Documents      # restrict to this dir (security)
+    # No API key needed
+
+  # Web search via Brave Search API (free tier 2000 queries/month)
+  # Get key: https://api.search.brave.com/
+  # brave:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-brave-search"]
+  #   env:
+  #     BRAVE_API_KEY: ${BRAVE_API_KEY}
+
+  # GitHub — read issues, PRs, search code, etc.
+  # Get token: https://github.com/settings/tokens (scope: repo, read:org)
+  # github:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-github"]
+  #   env:
+  #     GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+
+  # Fetch arbitrary URLs (one-off article reads)
+  # fetch:
+  #   command: uvx
+  #   args: ["mcp-server-fetch"]
+
+  # PostgreSQL read-only queries
+  # postgres:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/db"]
+
+  # SQLite — query any sqlite db
+  # sqlite:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-sqlite", "/path/to/db.sqlite"]
+
+  # Disabled example (kept for reference, won't launch)
+  # legacy:
+  #   command: ...
+  #   enabled: false

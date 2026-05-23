@@ -5,6 +5,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 8.10: MCP (Model Context Protocol) foundation
+
+Two new infrastructure packages enable **config-driven skill loading**.
+Add a GitHub / Gmail / Filesystem / Slack / Brave Search / Postgres skill
+to the bot WITHOUT writing Python — just edit `skills.yaml`.
+
+**New packages:**
+
+| Package | Contents | Deps |
+|---------|----------|------|
+| `ryuu-mcp-core` | `IMCPClient` Protocol + `MCPServerConfig` + `MCPToolSpec` | zero ryuu deps |
+| `ryuu-mcp-client` | `MCPClient` (wraps Anthropic's `mcp` Python SDK), `MCPTool` (implements `ITool`), `MCPToolset` (multi-server bundle), `MCPSkillsLoader` (yaml reader) | `ryuu-mcp-core`, `ryuu-execution`, `mcp>=1.0`, `pyyaml` |
+
+**Config-driven skill addition** (`~/.ryuu/skills.yaml`):
+
+```yaml
+mcp_servers:
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/macbook/Documents"]
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+```
+
+User flow:
+1. `vim ~/.ryuu/skills.yaml` — add server entry
+2. Set credential env var
+3. Restart bot → tools auto-discovered + exposed to LLM
+
+**RyuuHandler wires MCP tools** alongside MemoryToolset:
+
+```python
+RyuuHandler(
+    memory_backbone=...,
+    mcp_toolset=mcp_toolset,     # NEW — optional MCP skills
+    ...,
+)
+# Inside _get_agent():
+#   tools = [*memory_tools, *mcp_tools]
+# LLM treats MCP tools indistinguishably (function-calling schema).
+```
+
+**Tool naming convention**: `<server>.<tool>` qualified names prevent
+collisions (e.g. `filesystem.read_file` vs `github.read_file`). In OpenAI
+function-calling schema, dots become underscores.
+
+**Lifecycle**:
+- `MCPClient.start()` → spawn subprocess + JSON-RPC `initialize` handshake
+- `MCPClient.list_tools()` → cache after first call
+- `MCPClient.call_tool(name, args)` → returns text content
+- `MCPClient.stop()` → graceful shutdown (subprocess kill via AsyncExitStack)
+
+**MCPToolset multi-server**:
+- `start_all()` — graceful degrade: 1 server fails → other continue
+- `server_summary()` → `{server_name: tool_count}` for /status display
+
+**Bundled example**: `examples/ryuu_sensei/skills.example.yaml` with
+filesystem (enabled by default) + brave/github/fetch/postgres/sqlite
+templates (commented).
+
+Boot log when MCP active:
+
+```
+[ryuu-super] MCP skills: 14 tools from 1 servers — {'filesystem': 14}
+```
+
+**Verified end-to-end**:
+- 14 tools discovered from `@modelcontextprotocol/server-filesystem`
+- OpenAI schema format correct (dots → underscores)
+- `list_directory`, `read_text_file`, `search_files` execute correctly
+- Graceful degrade if no `skills.yaml` (bot still runs with memory tools only)
+- Clean shutdown via `mcp_toolset.stop_all()` in finally block
+
 ### Changed — Phase 9.0d.2: Drop `RecallPipeline` from `RyuuHandler` default
 
 `RyuuHandler` now uses **warm-start** (top-3 recent observations pre-injected) instead of the full recall pipeline (intent → expand → decompose → retrieve → RRF). Rationale:
