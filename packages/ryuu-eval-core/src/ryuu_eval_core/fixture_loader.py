@@ -96,13 +96,25 @@ class FixtureLoader:
 
     @staticmethod
     def _load_yaml(path: Path) -> list[EvalCase]:
-        """Parse YAML với !py tag support."""
+        """Parse YAML với !py tag support.
+
+        Accepts three shapes:
+          - list[dict]              — multiple cases
+          - {"cases": [dict, ...]}   — multiple cases wrapped
+          - dict với case_id key     — single case (auto-wrapped to list)
+        """
         Loader, yaml = _build_yaml_loader()
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=Loader)
         if isinstance(data, dict) and "cases" in data:
             data = data["cases"]
+        elif isinstance(data, dict) and ("case_id" in data or "input" in data):
+            # Single case dict → wrap to list
+            data = [data]
         if not isinstance(data, list):
-            raise ValueError(f"{path}: expected list or {{cases: [...]}}, got {type(data).__name__}")
+            raise ValueError(
+                f"{path}: expected list, {{cases: [...]}}, or single case dict, "
+                f"got {type(data).__name__}",
+            )
         return FixtureLoader.load_json(data)
 
     # ------------------------------------------------------------------

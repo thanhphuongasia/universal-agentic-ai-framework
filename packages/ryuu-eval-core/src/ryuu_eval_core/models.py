@@ -8,7 +8,7 @@ from typing import Any, Literal
 @dataclass(frozen=True)
 class EvalCase:
     case_id: str
-    input: str
+    input: Any  # str for simple LLM eval, dict for structured/complex inputs
     expected: Any = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
