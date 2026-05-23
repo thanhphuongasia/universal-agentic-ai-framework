@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ryuu Eval Workbench</title>
+  <link rel="stylesheet" href="ryuu-eval.css" />
+</head>
+<body>
+  <div id="ryuu-eval-root">
+    <div class="loading">Loading Ryuu Eval Workbench…</div>
+  </div>
+
+  <!-- CDN deps (cached aggressively, served from jsdelivr) -->
+  <script type="module">
+    import { html, render } from 'https://esm.sh/htm@3.1.1/preact';
+    import { useEffect, useState, useRef } from 'https://esm.sh/preact@10.22.0/hooks';
+
+    window.__ryuu_preact = { html, render, useState, useEffect, useRef };
+  </script>
+
+  <!-- Config (project can override before bundle.js) -->
+  <script>
+    window.RYUU_EVAL_CONFIG = Object.assign({
+      apiPrefix: "/api/eval",
+      defaultSuiteId: null,
+    }, window.RYUU_EVAL_CONFIG || {});
+  </script>
+
+  <!-- App bundle -->
+  <script type="module" src="ryuu-eval.js"></script>
+</body>
+</html>
