@@ -1,0 +1,37 @@
+cases:
+  # Trivial → gpt-4o-mini, output phải chào hỏi lại
+  - case_id: e2e-trivial-greeting
+    input:
+      message: "hi, hãy chào lại tôi bằng tiếng Việt"
+    expected:
+      model: "gpt-4o-mini"
+      must_mention:
+        - "chào"
+
+  # Trivial lookup → gpt-4o-mini, output phải đề cập model name
+  - case_id: e2e-trivial-define
+    input:
+      message: "gpt-4o-mini là gì?"
+    expected:
+      model: "gpt-4o-mini"
+      must_mention:
+        - "gpt-4o-mini"
+
+  # Hard analysis → gpt-4o, output phải so sánh hai model
+  - case_id: e2e-hard-compare
+    input:
+      message: "analyze and compare the trade-offs between gpt-4o-mini and gpt-4o for production use"
+    expected:
+      model: "gpt-4o"
+      must_mention:
+        - "gpt-4o-mini"
+        - "gpt-4o"
+
+  # Hard design → gpt-4o, output phải đề cập agent hoặc system
+  - case_id: e2e-hard-design
+    input:
+      message: "design a multi-agent system architecture for automated code review with quality evaluation"
+    expected:
+      model: "gpt-4o"
+      must_mention:
+        - "agent"

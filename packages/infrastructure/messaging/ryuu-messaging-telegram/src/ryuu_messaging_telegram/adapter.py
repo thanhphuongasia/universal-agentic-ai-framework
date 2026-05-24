@@ -57,7 +57,8 @@ DEFAULT_HELP = (
     "  /verbose on|off         — toggle LLM reasoning trace (💭 🔧 📋)\n"
     "  /model                  — tap a button to switch model\n"
     "  /compact                — compact long history NOW (free up context)\n"
-    "  /auto_compact on|off    — toggle automatic compaction\n\n"
+    "  /auto_compact on|off    — toggle automatic compaction\n"
+    "  /adaptive on|off        — toggle adaptive model routing (auto selects tier per query)\n\n"
     "Or just chat naturally."
 )
 
@@ -81,6 +82,7 @@ class TelegramAdapter(IChannelAdapter):
     on_current_model: Any = None # async (sender_id, conv_id) -> str
     on_compact: Any = None       # async (sender_id, conv_id) -> str  — manual trigger
     on_auto_compact: Any = None  # async (sender_id, conv_id, on: bool|None) -> str  — toggle / status
+    on_adaptive: Any = None      # async (sender_id, conv_id, on: bool|None) -> str  — adaptive routing toggle / status
 
     # Customizable text + model allowlist for the inline keyboard
     welcome_text: str = DEFAULT_WELCOME
@@ -260,6 +262,38 @@ class TelegramAdapter(IChannelAdapter):
                 reply = await self.on_auto_compact(*ids, on)
             except Exception as exc:  # noqa: BLE001
                 log.warning("on_auto_compact failed: %s", exc)
+                reply = f"⚠️ {type(exc).__name__}: {exc}"
+            await self._bot.send_message(tg_msg.chat.id, reply)
+
+        # ── /adaptive — toggle adaptive model routing ─────────────────
+        @self._dp.message(Command("adaptive"))
+        async def _cmd_adaptive(tg_msg: TgMessage) -> None:
+            self._remember_chat(tg_msg)
+            ids = _ids(tg_msg)
+            if ids is None or self.on_adaptive is None:
+                await self._bot.send_message(tg_msg.chat.id, "(adaptive routing unavailable)")
+                return
+            parts = (tg_msg.text or "").strip().split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+            on: bool | None
+            if arg == "on":
+                on = True
+            elif arg == "off":
+                on = False
+            elif arg in {"", "status"}:
+                on = None
+            else:
+                await self._bot.send_message(
+                    tg_msg.chat.id,
+                    "Usage: `/adaptive on|off` to toggle, or `/adaptive` to see current state.",
+                )
+                return
+
+            try:
+                reply = await self.on_adaptive(*ids, on)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_adaptive failed: %s", exc)
                 reply = f"⚠️ {type(exc).__name__}: {exc}"
             await self._bot.send_message(tg_msg.chat.id, reply)
 

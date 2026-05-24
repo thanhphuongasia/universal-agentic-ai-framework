@@ -1,0 +1,42 @@
+cases:
+  - case_id: trivial-greeting
+    input:
+      message: "hi"
+    expected:
+      model: "gpt-4o-mini"
+
+  - case_id: trivial-lookup
+    input:
+      message: "what is gpt-4o?"
+    expected:
+      model: "gpt-4o-mini"
+
+  - case_id: trivial-list
+    input:
+      message: "list your skills"
+    expected:
+      model: "gpt-4o-mini"
+
+  - case_id: medium-explain
+    input:
+      message: "explain how transformers work with an example"
+    expected:
+      model: "gpt-4o-mini"
+
+  - case_id: hard-analyze
+    input:
+      message: "analyze the architecture and compare trade-offs between gpt-4o and gpt-4o-mini for production use"
+    expected:
+      model: "gpt-4o"
+
+  - case_id: hard-design
+    input:
+      message: "design a multi-agent system for automated code review with evaluation criteria"
+    expected:
+      model: "gpt-4o"
+
+  - case_id: hard-long-query
+    input:
+      message: "I need you to evaluate the performance of different retrieval strategies, compare their latency and accuracy trade-offs, then recommend an architecture that balances cost and quality for a production RAG system with 10M documents"
+    expected:
+      model: "gpt-4o"
