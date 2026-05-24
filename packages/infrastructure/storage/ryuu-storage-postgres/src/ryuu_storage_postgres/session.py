@@ -52,7 +52,7 @@ class PostgresSessionStore:
                     id         BIGSERIAL PRIMARY KEY,
                     scope_key  TEXT NOT NULL
                                REFERENCES sessions(scope_key) ON DELETE CASCADE,
-                    role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    "role"     TEXT NOT NULL CHECK ("role" IN ('user', 'assistant')),
                     text       TEXT NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
@@ -94,8 +94,8 @@ class PostgresSessionStore:
 
             # Load last max_turns turns in chronological order via DESC subquery
             turn_rows = await conn.fetch(
-                "SELECT role, text FROM ("
-                "  SELECT role, text, id FROM session_turns"
+                'SELECT "role", text FROM ('
+                '  SELECT "role", text, id FROM session_turns'
                 "  WHERE scope_key = $1 ORDER BY id DESC LIMIT $2"
                 ") sub ORDER BY id ASC",
                 scope_key, max_turns,
@@ -144,7 +144,7 @@ class PostgresSessionStore:
                 )
                 if session.history:
                     await conn.executemany(
-                        "INSERT INTO session_turns(scope_key, role, text)"
+                        'INSERT INTO session_turns(scope_key, "role", text)'
                         " VALUES($1, $2, $3)",
                         [(session.scope_key, t.role, t.text) for t in session.history],
                     )

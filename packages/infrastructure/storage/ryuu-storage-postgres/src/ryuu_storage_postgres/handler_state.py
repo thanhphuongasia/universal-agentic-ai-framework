@@ -59,7 +59,7 @@ class PostgresHandlerStateStore:
                 CREATE TABLE IF NOT EXISTS {self.table} (
                     scope_key                TEXT PRIMARY KEY,
                     model                    TEXT NOT NULL DEFAULT 'gpt-4o-mini',
-                    verbose                  BOOLEAN NOT NULL DEFAULT false,
+                    "verbose"                BOOLEAN NOT NULL DEFAULT false,
                     auto_compact             BOOLEAN NOT NULL DEFAULT true,
                     compact_threshold_tokens INT NOT NULL DEFAULT 4000,
                     adaptive_routing         BOOLEAN NOT NULL DEFAULT false,
@@ -78,7 +78,7 @@ class PostgresHandlerStateStore:
         pool = await get_pool(self.dsn)
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT model, verbose, auto_compact, compact_threshold_tokens,"
+                f'SELECT model, "verbose", auto_compact, compact_threshold_tokens,'
                 f"       adaptive_routing, turns, input_tokens, output_tokens, total_usd"
                 f" FROM {self.table} WHERE scope_key = $1",
                 scope_key,
@@ -104,12 +104,12 @@ class PostgresHandlerStateStore:
         async with pool.acquire() as conn:
             await conn.execute(
                 f"INSERT INTO {self.table}"
-                f" (scope_key, model, verbose, auto_compact, compact_threshold_tokens,"
+                f' (scope_key, model, "verbose", auto_compact, compact_threshold_tokens,'
                 f"  adaptive_routing, turns, input_tokens, output_tokens, total_usd)"
                 f" VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"
                 f" ON CONFLICT (scope_key) DO UPDATE SET"
                 f"   model                    = EXCLUDED.model,"
-                f"   verbose                  = EXCLUDED.verbose,"
+                f'   "verbose"                = EXCLUDED."verbose",'
                 f"   auto_compact             = EXCLUDED.auto_compact,"
                 f"   compact_threshold_tokens = EXCLUDED.compact_threshold_tokens,"
                 f"   adaptive_routing         = EXCLUDED.adaptive_routing,"
