@@ -84,9 +84,24 @@ class EvalRunner:
                 case_id=case.case_id,
                 payload={"index": idx, "total": len(cases)},
             )
+            # Emit llm_attempt before handing off to target — gives UI a
+            # loading signal even though we don't know inner retry count.
+            # model: read from target if it exposes one, else case metadata.
+            model_hint = getattr(self._target, "model", None) or case.metadata.get("model")
+            yield ProgressEvent(
+                type="llm_attempt",
+                case_id=case.case_id,
+                payload={"attempt": 1, "model": model_hint},
+            )
             result = await self._run_case(case)
             suite.cases.append(result)
             suite.total_cost_usd += result.cost_usd
+
+            yield ProgressEvent(
+                type="llm_done",
+                case_id=case.case_id,
+                payload={"latency_ms": result.latency_ms, "cost_usd": result.cost_usd},
+            )
 
             # Surface refine info from logger (if target captured it)
             if result.refine_count > 0:
