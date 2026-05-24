@@ -86,13 +86,29 @@ from ryuu_prompts import (
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 if DATABASE_URL:
-    from ryuu_storage_postgres import PostgresCollectionStore, PostgresKVStore
+    from ryuu_storage_postgres import (
+        PostgresCollectionStore,
+        PostgresHandlerStateStore,
+        PostgresKVStore,
+        PostgresProfileStore,
+        PostgresSessionStore,
+    )
 
     def _kv(table: str):
         return PostgresKVStore(dsn=DATABASE_URL, table=table)
 
     def _coll(table: str):
         return PostgresCollectionStore(dsn=DATABASE_URL, table=table)
+
+    def _session_store() -> "PostgresSessionStore":
+        return PostgresSessionStore(dsn=DATABASE_URL, max_turns=20)
+
+    def _handler_state_store() -> "PostgresHandlerStateStore":
+        return PostgresHandlerStateStore(dsn=DATABASE_URL)
+
+    def _profile_store() -> "PostgresProfileStore":
+        return PostgresProfileStore(dsn=DATABASE_URL)
+
 else:
     from ryuu_storage_jsonl import JsonlCollectionStore
     from ryuu_storage_sqlite import SqliteKVStore
@@ -102,6 +118,15 @@ else:
 
     def _coll(table: str):
         return JsonlCollectionStore(root_dir=MEMORY_DIR, table=table)
+
+    def _session_store():
+        return None
+
+    def _handler_state_store():
+        return None
+
+    def _profile_store():
+        return None
 
 from examples.ryuu_sensei.apps.ryuu_handler import ALLOWED_MODELS, RyuuHandler
 
@@ -158,10 +183,11 @@ def _build_telegram_callbacks(
         s = handler.get_settings(scope)
         return (
             "⚙️ Settings\n"
-            f"  • model:   {s.model}\n"
-            f"  • verbose: {'on' if s.verbose else 'off'}\n\n"
+            f"  • model:    {s.model}\n"
+            f"  • adaptive: {'on — auto-selects tier per query' if s.adaptive_routing else 'off — fixed model'}\n"
+            f"  • verbose:  {'on' if s.verbose else 'off'}\n\n"
             f"Allowed models: {', '.join(ALLOWED_MODELS)}\n"
-            "Change via /model (tap to switch) or /verbose on|off"
+            "Change via /model, /adaptive on|off, or /verbose on|off"
         )
 
     async def on_status(sender_id: str, conversation_id: str) -> str:
@@ -232,6 +258,23 @@ def _build_telegram_callbacks(
             f"Triggers above {s.compact_threshold_tokens:,} tokens."
         )
 
+    async def on_adaptive(sender_id: str, conversation_id: str, on: bool | None) -> str:
+        scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
+        await handler._load_state(scope)
+        s = handler.get_settings(scope)
+        if on is None:
+            tier_info = "trivial/medium → gpt-4o-mini  |  hard → gpt-4o"
+            return (
+                f"Adaptive routing is **{'on' if s.adaptive_routing else 'off'}**.\n"
+                f"Tiers: {tier_info}\n"
+                f"Use `/adaptive on` or `/adaptive off` to toggle."
+            )
+        await handler.set_adaptive_routing(scope, on)
+        return (
+            f"Adaptive routing is now **{'on' if on else 'off'}**. "
+            + ("Each query auto-selects model tier." if on else "Using fixed model: " + s.model + ".")
+        )
+
     async def on_task_status(sender_id: str, conversation_id: str) -> str:
         scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
         if dispatcher is None:
@@ -267,6 +310,7 @@ def _build_telegram_callbacks(
         "on_status": on_status,
         "on_task_status": on_task_status,
         "on_current_model": on_current_model,
+        "on_adaptive": on_adaptive,
         "on_compact": on_compact,
         "on_auto_compact": on_auto_compact,
     }
@@ -313,8 +357,11 @@ async def run(use_telegram: bool) -> None:
         print(f"[ryuu-super] Memory dir:    {MEMORY_DIR}")
 
     # ── Layer 2 — single-tenant conversation manager ──────────────────
+    # Postgres path: normalized session_turns table.
+    # SQLite/fallback path: JSON blob via KVSessionStore.
+    _ss = _session_store()
     cm = ConversationManager(
-        session_store=KVSessionStore(
+        session_store=_ss if _ss is not None else KVSessionStore(
             kv=_kv("sessions"),
             max_turns=20,
         ),
@@ -413,6 +460,8 @@ async def run(use_telegram: bool) -> None:
     print(f"[ryuu-super] System tools: {len(system_toolset.tools)} loaded "
           f"({', '.join(system_toolset.tool_ids())})")
 
+    _hss = _handler_state_store()
+    _ps = _profile_store()
     handler = RyuuHandler(
         memory_backbone=memory_backbone,
         compaction_provider=compaction_provider,
@@ -423,7 +472,10 @@ async def run(use_telegram: bool) -> None:
         prompt_skills_toolset=prompt_skills_toolset,
         system_toolset=system_toolset,
         warm_start_top_k=3,
-        state_store=_kv("handler_state"),
+        # Postgres path: normalized columns. SQLite path: JSON blob via IKVStore.
+        state_store=_kv("handler_state") if _hss is None else None,
+        normalized_state_store=_hss,
+        profile_store=_ps,
     )
 
     # ── Orchestrator + channels ───────────────────────────────────────
@@ -463,6 +515,7 @@ async def run(use_telegram: bool) -> None:
             on_current_model=cbs["on_current_model"],
             on_compact=cbs["on_compact"],
             on_auto_compact=cbs["on_auto_compact"],
+            on_adaptive=cbs["on_adaptive"],
             allowed_models=ALLOWED_MODELS,
             allowed_senders=allowed,
             welcome_text=(

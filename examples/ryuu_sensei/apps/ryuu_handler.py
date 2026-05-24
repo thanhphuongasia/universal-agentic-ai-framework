@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -93,12 +94,20 @@ RYUU_INSTRUCTIONS = _load_soul()
 # Per-scope settings + stats (same pattern as TodoHandler)
 # ---------------------------------------------------------------------------
 
+_DEFAULT_TIER_MODELS: dict[str, str] = {
+    "trivial": "gpt-4o-mini",
+    "medium":  "gpt-4o-mini",
+    "hard":    "gpt-4o",
+}
+
+
 @dataclass
 class UserSettings:
     verbose: bool = False
     model: str = DEFAULT_MODEL
     auto_compact: bool = True                  # Phase 9.0c — auto-shrink long history
     compact_threshold_tokens: int = 4000        # When estimated tokens exceed this
+    adaptive_routing: bool = False             # auto-select model tier per query difficulty
 
 
 @dataclass
@@ -180,6 +189,12 @@ class RyuuHandler:
     include_forget_tool: bool = False  # opt-in destructive memory tool
     compact_keep_recent: int = 5      # turns preserved verbatim when compacting
 
+    # Adaptive model routing — maps difficulty tier → model name.
+    # difficulty_fn: None → use keyword heuristic from AdaptiveStrategy.
+    # Inject a lambda for tests or LLM-based classifier.
+    tier_models: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_TIER_MODELS))
+    difficulty_fn: Callable[[str], str] | None = None
+
     # Phase 9.0d.2 — warm-start pre-injects last N memory observations into
     # the prompt (no query-specific search). Lets LLM see "what we know about
     # user" without spending a recall tool call for obvious cases. Set to 0
@@ -201,8 +216,11 @@ class RyuuHandler:
     _compactor: LLMCompactor | None = field(default=None, init=False)
     _last_compaction: dict[str, dict[str, int]] = field(default_factory=dict)
 
-    # Optional persistence — same pattern as TodoHandler
+    # Optional persistence — IKVStore (SQLite) or PostgresHandlerStateStore (normalized).
+    # normalized_state_store takes precedence when both are provided.
     state_store: IKVStore | None = None
+    normalized_state_store: Any = None  # PostgresHandlerStateStore | None
+    profile_store: Any = None           # PostgresProfileStore | None
     _state_loaded: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
@@ -231,34 +249,66 @@ class RyuuHandler:
     # State persistence (lazy-load + write-through)
     # ------------------------------------------------------------------ #
     async def _load_state(self, scope_key: str) -> None:
-        if self.state_store is None or scope_key in self._state_loaded:
+        if scope_key in self._state_loaded:
             return
-        blob = await self.state_store.get(scope_key)
-        if blob is not None:
-            try:
-                d = json.loads(blob)
-                if "settings" in d:
-                    s = d["settings"]
-                    self.settings[scope_key] = UserSettings(
-                        verbose=bool(s.get("verbose", False)),
-                        model=str(s.get("model", DEFAULT_MODEL)),
-                        auto_compact=bool(s.get("auto_compact", True)),
-                        compact_threshold_tokens=int(s.get("compact_threshold_tokens", 4000)),
-                    )
-                if "stats" in d:
-                    self.stats[scope_key] = SessionStats(**d["stats"])
-            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-                pass
+        if self.normalized_state_store is not None:
+            from ryuu_storage_postgres.handler_state import HandlerState
+            state: HandlerState = await self.normalized_state_store.load(scope_key)
+            self.settings[scope_key] = UserSettings(
+                verbose=state.verbose,
+                model=state.model,
+                auto_compact=state.auto_compact,
+                compact_threshold_tokens=state.compact_threshold_tokens,
+                adaptive_routing=state.adaptive_routing,
+            )
+            self.stats[scope_key] = SessionStats(
+                turns=state.turns,
+                input_tokens=state.input_tokens,
+                output_tokens=state.output_tokens,
+                total_usd=state.total_usd,
+            )
+        elif self.state_store is not None:
+            blob = await self.state_store.get(scope_key)
+            if blob is not None:
+                try:
+                    d = json.loads(blob)
+                    if "settings" in d:
+                        s = d["settings"]
+                        self.settings[scope_key] = UserSettings(
+                            verbose=bool(s.get("verbose", False)),
+                            model=str(s.get("model", DEFAULT_MODEL)),
+                            auto_compact=bool(s.get("auto_compact", True)),
+                            compact_threshold_tokens=int(s.get("compact_threshold_tokens", 4000)),
+                            adaptive_routing=bool(s.get("adaptive_routing", False)),
+                        )
+                    if "stats" in d:
+                        self.stats[scope_key] = SessionStats(**d["stats"])
+                except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                    pass
         self._state_loaded.add(scope_key)
 
     async def _save_state(self, scope_key: str) -> None:
-        if self.state_store is None:
-            return
-        payload = {
-            "settings": asdict(self.settings.get(scope_key, UserSettings())),
-            "stats": asdict(self.stats.get(scope_key, SessionStats())),
-        }
-        await self.state_store.put(scope_key, json.dumps(payload, ensure_ascii=False))
+        if self.normalized_state_store is not None:
+            from ryuu_storage_postgres.handler_state import HandlerState
+            s = self.settings.get(scope_key, UserSettings())
+            st = self.stats.get(scope_key, SessionStats())
+            await self.normalized_state_store.save(scope_key, HandlerState(
+                model=s.model,
+                verbose=s.verbose,
+                auto_compact=s.auto_compact,
+                compact_threshold_tokens=s.compact_threshold_tokens,
+                adaptive_routing=s.adaptive_routing,
+                turns=st.turns,
+                input_tokens=st.input_tokens,
+                output_tokens=st.output_tokens,
+                total_usd=st.total_usd,
+            ))
+        elif self.state_store is not None:
+            payload = {
+                "settings": asdict(self.settings.get(scope_key, UserSettings())),
+                "stats": asdict(self.stats.get(scope_key, SessionStats())),
+            }
+            await self.state_store.put(scope_key, json.dumps(payload, ensure_ascii=False))
 
     # ------------------------------------------------------------------ #
     # Settings + stats API
@@ -300,6 +350,14 @@ class RyuuHandler:
         await self._load_state(scope_key)
         s = self.get_settings(scope_key)
         s.auto_compact = on
+        await self._save_state(scope_key)
+        return s
+
+    async def set_adaptive_routing(self, scope_key: str, on: bool) -> UserSettings:
+        """Toggle adaptive model routing for one scope."""
+        await self._load_state(scope_key)
+        s = self.get_settings(scope_key)
+        s.adaptive_routing = on
         await self._save_state(scope_key)
         return s
 
@@ -352,6 +410,24 @@ class RyuuHandler:
         }
 
     # ------------------------------------------------------------------ #
+    # Adaptive routing — select effective model for this turn
+    # ------------------------------------------------------------------ #
+    def _select_model(self, text: str, settings: UserSettings) -> str:
+        """Return the model to use for this turn.
+
+        When adaptive_routing=False, returns settings.model unchanged.
+        When True, classifies query difficulty and maps to tier_models.
+        Falls back to settings.model if the tier candidate is not in ALLOWED_MODELS.
+        """
+        if not settings.adaptive_routing:
+            return settings.model
+        from ryuu_cognitive.strategies.adaptive_strategy import _heuristic_difficulty  # noqa: PLC0415
+        classify = self.difficulty_fn or _heuristic_difficulty
+        difficulty = classify(text)
+        candidate = self.tier_models.get(difficulty, settings.model)
+        return candidate if candidate in ALLOWED_MODELS else settings.model
+
+    # ------------------------------------------------------------------ #
     # Agent factory — cache per (model, verbose). Each agent has memory tools.
     # ------------------------------------------------------------------ #
     def _build_instructions(self) -> str:
@@ -363,8 +439,9 @@ class RyuuHandler:
                 return base + "\n\n" + skill_block
         return base
 
-    def _get_agent(self, settings: UserSettings) -> Agent:
-        key = (settings.model, settings.verbose)
+    def _get_agent(self, settings: UserSettings, model_override: str | None = None) -> Agent:
+        model = model_override or settings.model
+        key = (model, settings.verbose)
         agent = self._agents.get(key)
         if agent is None:
             # Memory tools (framework primitives) + MCP tools (external skills)
@@ -382,7 +459,7 @@ class RyuuHandler:
             if self.system_toolset is not None:
                 tools.extend(self.system_toolset.tools)
             agent = Agent(
-                model=settings.model,
+                model=model,
                 instructions=self._build_instructions(),
                 tools=tools,
                 budget_usd=1.0,
@@ -407,7 +484,8 @@ class RyuuHandler:
             if self.prompt_skills.reload_if_changed() > 0:
                 self._agents.clear()
 
-        agent = self._get_agent(settings)
+        effective_model = self._select_model(msg.text, settings)
+        agent = self._get_agent(settings, model_override=effective_model)
 
         # Phase 9.0c — auto-compact session history if threshold exceeded.
         # Runs BEFORE prompt assembly so the compacted summary is what the
@@ -464,8 +542,18 @@ class RyuuHandler:
                 + "\n\n"
             )
 
+        profile_block = ""
+        if self.profile_store is not None:
+            try:
+                pb = await self.profile_store.as_prompt_block(scope_key)
+                if pb:
+                    profile_block = pb + "\n\n"
+            except Exception:  # noqa: BLE001 — profile failure never breaks a turn
+                pass
+
         prompt_text = (
-            recall_context
+            profile_block
+            + recall_context
             + history_block
             + steer_block
             + f"User now says: {msg.text}"
@@ -523,7 +611,8 @@ class RyuuHandler:
             formatting="markdown",
             metadata={
                 "cost_usd": getattr(result.cost, "usd", 0.0),
-                "model": settings.model,
+                "model": effective_model,
+                "adaptive": settings.adaptive_routing,
                 "verbose": settings.verbose,
                 "scope_key": scope_key,
             },
