@@ -35,6 +35,17 @@ class PostgresSessionStore:
             return
         pool = await get_pool(self.dsn)
         async with pool.acquire() as conn:
+            # Migration guard: if sessions table exists with the old KV schema
+            # (has column "key", no column "scope_key"), drop it so we can
+            # recreate with the normalized schema. Old blob data has no value.
+            cols = await conn.fetch(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'sessions' AND table_schema = 'public'"
+            )
+            col_names = {r["column_name"] for r in cols}
+            if col_names and "key" in col_names and "scope_key" not in col_names:
+                await conn.execute("DROP TABLE IF EXISTS sessions CASCADE")
+
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     scope_key       TEXT PRIMARY KEY,

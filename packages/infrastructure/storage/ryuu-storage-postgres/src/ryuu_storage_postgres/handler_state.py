@@ -55,6 +55,17 @@ class PostgresHandlerStateStore:
             return
         pool = await get_pool(self.dsn)
         async with pool.acquire() as conn:
+            # Migration guard: if the table exists with the old KV schema
+            # (has column "key", no column "scope_key"), drop and recreate.
+            cols = await conn.fetch(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = $1 AND table_schema = 'public'",
+                self.table,
+            )
+            col_names = {r["column_name"] for r in cols}
+            if col_names and "key" in col_names and "scope_key" not in col_names:
+                await conn.execute(f"DROP TABLE IF EXISTS {self.table} CASCADE")
+
             await conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self.table} (
                     scope_key                TEXT PRIMARY KEY,
