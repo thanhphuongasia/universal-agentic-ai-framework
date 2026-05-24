@@ -6,17 +6,17 @@ Schema:
         scope_key  TEXT NOT NULL,
         content    TEXT NOT NULL,
         metadata   JSONB DEFAULT '{}',
-        created_at DOUBLE PRECISION NOT NULL
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
-    CREATE INDEX <table>_scope_idx ON <table>(scope_key, created_at)
+    CREATE INDEX <table>_scope_idx ON <table>(scope_key, created_at DESC)
 
-search() uses ILIKE for MVP. Add tsvector/pgvector column for production FTS/semantic.
+search() uses ILIKE — works for all languages including Vietnamese.
+Add a pgvector column for semantic search when needed.
 """
 
 from __future__ import annotations
 
 import json
-import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -47,12 +47,12 @@ class PostgresCollectionStore:
                 f"  scope_key  TEXT NOT NULL,"
                 f"  content    TEXT NOT NULL,"
                 f"  metadata   JSONB DEFAULT '{{}}',"
-                f"  created_at DOUBLE PRECISION NOT NULL"
+                f"  created_at TIMESTAMPTZ NOT NULL DEFAULT now()"
                 f")"
             )
             await conn.execute(
                 f"CREATE INDEX IF NOT EXISTS {self.table}_scope_idx"
-                f" ON {self.table}(scope_key, created_at)"
+                f" ON {self.table}(scope_key, created_at DESC)"
             )
         self._ready = True
 
@@ -60,12 +60,15 @@ class PostgresCollectionStore:
         meta = row["metadata"]
         if isinstance(meta, str):
             meta = json.loads(meta)
+        created_at = row["created_at"]
+        # asyncpg returns datetime for TIMESTAMPTZ; Item.created_at is float (epoch)
+        ts = created_at.timestamp() if hasattr(created_at, "timestamp") else float(created_at or 0.0)
         return Item(
             id=row["id"],
             scope_key=row["scope_key"],
             content=row["content"],
             metadata=meta or {},
-            created_at=row["created_at"],
+            created_at=ts,
         )
 
     async def append(
@@ -75,14 +78,13 @@ class PostgresCollectionStore:
         metadata: dict[str, Any] | None = None,
     ) -> str:
         item_id = uuid.uuid4().hex
-        ts = time.time()
         pool = await get_pool(self.dsn)
         async with pool.acquire() as conn:
             await self._ensure_table()
             await conn.execute(
-                f"INSERT INTO {self.table}(id, scope_key, content, metadata, created_at)"
-                f" VALUES($1, $2, $3, $4, $5)",
-                item_id, scope_key, content, json.dumps(metadata or {}), ts,
+                f"INSERT INTO {self.table}(id, scope_key, content, metadata)"
+                f" VALUES($1, $2, $3, $4)",
+                item_id, scope_key, content, json.dumps(metadata or {}),
             )
         return item_id
 
