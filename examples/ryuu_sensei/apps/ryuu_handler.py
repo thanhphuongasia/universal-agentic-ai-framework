@@ -28,13 +28,13 @@ import os
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ryuu import Agent
 from ryuu_cognitive.context import CompactionTurn, LLMCompactor
 from ryuu_knowledge_memory.tools import MemoryToolset
 from ryuu_messaging_core import IncomingMessage, OutgoingMessage, Session, Turn
-from ryuu_storage_core import IKVStore
+from ryuu_storage_core import IKVStore, IProfileStore
 
 # Models the SuperBot is allowed to use. Tighter than TodoHandler because
 # SuperBot does more reasoning-heavy work and the owner pays the bill.
@@ -154,6 +154,30 @@ class TraceCapture:
 
 
 # ---------------------------------------------------------------------------
+# IHandlerStateStore — backend-agnostic contract for settings + stats
+# ---------------------------------------------------------------------------
+
+class IHandlerStateStore(Protocol):
+    """Persist UserSettings + SessionStats for one scope.
+
+    Implement this protocol to swap backends without touching RyuuHandler:
+        PostgresHandlerStateStore (current) → MySQLHandlerStateStore → RedisHandlerStateStore
+    The return type of load() is structurally typed — any object with the
+    right fields (model, verbose, …, turns, input_tokens, …) satisfies it.
+    """
+
+    async def load(self, scope_key: str) -> Any:
+        """Return a HandlerState-shaped object (or defaults if row absent)."""
+        ...
+
+    async def save(self, scope_key: str, state: Any) -> None:
+        """Persist the full settings + stats for a scope."""
+        ...
+
+    async def delete(self, scope_key: str) -> None: ...
+
+
+# ---------------------------------------------------------------------------
 # Handler
 # ---------------------------------------------------------------------------
 
@@ -216,11 +240,11 @@ class RyuuHandler:
     _compactor: LLMCompactor | None = field(default=None, init=False)
     _last_compaction: dict[str, dict[str, int]] = field(default_factory=dict)
 
-    # Optional persistence — IKVStore (SQLite) or PostgresHandlerStateStore (normalized).
+    # Optional persistence — IKVStore (SQLite blob) or IHandlerStateStore (normalized).
     # normalized_state_store takes precedence when both are provided.
     state_store: IKVStore | None = None
-    normalized_state_store: Any = None  # PostgresHandlerStateStore | None
-    profile_store: Any = None           # PostgresProfileStore | None
+    normalized_state_store: IHandlerStateStore | None = None
+    profile_store: IProfileStore | None = None
     _state_loaded: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:

@@ -21,17 +21,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable
 
+from ryuu_storage_core import ProfileEntry  # noqa: F401 — re-exported for convenience
+
 from ryuu_storage_postgres._pool import get_pool
-
-
-@dataclass(frozen=True)
-class ProfileEntry:
-    key: str
-    value: str
-    source: str                   # 'user' | 'agent' | 'inferred'
-    valid_from: datetime
-    valid_to: datetime | None     # None = currently active
-    note: str | None = None
 
 
 @dataclass

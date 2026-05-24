@@ -21,6 +21,7 @@ Design notes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Iterable, Protocol, runtime_checkable
 
 
@@ -156,6 +157,71 @@ class ICollectionStore(Protocol):
         ...
 
     async def close(self) -> None: ...
+
+
+# ---------------------------------------------------------------------------
+# ProfileEntry value type + IProfileStore — temporal user profile facts
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ProfileEntry:
+    """One versioned fact about a user.
+
+    active row  → valid_to is None
+    expired row → valid_to is set (closed when a newer value was written)
+    """
+    key: str
+    value: str
+    source: str                    # 'user' | 'agent' | 'inferred'
+    valid_from: datetime
+    valid_to: datetime | None      # None = currently active
+    note: str | None = None
+
+
+@runtime_checkable
+class IProfileStore(Protocol):
+    """Temporal key-value store for user profile facts.
+
+    Setting a new value never overwrites history — the old active row is
+    closed (valid_to = now) and a new active row is inserted. Full change
+    history is preserved for point-in-time queries.
+
+    Implement this protocol to swap backends (Postgres → MySQL → Redis, …)
+    without touching RyuuHandler or main_ryuu.
+    """
+
+    async def set_value(
+        self,
+        scope_key: str,
+        key: str,
+        value: str,
+        *,
+        source: str = "user",
+        note: str | None = None,
+    ) -> None:
+        """Write a new value. Closes the current active row first."""
+        ...
+
+    async def get_current(self, scope_key: str) -> dict[str, str]:
+        """All active key→value pairs for a scope."""
+        ...
+
+    async def get_history(self, scope_key: str, key: str) -> list[ProfileEntry]:
+        """Full change history for one key, newest first."""
+        ...
+
+    async def as_prompt_block(self, scope_key: str) -> str:
+        """Current profile formatted for injection into the system prompt.
+        Returns empty string if no profile entries exist."""
+        ...
+
+    async def delete_key(self, scope_key: str, key: str) -> None:
+        """Hard-delete all history for one key (GDPR / user request)."""
+        ...
+
+    async def delete_scope(self, scope_key: str) -> None:
+        """Hard-delete entire profile for a scope."""
+        ...
 
 
 # ---------------------------------------------------------------------------

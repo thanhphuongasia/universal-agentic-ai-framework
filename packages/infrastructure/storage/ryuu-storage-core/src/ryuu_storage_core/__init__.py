@@ -2,21 +2,26 @@
 
     from ryuu_storage_core import (
         IKVStore, ICollectionStore, IBlobStore,
-        Item,
+        IProfileStore,
+        Item, ProfileEntry,
         StorageError, StorageConnectionError, StorageNotFoundError,
     )
 
 Backends live in sibling packages:
     ryuu-storage-memory   InMemoryKVStore, InMemoryCollectionStore
     ryuu-storage-sqlite   SqliteKVStore, SqliteCollectionStore
-    (future) ryuu-storage-postgres, -redis, -s3, -dynamodb, …
+    ryuu-storage-postgres PostgresKVStore, PostgresCollectionStore,
+                          PostgresSessionStore, PostgresHandlerStateStore,
+                          PostgresProfileStore
 """
 
 from ryuu_storage_core.protocols import (
     IBlobStore,
     ICollectionStore,
     IKVStore,
+    IProfileStore,
     Item,
+    ProfileEntry,
     StorageConnectionError,
     StorageError,
     StorageNotFoundError,
@@ -28,7 +33,9 @@ __all__ = [
     "IBlobStore",
     "ICollectionStore",
     "IKVStore",
+    "IProfileStore",
     "Item",
+    "ProfileEntry",
     "StorageConnectionError",
     "StorageError",
     "StorageNotFoundError",
