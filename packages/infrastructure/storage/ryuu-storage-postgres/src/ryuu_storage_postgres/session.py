@@ -63,7 +63,8 @@ class PostgresSessionStore:
                     id         BIGSERIAL PRIMARY KEY,
                     scope_key  TEXT NOT NULL
                                REFERENCES sessions(scope_key) ON DELETE CASCADE,
-                    "role"     TEXT NOT NULL CHECK ("role" IN ('user', 'assistant')),
+                    "role"     TEXT NOT NULL CHECK ("role" IN
+                               ('user', 'assistant', 'system', 'summary', 'tool')),
                     text       TEXT NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
@@ -72,6 +73,17 @@ class PostgresSessionStore:
                 CREATE INDEX IF NOT EXISTS session_turns_scope_time
                 ON session_turns(scope_key, id DESC)
             """)
+            # Migration for existing tables: relax the role CHECK to admit
+            # compaction summaries (LLMCompactor emits role='summary') and
+            # future system/tool turns. Drop + re-add the constraint.
+            await conn.execute(
+                "ALTER TABLE session_turns"
+                " DROP CONSTRAINT IF EXISTS session_turns_role_check"
+            )
+            await conn.execute(
+                "ALTER TABLE session_turns ADD CONSTRAINT session_turns_role_check"
+                " CHECK (\"role\" IN ('user', 'assistant', 'system', 'summary', 'tool'))"
+            )
         self._ready = True
 
     async def load_or_create(
