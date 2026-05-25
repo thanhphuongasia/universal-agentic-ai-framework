@@ -218,10 +218,14 @@ class _FactoryLLMAgent(LLMAgent):
             )
             await self._hook_registry.fire(HookEvent.POST_LLM, post_llm_ctx)
 
+        # Resolve $ via the central pricing table. Returns 0.0 for unknown
+        # models — callers can still inspect input_tokens/output_tokens directly.
+        from ryuu_providers_core._pricing import calculate_usd
+
         cost = Cost(
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
-            usd=0.0,  # Pricing lookup deferred — _react_loop doesn't track $ yet
+            usd=calculate_usd(self._model_name, usage.input_tokens, usage.output_tokens),
             provider=self.llm.__class__.__name__.replace("Provider", "").lower(),
             model=self._model_name,
         )
