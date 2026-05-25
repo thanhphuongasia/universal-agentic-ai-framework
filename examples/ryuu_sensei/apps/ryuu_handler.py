@@ -25,13 +25,17 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from ryuu import Agent
-from ryuu_cognitive.context import CompactionTurn, LLMCompactor
+from ryuu_cognitive.context import (
+    CompactionTurn,
+    LLMCompactor,
+    build_prompt_breakdown,
+)
 from ryuu_knowledge_memory.tools import MemoryToolset
 from ryuu_messaging_core import IncomingMessage, OutgoingMessage, Session, Turn
 from ryuu_storage_core import IKVStore, IProfileStore
@@ -108,6 +112,7 @@ class UserSettings:
     auto_compact: bool = True                  # Phase 9.0c — auto-shrink long history
     compact_threshold_tokens: int = 4000        # When estimated tokens exceed this
     adaptive_routing: bool = False             # auto-select model tier per query difficulty
+    streaming: bool = False                    # stream ReAct thoughts in real-time
 
 
 @dataclass
@@ -116,12 +121,27 @@ class SessionStats:
     input_tokens: int = 0
     output_tokens: int = 0
     total_usd: float = 0.0
+    # Last-turn snapshot — reset on every turn so /last shows the most recent call
+    last_model: str = ""
+    last_input_tokens: int = 0
+    last_output_tokens: int = 0
+    last_cost_usd: float = 0.0
+    # Per-component prompt token estimate (chars/4 heuristic) so users can trace
+    # WHERE their input tokens go. Sum is approximate — real LLM call also
+    # includes tool schemas + framework overhead which we don't see here.
+    last_breakdown: dict[str, int] = field(default_factory=dict)
 
     def update_from(self, cost: Any) -> None:
         self.turns += 1
-        self.input_tokens += int(getattr(cost, "input_tokens", 0) or 0)
-        self.output_tokens += int(getattr(cost, "output_tokens", 0) or 0)
-        self.total_usd += float(getattr(cost, "usd", 0.0) or 0.0)
+        in_tok = int(getattr(cost, "input_tokens", 0) or 0)
+        out_tok = int(getattr(cost, "output_tokens", 0) or 0)
+        usd = float(getattr(cost, "usd", 0.0) or 0.0)
+        self.input_tokens += in_tok
+        self.output_tokens += out_tok
+        self.total_usd += usd
+        self.last_input_tokens = in_tok
+        self.last_output_tokens = out_tok
+        self.last_cost_usd = usd
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +165,40 @@ class TraceCapture:
 
     async def on_final(self, text: str) -> None:
         pass   # final goes in the main reply
+
+
+class StreamingCallbacks:
+    """Callbacks that fire on_event LIVE while agent.run() executes.
+
+    Used by streaming mode to get the best of both worlds: agent.run() returns
+    a full AgentResult with cost info, AND on_event fires in real time as the
+    ReAct loop progresses (so the UI shows thoughts/tools as they happen).
+    """
+
+    def __init__(self, on_event: Callable[[str, str], Awaitable[None]]) -> None:
+        self._on_event = on_event
+
+    async def on_thought(self, text: str) -> None:
+        if text and text.strip():
+            await self._on_event("thought", text)
+
+    async def on_action(self, tool_name: str, args: dict[str, Any]) -> None:
+        try:
+            args_str = json.dumps(args, ensure_ascii=False)
+            if len(args_str) > 200:
+                args_str = args_str[:197] + "…"
+        except (TypeError, ValueError):
+            args_str = str(args)[:200]
+        label = f"{tool_name}({args_str})" if args_str else tool_name
+        await self._on_event("tool_call", label)
+
+    async def on_observation(self, tool_name: str, result: str) -> None:
+        await self._on_event("tool_result", str(result or "")[:300])
+
+    async def on_final(self, text: str) -> None:
+        # Pass the final answer so UI can mark "done" if desired. Filtered out
+        # in main_ryuu.on_event so it doesn't duplicate the actual reply.
+        await self._on_event("final", text or "")
 
     def render(self) -> str:
         body = "\n".join(self.lines)
@@ -284,6 +338,7 @@ class RyuuHandler:
                 auto_compact=state.auto_compact,
                 compact_threshold_tokens=state.compact_threshold_tokens,
                 adaptive_routing=state.adaptive_routing,
+                streaming=getattr(state, "streaming", False),
             )
             self.stats[scope_key] = SessionStats(
                 turns=state.turns,
@@ -304,6 +359,7 @@ class RyuuHandler:
                             auto_compact=bool(s.get("auto_compact", True)),
                             compact_threshold_tokens=int(s.get("compact_threshold_tokens", 4000)),
                             adaptive_routing=bool(s.get("adaptive_routing", False)),
+                            streaming=bool(s.get("streaming", False)),
                         )
                     if "stats" in d:
                         self.stats[scope_key] = SessionStats(**d["stats"])
@@ -322,6 +378,7 @@ class RyuuHandler:
                 auto_compact=s.auto_compact,
                 compact_threshold_tokens=s.compact_threshold_tokens,
                 adaptive_routing=s.adaptive_routing,
+                streaming=s.streaming,
                 turns=st.turns,
                 input_tokens=st.input_tokens,
                 output_tokens=st.output_tokens,
@@ -382,6 +439,14 @@ class RyuuHandler:
         await self._load_state(scope_key)
         s = self.get_settings(scope_key)
         s.adaptive_routing = on
+        await self._save_state(scope_key)
+        return s
+
+    async def set_streaming(self, scope_key: str, on: bool) -> UserSettings:
+        """Toggle streaming mode (live ReAct thought display) for one scope."""
+        await self._load_state(scope_key)
+        s = self.get_settings(scope_key)
+        s.streaming = on
         await self._save_state(scope_key)
         return s
 
@@ -455,7 +520,14 @@ class RyuuHandler:
     # Agent factory — cache per (model, verbose). Each agent has memory tools.
     # ------------------------------------------------------------------ #
     def _build_instructions(self) -> str:
-        """Soul prose + prompt-skill catalog (if registry wired)."""
+        """Soul prose + prompt-skill catalog (if registry wired).
+
+        NOTE: We tried adding a "narrate before tool use" instruction to populate
+        the LLM response.content (for streaming UX), but it caused gpt-4o-mini
+        to skip tool calls entirely — it would just describe what it WOULD do
+        instead of doing it. Reverted. The framework's generic "I'll use X to
+        gather data" placeholder is filtered out client-side instead.
+        """
         base = RYUU_INSTRUCTIONS
         if self.prompt_skills is not None and len(self.prompt_skills) > 0:
             skill_block = self.prompt_skills.render_context()
@@ -494,9 +566,73 @@ class RyuuHandler:
         return agent
 
     # ------------------------------------------------------------------ #
+    # Streaming helper — agent.stream() + memory toolset binding
+    # ------------------------------------------------------------------ #
+    async def _run_streaming(
+        self,
+        agent: Agent,
+        prompt_text: str,
+        msg: IncomingMessage,
+        scope_key: str,
+        on_event: Callable[[str, str], Awaitable[None]],
+    ) -> str:
+        """Run agent in streaming mode. Calls on_event(type, text) for each step.
+
+        Returns the final answer text. Cost is not tracked (stream() doesn't
+        expose AgentResult). Memory toolset binding is held open for the full
+        stream so recall/remember tool calls work correctly.
+        """
+        final_text = ""
+
+        async def _consume() -> None:
+            nonlocal final_text
+            async for event in agent.stream(
+                message=prompt_text,
+                user_id=msg.sender_id,
+                session_id=msg.conversation_id,
+                domain=msg.channel,
+            ):
+                if event.type == "thought" and event.text:
+                    await on_event("thought", event.text)
+                elif event.type == "tool_call" and event.tool_name:
+                    # Pack tool name + args into single text so UX sees what
+                    # the LLM is actually calling, not just the function name.
+                    args_str = ""
+                    if event.args:
+                        try:
+                            args_str = json.dumps(event.args, ensure_ascii=False)
+                            if len(args_str) > 200:
+                                args_str = args_str[:197] + "…"
+                        except (TypeError, ValueError):
+                            args_str = str(event.args)[:200]
+                    label = f"{event.tool_name}({args_str})" if args_str else event.tool_name
+                    await on_event("tool_call", label)
+                elif event.type == "tool_result":
+                    await on_event("tool_result", str(event.result or "")[:300])
+                elif event.type == "final":
+                    final_text = event.text
+
+        if self._toolset is not None:
+            async with self._toolset.bind(scope_key=scope_key):
+                await _consume()
+        else:
+            await _consume()
+
+        return (final_text or "(no response)").strip()
+
+    # ------------------------------------------------------------------ #
     # IChannelHandler.handle
     # ------------------------------------------------------------------ #
-    async def handle(self, msg: IncomingMessage, session: Session) -> OutgoingMessage:
+    async def handle(
+        self,
+        msg: IncomingMessage,
+        session: Session,
+        on_event: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> OutgoingMessage:
+        """Handle one turn. on_event: optional streaming callback (type, text) ->
+        None, called for each thought/tool_call/tool_result during agent.stream().
+        Only active when settings.streaming=True AND on_event is provided.
+        """
         scope_key = session.scope_key
         await self._load_state(scope_key)
         settings = self.get_settings(scope_key)
@@ -514,10 +650,19 @@ class RyuuHandler:
         # Phase 9.0c — auto-compact session history if threshold exceeded.
         # Runs BEFORE prompt assembly so the compacted summary is what the
         # LLM sees this turn (no point compacting AFTER the call).
-        if settings.auto_compact and self._compactor is not None and len(session.history) > self.compact_keep_recent:
-            # Rough estimate: ~40 tokens per turn (better than nothing)
-            est_tokens = sum(len(t.text.split()) for t in session.history) * 4 // 3
-            if est_tokens >= settings.compact_threshold_tokens:
+        # Uses the LAST turn's actual measured input_tokens — far more accurate
+        # than text.split() which misses system prompt + memory + profile blocks.
+        if (
+            settings.auto_compact
+            and self._compactor is not None
+            and len(session.history) > self.compact_keep_recent
+        ):
+            stats = self.get_stats(scope_key)
+            last_tokens = stats.last_input_tokens
+            # Fallback estimate on first turn (no measurement yet): scale by history
+            if last_tokens == 0:
+                last_tokens = sum(len(t.text.split()) for t in session.history) * 4 // 3
+            if last_tokens >= settings.compact_threshold_tokens:
                 await self._compact_session_history(scope_key, session)
 
         # 1. Build prompt with: warm-start memory + recent session history + new msg.
@@ -583,17 +728,38 @@ class RyuuHandler:
             + f"User now says: {msg.text}"
         )
 
-        # 2. Optional trace capture for /verbose
+        # Track WHERE this turn's tokens come from. Stored on stats so /last
+        # and /status can surface it. Framework helper handles the estimation
+        # (chars/4) — tool schemas + framework overhead aren't visible here.
+        breakdown = build_prompt_breakdown({
+            "system":   self._build_instructions(),
+            "memory":   recall_context,
+            "history":  history_block,
+            "profile":  profile_block,
+            "steer":    steer_block,
+            "user_msg": msg.text,
+        })
+
+        use_streaming = settings.streaming and on_event is not None
+
+        # 2. Callbacks setup:
+        #    - streaming: StreamingCallbacks fires on_event live during agent.run()
+        #    - verbose (non-streaming): TraceCapture collects trace for trailing display
         trace: TraceCapture | None = None
         original_callbacks = None
         inner = agent._agent
-        if settings.verbose:
+        if use_streaming:
+            assert on_event is not None
+            original_callbacks = inner.callbacks
+            inner.callbacks = StreamingCallbacks(on_event)  # type: ignore[assignment]
+        elif settings.verbose:
             trace = TraceCapture()
             original_callbacks = inner.callbacks
             inner.callbacks = trace  # type: ignore[assignment]
 
-        # 3. Bind memory toolset's scope so tool calls hit the right scope.
-        # `async with` handles cleanup even if agent.run() raises.
+        # 3. Execute — always use agent.run() so we always get cost/usage back.
+        # StreamingCallbacks (set above) drives the live UI updates via on_event.
+        result_cost: Any = None
         try:
             if self._toolset is not None:
                 async with self._toolset.bind(scope_key=scope_key):
@@ -610,13 +776,13 @@ class RyuuHandler:
                     session_id=msg.conversation_id,
                     domain=msg.channel,
                 )
+            final_text = (result.output or "").strip() or "(no response)"
+            result_cost = result.cost
         finally:
             if original_callbacks is not None:
                 inner.callbacks = original_callbacks  # type: ignore[assignment]
 
-        final_text = (result.output or "").strip() or "(no response)"
-
-        # 4. Compose reply — trace prefix if verbose
+        # 4. Compose reply — trace prefix if verbose (non-streaming only)
         if trace and trace.lines:
             reply_text = f"{trace.render()}\n\n──────\n{final_text}"
         else:
@@ -625,8 +791,11 @@ class RyuuHandler:
         # 5. Update session history + stats
         session.append("user", msg.text)
         session.append("assistant", final_text)
-        if result.cost is not None:
-            self.get_stats(scope_key).update_from(result.cost)
+        stats = self.get_stats(scope_key)
+        stats.last_model = effective_model  # always record model used, even if no cost
+        stats.last_breakdown = breakdown    # always record prompt breakdown
+        if result_cost is not None:
+            stats.update_from(result_cost)
             await self._save_state(scope_key)
 
         return OutgoingMessage(
@@ -634,7 +803,7 @@ class RyuuHandler:
             text=reply_text,
             formatting="markdown",
             metadata={
-                "cost_usd": getattr(result.cost, "usd", 0.0),
+                "cost_usd": getattr(result_cost, "usd", 0.0),
                 "model": effective_model,
                 "adaptive": settings.adaptive_routing,
                 "verbose": settings.verbose,

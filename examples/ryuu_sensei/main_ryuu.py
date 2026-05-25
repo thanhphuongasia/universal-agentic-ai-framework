@@ -30,6 +30,7 @@ import logging.handlers
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def _load_dotenv() -> None:
@@ -154,6 +155,23 @@ SKILLS_PATH = Path(os.getenv("RYUU_SKILLS_PATH", str(Path.home() / ".ryuu" / "sk
 PROMPT_SKILLS_USER_DIR = Path(os.getenv("RYUU_PROMPT_SKILLS_DIR", str(Path.home() / ".ryuu" / "skills")))
 PROMPT_SKILLS_BUNDLED_DIR = Path(__file__).parent / "skills"
 
+# Telegram / autocomplete — full command list for this application.
+# Add, remove, or override freely. Adapter never hard-codes these.
+BOT_COMMANDS: list[tuple[str, str]] = [
+    ("help",         "Show available commands"),
+    ("status",       "Session totals: token usage, cost, context size"),
+    ("last",         "Last-turn: model used, tokens in/out, cost"),
+    ("settings",     "Show your current settings"),
+    ("clear",        "Forget conversation history"),
+    ("model",        "Switch LLM model (inline buttons)"),
+    ("verbose",      "verbose on|off — show reasoning trace after reply"),
+    ("streaming",    "streaming on|off — stream ReAct thoughts live"),
+    ("adaptive",     "adaptive on|off — auto-select model tier per query"),
+    ("compact",      "Compact long history now (free up context)"),
+    ("auto_compact", "auto_compact on|off — toggle automatic compaction"),
+    ("task",         "Show dispatcher task state"),
+]
+
 
 def _build_telegram_callbacks(
     orchestrator: ChannelOrchestrator,
@@ -174,7 +192,13 @@ def _build_telegram_callbacks(
 
     async def on_model(sender_id: str, conversation_id: str, model: str) -> str:
         scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
+        if model == "auto":
+            s = await handler.set_adaptive_routing(scope, True)
+            return "Model set to **auto** — adaptive routing on, tier selected per query."
         s = await handler.set_model(scope, model)
+        if s.adaptive_routing:
+            await handler.set_adaptive_routing(scope, False)
+            return f"Model fixed to **{s.model}** (adaptive routing off)."
         return f"Model switched to **{s.model}**."
 
     async def on_settings(sender_id: str, conversation_id: str) -> str:
@@ -199,20 +223,39 @@ def _build_telegram_callbacks(
             scope_key=scope, channel="telegram",
             sender_id=sender_id, conversation_id=conversation_id,
         )
+        model_display = "auto" if s.adaptive_routing else s.model
+        ac_display = (
+            f"on (>{s.compact_threshold_tokens:,} tok)"
+            if s.auto_compact else "off"
+        )
+        bd = stats.last_breakdown
+        breakdown_line = ""
+        if bd:
+            sys_t = bd.get("system", 0)
+            mem_t = bd.get("memory", 0)
+            hist_t = bd.get("history", 0)
+            breakdown_line = (
+                f"\n  • last prompt est:  sys={sys_t:,} mem={mem_t:,} hist={hist_t:,}"
+                f" (see /last)"
+            )
         return (
             "📊 Session status\n"
-            f"  • model:           {s.model}\n"
+            f"  • model:           {model_display}\n"
             f"  • verbose:         {'on' if s.verbose else 'off'}\n"
+            f"  • streaming:       {'on' if s.streaming else 'off'}\n"
+            f"  • auto_compact:    {ac_display}\n"
             f"  • context buffer:  {len(session.history)} / {session.max_turns} turns\n"
             f"  • LLM calls:       {stats.turns}\n"
             f"  • tokens in/out:   {stats.input_tokens:,} / {stats.output_tokens:,}\n"
             f"  • cost so far:     ${stats.total_usd:.6f}"
+            + breakdown_line
         )
 
     async def on_current_model(sender_id: str, conversation_id: str) -> str:
         scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
         await handler._load_state(scope)
-        return handler.get_settings(scope).model
+        s = handler.get_settings(scope)
+        return "auto" if s.adaptive_routing else s.model
 
     async def on_compact(sender_id: str, conversation_id: str) -> str:
         scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
@@ -263,7 +306,9 @@ def _build_telegram_callbacks(
         await handler._load_state(scope)
         s = handler.get_settings(scope)
         if on is None:
-            tier_info = "trivial/medium → gpt-4o-mini  |  hard → gpt-4o"
+            tier_info = "  |  ".join(
+                f"{k} → {v}" for k, v in handler.tier_models.items()
+            )
             return (
                 f"Adaptive routing is **{'on' if s.adaptive_routing else 'off'}**.\n"
                 f"Tiers: {tier_info}\n"
@@ -273,6 +318,54 @@ def _build_telegram_callbacks(
         return (
             f"Adaptive routing is now **{'on' if on else 'off'}**. "
             + ("Each query auto-selects model tier." if on else "Using fixed model: " + s.model + ".")
+        )
+
+    async def on_last(sender_id: str, conversation_id: str) -> str:
+        scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
+        await handler._load_state(scope)
+        st = handler.get_stats(scope)
+        if not st.last_model:
+            return "No turns yet this session."
+
+        lines = [
+            "🔍 Last turn",
+            f"  • model:           {st.last_model}",
+            f"  • tokens in:       {st.last_input_tokens:,}  (measured)",
+            f"  • tokens out:      {st.last_output_tokens:,}",
+            f"  • cost:            ${st.last_cost_usd:.6f}",
+        ]
+
+        bd = st.last_breakdown
+        if bd:
+            est_total = bd.get("total_est", 0)
+            lines.append(f"  • prompt breakdown (est, chars/4):")
+            for key in ("system", "memory", "history", "profile", "steer", "user_msg"):
+                val = bd.get(key, 0)
+                if val > 0:
+                    lines.append(f"      {key:10s} {val:>7,}")
+            lines.append(f"      {'─' * 18}")
+            lines.append(f"      {'subtotal':10s} {est_total:>7,}")
+            # Delta = measured - estimated. Usually positive (tool schemas + framework overhead).
+            if st.last_input_tokens > 0:
+                delta = st.last_input_tokens - est_total
+                lines.append(f"      {'tools+oh':10s} {delta:>7,} (measured − est)")
+
+        return "\n".join(lines)
+
+    async def on_streaming(sender_id: str, conversation_id: str, on: bool | None) -> str:
+        scope = await cm.resolve_scope("telegram", sender_id, conversation_id)
+        await handler._load_state(scope)
+        s = handler.get_settings(scope)
+        if on is None:
+            return (
+                f"Streaming is **{'on' if s.streaming else 'off'}**.\n"
+                "When on, ReAct thoughts (💭 🔧 📋) appear in real-time before the answer.\n"
+                "Use `/streaming on` or `/streaming off` to toggle."
+            )
+        await handler.set_streaming(scope, on)
+        return (
+            f"Streaming is now **{'on' if on else 'off'}**. "
+            + ("ReAct thoughts will appear live." if on else "Silent mode (no thought display).")
         )
 
     async def on_task_status(sender_id: str, conversation_id: str) -> str:
@@ -308,9 +401,11 @@ def _build_telegram_callbacks(
         "on_model": on_model,
         "on_settings": on_settings,
         "on_status": on_status,
+        "on_last": on_last,
         "on_task_status": on_task_status,
         "on_current_model": on_current_model,
         "on_adaptive": on_adaptive,
+        "on_streaming": on_streaming,
         "on_compact": on_compact,
         "on_auto_compact": on_auto_compact,
     }
@@ -504,6 +599,86 @@ async def run(use_telegram: bool) -> None:
             print(f"[ryuu-super] Telegram allowed_senders = {{{owner_id}}} (single-tenant)")
 
         cbs = _build_telegram_callbacks(orch, handler, cm)
+
+        async def stream_gateway(
+            incoming: Any, chat_id: int, bot: Any
+        ) -> Any:
+            """Replace on_message for all regular messages.
+
+            Non-streaming: delegates to orch._on_message() unchanged.
+            Streaming: sends ⏳ placeholder, edits it with each thought/tool
+            event, then returns the final OutgoingMessage for the adapter to send.
+            """
+            scope = await cm.resolve_scope(
+                incoming.channel, incoming.sender_id, incoming.conversation_id
+            )
+            await handler._load_state(scope)
+            s = handler.get_settings(scope)
+
+            log = logging.getLogger("ryuu_sensei.stream_gateway")
+            log.info(
+                "stream_gateway: scope=%s streaming=%s adaptive=%s model=%s",
+                scope, s.streaming, s.adaptive_routing, s.model,
+            )
+
+            # Dispatcher routing or streaming off → normal path
+            if not s.streaming or (
+                orch.dispatcher is not None and orch.dispatcher.is_running(scope)
+            ):
+                log.info("→ NORMAL path (streaming=%s, dispatcher_busy=%s)",
+                         s.streaming,
+                         orch.dispatcher is not None and orch.dispatcher.is_running(scope))
+                return await orch._on_message(incoming)
+
+            log.info("→ STREAMING path")
+
+            # ── Streaming path ─────────────────────────────────────────
+            placeholder = await bot.send_message(chat_id, "🤔 Đang xử lý…")
+            log.info("placeholder sent: message_id=%s", placeholder.message_id)
+            trace_lines: list[str] = []
+
+            async def on_event(event_type: str, text: str) -> None:
+                log.info("stream event: type=%s text=%r", event_type, text[:80])
+                if event_type == "thought":
+                    # Display ALL thoughts, including framework's generic
+                    # "I'll use X to gather..." substitution — it's still a
+                    # signal that LLM is using a tool. Without it, tool-use
+                    # turns would silently jump from placeholder to tool_call.
+                    trace_lines.append(f"💭 {text.strip()[:300]}")
+                elif event_type == "tool_call":
+                    trace_lines.append(f"🔧 {text}")
+                elif event_type == "tool_result":
+                    preview = text[:200] + "…" if len(text) > 200 else text
+                    trace_lines.append(f"📋 {preview}")
+                elif event_type == "final":
+                    return
+
+                body = "\n".join(trace_lines) if trace_lines else "🤔 Đang xử lý…"
+                try:
+                    await bot.edit_message_text(
+                        text=body,
+                        chat_id=chat_id,
+                        message_id=placeholder.message_id,
+                    )
+                    log.info("edit OK (%d chars, %d lines)", len(body), len(trace_lines))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("edit_message_text FAILED: %s: %s",
+                                type(exc).__name__, exc)
+
+            session = await cm.get_session(incoming)
+            outgoing = await handler.handle(incoming, session, on_event=on_event)
+            session.extra.pop("_dispatcher_state", None)
+            await cm.save(session)
+
+            # If no thoughts were emitted (direct answer), remove the ⏳ placeholder
+            # so it doesn't sit as a stray message above the reply.
+            if not trace_lines:
+                try:
+                    await bot.delete_message(chat_id, placeholder.message_id)
+                except Exception:  # noqa: BLE001
+                    pass
+            return outgoing
+
         tg = TelegramAdapter(
             bot_token=os.getenv("RYUU_BOT_TOKEN", os.getenv("TELEGRAM_BOT_TOKEN", "")),
             on_clear=cbs["on_clear"],
@@ -516,6 +691,10 @@ async def run(use_telegram: bool) -> None:
             on_compact=cbs["on_compact"],
             on_auto_compact=cbs["on_auto_compact"],
             on_adaptive=cbs["on_adaptive"],
+            on_streaming=cbs["on_streaming"],
+            on_last=cbs["on_last"],
+            stream_gateway=stream_gateway,
+            bot_commands=BOT_COMMANDS,
             allowed_models=ALLOWED_MODELS,
             allowed_senders=allowed,
             welcome_text=(
