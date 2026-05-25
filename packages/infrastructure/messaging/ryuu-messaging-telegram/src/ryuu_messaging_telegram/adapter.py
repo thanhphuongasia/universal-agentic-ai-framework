@@ -58,7 +58,8 @@ DEFAULT_HELP = (
     "  /model                  — tap a button to switch model\n"
     "  /compact                — compact long history NOW (free up context)\n"
     "  /auto_compact on|off    — toggle automatic compaction\n"
-    "  /adaptive on|off        — toggle adaptive model routing (auto selects tier per query)\n\n"
+    "  /adaptive on|off        — toggle adaptive model routing (auto selects tier per query)\n"
+    "  /streaming on|off       — stream ReAct thoughts live before the answer\n\n"
     "Or just chat naturally."
 )
 
@@ -83,6 +84,18 @@ class TelegramAdapter(IChannelAdapter):
     on_compact: Any = None       # async (sender_id, conv_id) -> str  — manual trigger
     on_auto_compact: Any = None  # async (sender_id, conv_id, on: bool|None) -> str  — toggle / status
     on_adaptive: Any = None      # async (sender_id, conv_id, on: bool|None) -> str  — adaptive routing toggle / status
+    on_streaming: Any = None     # async (sender_id, conv_id, on: bool|None) -> str  — streaming thoughts toggle / status
+    on_last: Any = None          # async (sender_id, conv_id) -> str  — last-turn model/token/cost stats
+    # async (incoming, chat_id: int, bot) -> OutgoingMessage — used instead of on_message
+    # when streaming mode is active. Caller is responsible for sending intermediate
+    # thought events to Telegram (e.g., via bot.edit_message_text).
+    stream_gateway: Any = None
+
+    # Application-defined command list for Telegram / autocomplete.
+    # List of (command, description) tuples — adapter calls set_my_commands() on start.
+    # None (default) = skip registration (autocomplete not shown).
+    # Application controls the full list: add, override, or remove entries freely.
+    bot_commands: list[tuple[str, str]] | None = None
 
     # Customizable text + model allowlist for the inline keyboard
     welcome_text: str = DEFAULT_WELCOME
@@ -139,12 +152,15 @@ class TelegramAdapter(IChannelAdapter):
             return str(tg_msg.from_user.id), f"telegram:{tg_msg.chat.id}"
 
         def _model_keyboard(current: str) -> InlineKeyboardMarkup:
+            # "auto" is always the first option when adaptive routing is supported.
+            # Selecting a fixed model disables adaptive; selecting auto enables it.
+            options = ["auto", *self.allowed_models]
             buttons = [
                 [InlineKeyboardButton(
-                    text=("✓ " if m == current else "  ") + m,
+                    text=("✓ " if m == current else "") + m,
                     callback_data=f"set_model:{m}",
                 )]
-                for m in self.allowed_models
+                for m in options
             ]
             return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -199,6 +215,21 @@ class TelegramAdapter(IChannelAdapter):
                 summary = await self.on_status(*ids)
             except Exception as exc:  # noqa: BLE001
                 log.warning("on_status failed: %s", exc)
+                summary = f"⚠️ {type(exc).__name__}: {exc}"
+            await self._bot.send_message(tg_msg.chat.id, summary)
+
+        # ── /last — last-turn model/token/cost ───────────────────────
+        @self._dp.message(Command("last"))
+        async def _cmd_last(tg_msg: TgMessage) -> None:
+            self._remember_chat(tg_msg)
+            ids = _ids(tg_msg)
+            if self.on_last is None or ids is None:
+                await self._bot.send_message(tg_msg.chat.id, "(last-turn stats unavailable)")
+                return
+            try:
+                summary = await self.on_last(*ids)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_last failed: %s", exc)
                 summary = f"⚠️ {type(exc).__name__}: {exc}"
             await self._bot.send_message(tg_msg.chat.id, summary)
 
@@ -294,6 +325,38 @@ class TelegramAdapter(IChannelAdapter):
                 reply = await self.on_adaptive(*ids, on)
             except Exception as exc:  # noqa: BLE001
                 log.warning("on_adaptive failed: %s", exc)
+                reply = f"⚠️ {type(exc).__name__}: {exc}"
+            await self._bot.send_message(tg_msg.chat.id, reply)
+
+        # ── /streaming — toggle live ReAct thought display ────────────
+        @self._dp.message(Command("streaming"))
+        async def _cmd_streaming(tg_msg: TgMessage) -> None:
+            self._remember_chat(tg_msg)
+            ids = _ids(tg_msg)
+            if ids is None or self.on_streaming is None:
+                await self._bot.send_message(tg_msg.chat.id, "(streaming unavailable)")
+                return
+            parts = (tg_msg.text or "").strip().split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+            on: bool | None
+            if arg == "on":
+                on = True
+            elif arg == "off":
+                on = False
+            elif arg in {"", "status"}:
+                on = None
+            else:
+                await self._bot.send_message(
+                    tg_msg.chat.id,
+                    "Usage: `/streaming on|off` to toggle, or `/streaming` to see current state.",
+                )
+                return
+
+            try:
+                reply = await self.on_streaming(*ids, on)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_streaming failed: %s", exc)
                 reply = f"⚠️ {type(exc).__name__}: {exc}"
             await self._bot.send_message(tg_msg.chat.id, reply)
 
@@ -416,7 +479,10 @@ class TelegramAdapter(IChannelAdapter):
             )
             await self._bot.send_chat_action(tg_msg.chat.id, "typing")
             try:
-                reply = await on_message(incoming)
+                if self.stream_gateway is not None:
+                    reply = await self.stream_gateway(incoming, tg_msg.chat.id, self._bot)
+                else:
+                    reply = await on_message(incoming)
             except Exception as exc:  # noqa: BLE001
                 log.exception("on_message failed")
                 reply = OutgoingMessage(
@@ -425,6 +491,17 @@ class TelegramAdapter(IChannelAdapter):
                          "Try /clear and ask again.",
                 )
             await self.send(reply)
+
+        # Register commands with Telegram so / autocomplete works.
+        # bot_commands is defined by the application — adapter never hardcodes them.
+        if self.bot_commands:
+            from aiogram.types import BotCommand
+            tg_cmds = [BotCommand(command=cmd, description=desc) for cmd, desc in self.bot_commands]
+            try:
+                await self._bot.set_my_commands(tg_cmds)
+                log.info("Bot commands registered with Telegram (%d commands)", len(tg_cmds))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Failed to register bot commands: %s", exc)
 
         log.info("Telegram adapter started; polling for updates…")
         print("[ryuu-messaging] Telegram adapter started — polling for messages.")

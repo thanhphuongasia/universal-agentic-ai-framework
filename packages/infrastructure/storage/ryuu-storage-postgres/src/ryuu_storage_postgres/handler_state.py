@@ -33,6 +33,7 @@ class HandlerState:
     auto_compact: bool = True
     compact_threshold_tokens: int = 4000
     adaptive_routing: bool = False
+    streaming: bool = False
     # cumulative stats
     turns: int = 0
     input_tokens: int = 0
@@ -74,6 +75,7 @@ class PostgresHandlerStateStore:
                     auto_compact             BOOLEAN NOT NULL DEFAULT true,
                     compact_threshold_tokens INT NOT NULL DEFAULT 4000,
                     adaptive_routing         BOOLEAN NOT NULL DEFAULT false,
+                    streaming                BOOLEAN NOT NULL DEFAULT false,
                     turns                    INT NOT NULL DEFAULT 0,
                     input_tokens             BIGINT NOT NULL DEFAULT 0,
                     output_tokens            BIGINT NOT NULL DEFAULT 0,
@@ -81,6 +83,11 @@ class PostgresHandlerStateStore:
                     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
             """)
+            # Idempotent migration for existing deployments
+            await conn.execute(
+                f"ALTER TABLE {self.table} ADD COLUMN IF NOT EXISTS streaming"
+                f" BOOLEAN NOT NULL DEFAULT false"
+            )
         self._ready = True
 
     async def load(self, scope_key: str) -> HandlerState:
@@ -90,7 +97,7 @@ class PostgresHandlerStateStore:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 f'SELECT model, "verbose", auto_compact, compact_threshold_tokens,'
-                f"       adaptive_routing, turns, input_tokens, output_tokens, total_usd"
+                f"       adaptive_routing, streaming, turns, input_tokens, output_tokens, total_usd"
                 f" FROM {self.table} WHERE scope_key = $1",
                 scope_key,
             )
@@ -102,6 +109,7 @@ class PostgresHandlerStateStore:
                 auto_compact=row["auto_compact"],
                 compact_threshold_tokens=row["compact_threshold_tokens"],
                 adaptive_routing=row["adaptive_routing"],
+                streaming=row["streaming"],
                 turns=row["turns"],
                 input_tokens=row["input_tokens"],
                 output_tokens=row["output_tokens"],
@@ -116,14 +124,15 @@ class PostgresHandlerStateStore:
             await conn.execute(
                 f"INSERT INTO {self.table}"
                 f' (scope_key, model, "verbose", auto_compact, compact_threshold_tokens,'
-                f"  adaptive_routing, turns, input_tokens, output_tokens, total_usd)"
-                f" VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"
+                f"  adaptive_routing, streaming, turns, input_tokens, output_tokens, total_usd)"
+                f" VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)"
                 f" ON CONFLICT (scope_key) DO UPDATE SET"
                 f"   model                    = EXCLUDED.model,"
                 f'   "verbose"                = EXCLUDED."verbose",'
                 f"   auto_compact             = EXCLUDED.auto_compact,"
                 f"   compact_threshold_tokens = EXCLUDED.compact_threshold_tokens,"
                 f"   adaptive_routing         = EXCLUDED.adaptive_routing,"
+                f"   streaming                = EXCLUDED.streaming,"
                 f"   turns                    = EXCLUDED.turns,"
                 f"   input_tokens             = EXCLUDED.input_tokens,"
                 f"   output_tokens            = EXCLUDED.output_tokens,"
@@ -131,7 +140,7 @@ class PostgresHandlerStateStore:
                 f"   updated_at               = now()",
                 scope_key,
                 state.model, state.verbose, state.auto_compact,
-                state.compact_threshold_tokens, state.adaptive_routing,
+                state.compact_threshold_tokens, state.adaptive_routing, state.streaming,
                 state.turns, state.input_tokens, state.output_tokens, state.total_usd,
             )
 

@@ -54,6 +54,25 @@ class PostgresCollectionStore:
                 f"CREATE INDEX IF NOT EXISTS {self.table}_scope_idx"
                 f" ON {self.table}(scope_key, created_at DESC)"
             )
+
+            # Legacy migration — old tables had created_at as `double precision`
+            # (epoch seconds). Convert in-place to TIMESTAMPTZ if needed.
+            current_type = await conn.fetchval(
+                "SELECT data_type FROM information_schema.columns"
+                " WHERE table_name = $1 AND column_name = 'created_at'"
+                " AND table_schema = 'public'",
+                self.table,
+            )
+            if current_type == "double precision":
+                await conn.execute(
+                    f"ALTER TABLE {self.table}"
+                    f" ALTER COLUMN created_at TYPE TIMESTAMPTZ"
+                    f" USING to_timestamp(created_at)"
+                )
+                await conn.execute(
+                    f"ALTER TABLE {self.table}"
+                    f" ALTER COLUMN created_at SET DEFAULT now()"
+                )
         self._ready = True
 
     def _row_to_item(self, row: Any) -> Item:
@@ -81,9 +100,11 @@ class PostgresCollectionStore:
         pool = await get_pool(self.dsn)
         async with pool.acquire() as conn:
             await self._ensure_table()
+            # Pass created_at explicitly with now() — defends against legacy
+            # schemas where the column may have been created without DEFAULT.
             await conn.execute(
-                f"INSERT INTO {self.table}(id, scope_key, content, metadata)"
-                f" VALUES($1, $2, $3, $4)",
+                f"INSERT INTO {self.table}(id, scope_key, content, metadata, created_at)"
+                f" VALUES($1, $2, $3, $4, now())",
                 item_id, scope_key, content, json.dumps(metadata or {}),
             )
         return item_id

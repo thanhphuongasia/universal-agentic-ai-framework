@@ -26,6 +26,10 @@ from ryuu_cognitive.context.query_decomposition import (
     PatternQueryDecomposer,
     SubQuery,
 )
+from ryuu_cognitive.context.prompt_metering import (
+    build_prompt_breakdown,
+    est_tokens,
+)
 from ryuu_cognitive.context.query_expansion import (
     IQueryExpander,
     LLMQueryExpander,
@@ -47,4 +51,7 @@ __all__ = [
     "LLMQueryDecomposer",
     "PatternQueryDecomposer",
     "SubQuery",
+    # prompt metering — token estimates for cost tracing
+    "est_tokens",
+    "build_prompt_breakdown",
 ]

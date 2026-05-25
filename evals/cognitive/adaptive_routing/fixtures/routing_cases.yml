@@ -40,3 +40,28 @@ cases:
       message: "I need you to evaluate the performance of different retrieval strategies, compare their latency and accuracy trade-offs, then recommend an architecture that balances cost and quality for a production RAG system with 10M documents"
     expected:
       model: "gpt-4o"
+
+  # Vietnamese fixtures — verify heuristic handles non-English queries
+  - case_id: vi-trivial-greeting
+    input:
+      message: "chào bạn"
+    expected:
+      model: "gpt-4o-mini"
+
+  - case_id: vi-trivial-list
+    input:
+      message: "liệt kê những gì bạn biết về tôi"
+    expected:
+      model: "gpt-4o-mini"
+
+  - case_id: vi-hard-design
+    input:
+      message: "hãy thiết kế agentic agents cho todo app như phân tích goals và task completion"
+    expected:
+      model: "gpt-4o"
+
+  - case_id: vi-hard-analyze
+    input:
+      message: "phân tích trade-off giữa hệ multi-agent và single-agent cho ứng dụng quản lý công việc"
+    expected:
+      model: "gpt-4o"
