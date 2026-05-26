@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -112,9 +113,14 @@ class CaseResult:
         return self.error is None and all(s.passed for s in self.scores)
 
 
+def _new_run_id() -> str:
+    return uuid.uuid4().hex
+
+
 @dataclass
 class SuiteResult:
     suite_id: str
+    run_id: str = field(default_factory=_new_run_id)
     cases: list[CaseResult] = field(default_factory=list)
     total_cost_usd: float = 0.0
 
