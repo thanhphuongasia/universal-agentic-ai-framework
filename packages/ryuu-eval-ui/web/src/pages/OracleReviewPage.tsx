@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
   useOracleFixtures, useOracleFixture,
@@ -775,9 +776,15 @@ function FixtureModal({ suiteId, fixture, onClose, onGenerate, isGenerating }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function OracleReviewPage() {
+  const { suiteId: urlSuiteId } = useParams<{ suiteId?: string }>();
   const { data: suites = [], isLoading: loadingSuites } = useSuites();
 
-  const [expandedSuiteId, setExpandedSuiteId]       = useState("");
+  const [expandedSuiteId, setExpandedSuiteId]       = useState(urlSuiteId ?? "");
+
+  // Sync URL suiteId → auto-expand on navigation
+  useEffect(() => {
+    if (urlSuiteId) setExpandedSuiteId(urlSuiteId);
+  }, [urlSuiteId]);
   const [selectedFixtureId, setSelectedFixtureId]   = useState("");
   const [activeTab, setActiveTab]                   = useState<TabId>("input");
   const [suiteModal, setSuiteModal]                 = useState<null | { mode: "create" } | { mode: "edit"; suite: Suite }>(null);
