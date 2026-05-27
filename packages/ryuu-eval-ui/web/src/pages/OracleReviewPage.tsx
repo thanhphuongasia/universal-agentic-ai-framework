@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
   useOracleFixtures, useOracleFixture,
@@ -908,9 +908,12 @@ export function OracleReviewPage() {
           <>
             {/* Header breadcrumb */}
             <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-semibold text-gray-700 dark:text-gray-200">
+              <Link
+                to={`/suites/${expandedSuiteId}`}
+                className="font-semibold text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+              >
                 {suites.find(s => s.suite_id === expandedSuiteId)?.title ?? expandedSuiteId}
-              </span>
+              </Link>
               <span>›</span>
               <span className="font-mono text-gray-500">{selectedFixtureId}</span>
               {hasCells && pendingCount === 0 && (
