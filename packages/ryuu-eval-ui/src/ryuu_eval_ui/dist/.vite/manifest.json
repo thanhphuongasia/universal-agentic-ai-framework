@@ -1,0 +1,48 @@
+{
+  "_charts-BHXj8Pak.js": {
+    "file": "assets/charts-BHXj8Pak.js",
+    "name": "charts",
+    "imports": [
+      "_rolldown-runtime-QTnfLwEv.js"
+    ]
+  },
+  "_query-2jX299At.js": {
+    "file": "assets/query-2jX299At.js",
+    "name": "query",
+    "imports": [
+      "_rolldown-runtime-QTnfLwEv.js",
+      "_charts-BHXj8Pak.js"
+    ]
+  },
+  "_rolldown-runtime-QTnfLwEv.js": {
+    "file": "assets/rolldown-runtime-QTnfLwEv.js",
+    "name": "rolldown-runtime"
+  },
+  "_vendor-CQlzEucf.js": {
+    "file": "assets/vendor-CQlzEucf.js",
+    "name": "vendor",
+    "imports": [
+      "_rolldown-runtime-QTnfLwEv.js",
+      "_charts-BHXj8Pak.js",
+      "_query-2jX299At.js"
+    ],
+    "dynamicImports": [
+      "_vendor-CQlzEucf.js"
+    ]
+  },
+  "index.html": {
+    "file": "assets/index-lAWUYnxe.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "imports": [
+      "_rolldown-runtime-QTnfLwEv.js",
+      "_vendor-CQlzEucf.js",
+      "_charts-BHXj8Pak.js",
+      "_query-2jX299At.js"
+    ],
+    "css": [
+      "assets/index-Dh_qvSmO.css"
+    ]
+  }
+}

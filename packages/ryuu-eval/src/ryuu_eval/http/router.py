@@ -27,6 +27,7 @@ When unset/false (default): only manual fire via POST /optimize/{suite_id}.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import time
@@ -43,7 +44,7 @@ except ImportError as exc:
         "FastAPI required for ryuu_eval.http. Install: pip install fastapi"
     ) from exc
 
-from ryuu_eval_core import EvalCase, EvalCaseTemplate, EvalRunner
+from ryuu_eval_core import EvalCase, EvalCaseTemplate, EvalRunner, ExternalProject
 from ryuu_eval_core.fixture_loader import FixtureLoader
 
 
@@ -51,9 +52,13 @@ from ryuu_eval_core.fixture_loader import FixtureLoader
 # Type aliases — caller provides these
 # ----------------------------------------------------------------------------
 
-RunnerFactory = Callable[[str, Path], EvalRunner]
-"""(suite_id, refine_log_path) → configured EvalRunner.
-Project's factory wires its target + scorers + refine_logger."""
+RunnerFactory = Callable[[str, Path, "str | None", "str | None"], EvalRunner]
+"""(suite_id, refine_log_path, model, system_prompt) → configured EvalRunner.
+Project's factory wires its target + scorers + refine_logger.
+
+Backward-compatible: factories that only accept (suite_id, log_path) still
+work because the extra args are passed as positional kwargs via try/except
+inside the router."""
 
 
 def _dataclass_dict(obj: Any) -> Any:
@@ -83,25 +88,40 @@ def build_eval_router(
     require_auth: Callable[..., Any] | None = None,
     optimizer_callback: Callable[[str, dict], dict] | None = None,
     prompt_resolver: Callable[[str], dict[str, Any] | None] | None = None,
+    case_factory_callback: Callable[[str, dict], Any] | None = None,
+    external_projects: list[ExternalProject] | None = None,
     serve_ui: bool = False,
     ui_prefix: str = "/ui",
+    kv_store: Any | None = None,
+    oracle_fixtures_dir: Path | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
     Args:
         runner_factory: builds EvalRunner per suite (project supplies target+scorers).
+            New signature: (suite_id, log_path, model, system_prompt) → EvalRunner.
+            Backward-compatible with old 2-arg (suite_id, log_path) factories.
         template_registry: registered templates keyed by template_id.
         cases_dir: where to persist cases (YAML files, per suite subdir).
         refine_log_dir: where RefineLogger writes JSONL (per suite).
         require_auth: optional FastAPI dependency cho auth.
         optimizer_callback: ``(suite_id, params) → result_dict``. If provided,
             POST /optimize triggers it; else returns 501 Not Implemented.
+        case_factory_callback: ``(suite_id, seed) -> dict | list[dict] | None``. Drives
+            ``POST /suites/{id}/cases:generate`` so projects can auto-build cases from
+            their own data sources (knowledge graph, production traces, etc.) instead
+            of hand-writing YAMLs. Return shape: `{case_id, input, expected?, metadata?}`
+            or a list for multi-case generation. Framework persists when payload.save=true.
         prompt_resolver: ``suite_id -> {path, content, system?, user_template?, output_schema?}``
             (or None when no prompt available). Drives ``GET /suites/{id}/prompt`` so
             external eval frameworks can fetch the prompt being evaluated. Framework
             stays generic — project supplies the lookup mapping its prompts dir.
+        kv_store: optional async KV store (e.g. PostgresKVStore) for persisting run
+            and batch results across process restarts. Must expose async get(key) and
+            put(key, value) methods.
     """
     import asyncio
+    import inspect as _inspect
 
     r = APIRouter()
     auth_dep = [Depends(require_auth)] if require_auth else []
@@ -112,10 +132,44 @@ def build_eval_router(
     _run_queues: dict[str, "asyncio.Queue[dict | None]"] = {}
     # Completed run results keyed by run_id (in-memory, survives until process restart).
     _run_results: dict[str, dict] = {}
+    # Batch results keyed by batch_id (in-memory).
+    _batch_results: dict[str, dict] = {}
+
+    def _call_runner_factory(
+        suite_id: str, log_path: Path, model: str | None, system_prompt: str | None,
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        budget_cap_usd: float | None = None,
+    ) -> EvalRunner:
+        """Call runner_factory with backward-compat: try 4+arg, fall back to 2-arg.
+
+        Extra kwargs (max_tokens/temperature/budget_cap_usd) are forwarded only
+        when the factory advertises them in its signature — older 4-arg factories
+        keep working unchanged.
+        """
+        try:
+            sig = _inspect.signature(runner_factory)
+            params = sig.parameters
+            n_params = len(params)
+        except (ValueError, TypeError):
+            params = {}  # type: ignore[assignment]
+            n_params = 2
+        if n_params >= 4:
+            extra_kwargs: dict[str, Any] = {}
+            for k, v in (("max_tokens", max_tokens),
+                         ("temperature", temperature),
+                         ("budget_cap_usd", budget_cap_usd)):
+                if v is not None and k in params:
+                    extra_kwargs[k] = v
+            return runner_factory(suite_id, log_path, model, system_prompt, **extra_kwargs)
+        return runner_factory(suite_id, log_path)  # type: ignore[call-arg]
 
     # Where SuiteResult JSON snapshots are written after each run, so the UI
     # can show "Actual (last run)" without re-running.
     _last_run_dir = last_run_dir or (cases_dir.parent / "last_run")
+    _run_history_dir = cases_dir.parent / "run_history"
+    _suite_config_dir = cases_dir.parent / "suite_config"
 
     # ── Suites discovery ───────────────────────────────────────────────
 
@@ -145,6 +199,22 @@ def build_eval_router(
                 count += sum(1 for _ in sub.glob("*.yml"))
         return count
 
+    def _read_suite_config(suite_id: str) -> dict:
+        path = _suite_config_dir / f"{suite_id}.json"
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _write_suite_config(suite_id: str, data: dict) -> None:
+        _suite_config_dir.mkdir(parents=True, exist_ok=True)
+        path = _suite_config_dir / f"{suite_id}.json"
+        existing = _read_suite_config(suite_id)
+        existing.update(data)
+        path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
     def _read_last_run(suite_id: str) -> dict | None:
         path = _last_run_dir / f"{suite_id}.json"
         if not path.exists():
@@ -154,7 +224,77 @@ def build_eval_router(
         except (OSError, json.JSONDecodeError):
             return None
 
-    def _write_last_run(suite_id: str, suite_result: Any, model: str | None = None) -> None:
+    def _write_run_history(
+        suite_id: str,
+        run_id: str,
+        suite_result: Any,
+        model: str | None,
+        batch_id: str | None = None,
+    ) -> None:
+        """Append one-line summary to artifacts/eval/run_history/{suite_id}.jsonl."""
+        try:
+            _run_history_dir.mkdir(parents=True, exist_ok=True)
+            entry: dict[str, Any] = {
+                "run_id": run_id,
+                "model": model,
+                "finished_at": time.time(),
+                "passed_count": suite_result.passed_count,
+                "total_count": suite_result.total_count,
+                "pass_rate": suite_result.pass_rate,
+                "total_cost_usd": suite_result.total_cost_usd,
+            }
+            if batch_id:
+                entry["batch_id"] = batch_id
+            with (_run_history_dir / f"{suite_id}.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, default=str) + "\n")
+        except OSError:
+            pass
+
+    def _read_run_history(suite_id: str, limit: int = 20) -> list[dict]:
+        path = _run_history_dir / f"{suite_id}.jsonl"
+        if not path.exists():
+            return []
+        try:
+            lines = path.read_text(encoding="utf-8").strip().splitlines()
+            entries = []
+            for line in lines:
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+            # Back-fill batch_id for legacy entries: group entries without batch_id
+            # that finished within 30s of each other (they were multi-model batches).
+            no_batch = [e for e in entries if not e.get("batch_id")]
+            no_batch.sort(key=lambda e: e.get("finished_at", 0))
+            synthetic_id: str | None = None
+            anchor_ts: float = 0.0
+            for e in no_batch:
+                ts = e.get("finished_at", 0) or 0
+                if synthetic_id is None or (ts - anchor_ts) > 30:
+                    synthetic_id = f"auto_{e['run_id'][:8]}"
+                    anchor_ts = ts
+                else:
+                    # Extend the window to cover the last entry in this group
+                    anchor_ts = ts
+                e["batch_id"] = synthetic_id
+            # Mark synthetic single-entry batches as solo (no compare button needed)
+            from collections import Counter
+            batch_counts = Counter(e.get("batch_id") for e in entries if e.get("batch_id"))
+            for e in entries:
+                bid = e.get("batch_id", "")
+                if bid and bid.startswith("auto_") and batch_counts[bid] == 1:
+                    del e["batch_id"]
+            entries.sort(key=lambda e: e.get("finished_at", 0), reverse=True)
+            return entries[:limit]
+        except OSError:
+            return []
+
+    def _write_last_run(
+        suite_id: str,
+        suite_result: Any,
+        model: str | None = None,
+        system_prompt: str | None = None,
+    ) -> None:
         try:
             _last_run_dir.mkdir(parents=True, exist_ok=True)
             payload = _dataclass_dict(suite_result)
@@ -167,10 +307,17 @@ def build_eval_router(
             payload["finished_at"] = time.time()
             if model:
                 payload["model"] = model
-            (_last_run_dir / f"{suite_id}.json").write_text(
-                json.dumps(payload, ensure_ascii=False, default=str),
-                encoding="utf-8",
-            )
+            if system_prompt:
+                payload["system_prompt"] = system_prompt
+            serialized = json.dumps(payload, ensure_ascii=False, default=str)
+            # Write "latest run" shortcut (one file per suite)
+            (_last_run_dir / f"{suite_id}.json").write_text(serialized, encoding="utf-8")
+            # Also write per-run-id file so GET /runs/{id} survives server restarts
+            run_id = payload.get("run_id", "")
+            if run_id:
+                run_results_dir = _last_run_dir / "runs"
+                run_results_dir.mkdir(parents=True, exist_ok=True)
+                (run_results_dir / f"{run_id}.json").write_text(serialized, encoding="utf-8")
         except OSError:
             pass  # best-effort — never fail the run for a write error
 
@@ -203,6 +350,7 @@ def build_eval_router(
         datasets, last_run summary, model (inferred from last_run)."""
         tpls = [t for t in template_registry.values() if t.suite_id == suite_id]
         last_run = _read_last_run(suite_id)
+        cfg = _read_suite_config(suite_id)
         model: str | None = (last_run or {}).get("model")
         return {
             "suite_id": suite_id,
@@ -211,6 +359,7 @@ def build_eval_router(
             "case_count": _count_suite_cases(suite_id),
             "datasets": _list_suite_datasets(suite_id),
             "model": model,
+            "default_system_prompt": cfg.get("default_system_prompt"),
             "last_run": (
                 {
                     "run_id": last_run.get("run_id"),
@@ -221,6 +370,7 @@ def build_eval_router(
                     "pass_rate": last_run.get("pass_rate"),
                     "total_cost_usd": last_run.get("total_cost_usd"),
                     "finished_at": last_run.get("finished_at"),
+                    "system_prompt": last_run.get("system_prompt"),
                 }
                 if last_run else None
             ),
@@ -238,6 +388,11 @@ def build_eval_router(
             raise HTTPException(404, f"No prior run for suite_id={suite_id}")
         return data
 
+    @r.get("/suites/{suite_id}/runs", dependencies=auth_dep)
+    def list_suite_runs(suite_id: str, limit: int = 20) -> list[dict]:
+        """List past runs for a suite, most recent first (max ``limit`` entries)."""
+        return _read_run_history(suite_id, limit)
+
     @r.get("/suites/{suite_id}/prompt", dependencies=auth_dep)
     def get_suite_prompt(suite_id: str) -> dict:
         """Return the prompt YAML used by this suite — for external eval frameworks
@@ -253,6 +408,17 @@ def build_eval_router(
         if data is None:
             raise HTTPException(404, f"No prompt registered for suite_id={suite_id}")
         return data
+
+    @r.get("/suites/{suite_id}/default-prompt", dependencies=auth_dep)
+    def get_default_prompt(suite_id: str) -> dict:
+        cfg = _read_suite_config(suite_id)
+        return {"default_system_prompt": cfg.get("default_system_prompt")}
+
+    @r.put("/suites/{suite_id}/default-prompt", dependencies=auth_dep)
+    def save_default_prompt(suite_id: str, body: dict) -> dict:
+        prompt = body.get("default_system_prompt", "")
+        _write_suite_config(suite_id, {"default_system_prompt": prompt})
+        return {"default_system_prompt": prompt}
 
     # ── Templates ──────────────────────────────────────────────────────
 
@@ -303,23 +469,28 @@ def build_eval_router(
 
     # ── Suite cases ────────────────────────────────────────────────────
 
-    @r.get("/suites/{suite_id}/cases", dependencies=auth_dep)
-    def list_suite_cases(suite_id: str) -> list[dict]:
+    def _list_cases_dir(suite_id: str) -> list[dict]:
+        """Read cases from cases_dir only (no fixtures). Used by _load_all_cases."""
         suite_dir = cases_dir / suite_id
         if not suite_dir.exists():
             return []
-        cases = []
+        result = []
         for f in sorted(suite_dir.glob("*.yml")):
             try:
                 loaded = FixtureLoader.load(f)
-                cases.extend([{
+                result.extend([{
                     "case_id": c.case_id, "input": c.input,
                     "expected": c.expected, "metadata": c.metadata,
                     "_path": str(f),
                 } for c in loaded])
             except Exception as exc:  # noqa: BLE001
-                cases.append({"case_id": f.stem, "error": str(exc), "_path": str(f)})
-        return cases
+                result.append({"case_id": f.stem, "error": str(exc), "_path": str(f)})
+        return result
+
+    @r.get("/suites/{suite_id}/cases", dependencies=auth_dep)
+    def list_suite_cases(suite_id: str) -> list[dict]:
+        """Returns UI-created cases + read-only fixtures merged (fixture loses on duplicate case_id)."""
+        return _load_all_cases(suite_id)
 
     @r.put("/suites/{suite_id}/cases/{case_id}", dependencies=auth_dep)
     def update_case(suite_id: str, case_id: str, payload: dict) -> dict:
@@ -351,6 +522,72 @@ def build_eval_router(
         out_path.unlink()
         return {"ok": True, "deleted": str(out_path)}
 
+    @r.post("/suites/{suite_id}/cases:generate", dependencies=auth_dep)
+    async def generate_case(suite_id: str, payload: dict) -> dict:
+        """Auto-generate a case via the project-supplied ``case_factory_callback``.
+
+        Request body:
+            {
+              "seed": { ... project-specific seed (route, project_id, etc.) ... },
+              "as_case_id": "optional_explicit_id",
+              "save": true   // persist as YAML under cases_dir/<suite_id>/
+            }
+
+        Response: the generated case dict (or list when callback returns a list),
+        same shape as ``GET /suites/{id}/cases`` entries.
+
+        501 if the project hasn't wired ``case_factory_callback``.
+        """
+        if case_factory_callback is None:
+            raise HTTPException(501, "case_factory_callback not configured")
+        seed = payload.get("seed") or {}
+        if not isinstance(seed, dict):
+            raise HTTPException(400, "seed must be an object")
+        save = bool(payload.get("save", False))
+        as_case_id = str(payload.get("as_case_id") or "").strip() or None
+
+        try:
+            result = case_factory_callback(suite_id, {**seed, "_as_case_id": as_case_id})
+            if inspect.isawaitable(result):
+                result = await result
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, f"case_factory_callback failed: {exc}") from exc
+
+        if result is None:
+            raise HTTPException(404, f"factory returned None for suite_id={suite_id!r}")
+
+        cases_out = result if isinstance(result, list) else [result]
+        if not save:
+            return {"ok": True, "generated": cases_out, "saved": False}
+
+        try:
+            import yaml
+        except ImportError:
+            raise HTTPException(500, "PyYAML required to persist cases")
+
+        suite_dir = cases_dir / suite_id
+        suite_dir.mkdir(parents=True, exist_ok=True)
+        written: list[dict] = []
+        for c in cases_out:
+            cid = str(c.get("case_id") or "").strip()
+            if not cid:
+                raise HTTPException(400, "generated case missing case_id")
+            out_path = suite_dir / f"{cid}.yml"
+            yaml_data = {
+                "case_id": cid,
+                "input": c.get("input"),
+                "expected": c.get("expected"),
+                "metadata": c.get("metadata") or {},
+            }
+            out_path.write_text(
+                yaml.safe_dump(yaml_data, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            written.append({"case_id": cid, "path": str(out_path)})
+        return {"ok": True, "generated": cases_out, "saved": True, "written": written}
+
     @r.post("/suites/{suite_id}/cases/{case_id}/run", dependencies=auth_dep)
     async def run_persisted_case(
         suite_id: str, case_id: str, payload: dict | None = None,
@@ -374,7 +611,7 @@ def build_eval_router(
             raise HTTPException(404, f"case {case_id!r} not found in suite {suite_id!r}")
 
         log_path = refine_log_dir / f"{suite_id}.jsonl"
-        runner = runner_factory(suite_id, log_path)
+        runner = _call_runner_factory(suite_id, log_path, None, None)
         eval_cases = FixtureLoader.load_json([{
             "case_id": case_id,
             "input": match["input"],
@@ -418,7 +655,7 @@ def build_eval_router(
 
     def _load_all_cases(suite_id: str) -> list[dict]:
         """Combine UI-created cases + fixture cases; UI case wins on duplicate case_id."""
-        ui_cases = list_suite_cases(suite_id)
+        ui_cases = _list_cases_dir(suite_id)
         if fixtures_dir is None:
             return ui_cases
         ui_ids = {c["case_id"] for c in ui_cases if "error" not in c}
@@ -506,24 +743,45 @@ def build_eval_router(
         # Skip: llm_attempt, llm_done, refine_attempt, refine_done
         return None
 
-    @r.post("/run", dependencies=auth_dep)
-    async def start_run(payload: dict) -> dict:
-        """Start async run — returns {run_id} immediately.
-        Stream progress via GET /run/stream/{run_id}.
-        Fetch result via GET /runs/{run_id} after completion.
-        """
-        suite_id = str(payload.get("suite_id", "")).strip()
-        if not suite_id:
-            raise HTTPException(400, "suite_id required")
-
-        model = str(payload.get("model", "")).strip()
-        case_ids: list[str] | None = payload.get("case_ids") or None
-        concurrency = max(1, min(int(payload.get("concurrency", 4)), 16))
-
+    async def _start_single_run(
+        suite_id: str,
+        model: str | None,
+        system_prompt: str | None,
+        case_ids: list[str] | None,
+        concurrency: int,
+        batch_id: str | None = None,
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        budget_cap_usd: float | None = None,
+        mode: str = "parallel",
+    ) -> str:
+        """Spawn one background run and return its run_id."""
         log_path = refine_log_dir / f"{suite_id}.jsonl"
-        runner = runner_factory(suite_id, log_path)
+        try:
+            runner = _call_runner_factory(
+                suite_id, log_path, model, system_prompt,
+                max_tokens=max_tokens, temperature=temperature,
+                budget_cap_usd=budget_cap_usd,
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
         run_id = runner.run_id
         eval_cases = _build_eval_cases(suite_id, case_ids)
+
+        # Snapshot the request params so the UI Log tab can show what was used.
+        # started_at recorded here so the Log shows wall-clock duration.
+        run_params: dict[str, Any] = {
+            "model": model,
+            "system_prompt": system_prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "budget_cap_usd": budget_cap_usd,
+            "concurrency": concurrency,
+            "mode": mode,
+            "case_ids": case_ids,
+            "started_at": time.time(),
+        }
 
         queue: asyncio.Queue = asyncio.Queue()
         _run_queues[run_id] = queue
@@ -531,7 +789,9 @@ def build_eval_router(
 
         async def _bg() -> None:
             try:
-                async for event in runner.stream(eval_cases, concurrency=concurrency):
+                # Sequential mode forces concurrency=1 even if user set higher.
+                eff_concurrency = 1 if mode == "sequential" else concurrency
+                async for event in runner.stream(eval_cases, concurrency=eff_concurrency):
                     ui_ev = _to_ui_event(_dataclass_dict(event), suite_id)
                     if ui_ev is not None:
                         await queue.put(ui_ev)
@@ -547,12 +807,137 @@ def build_eval_router(
                         "pass_rate": runner.last_suite_result.pass_rate,
                         "finished_at": time.time(),
                         "model": model or None,
+                        "params": run_params,
                     })
                     _run_results[run_id] = rd
-                    _write_last_run(suite_id, runner.last_suite_result, model or None)
+                    _write_last_run(suite_id, runner.last_suite_result, model or None, system_prompt)
+                    _write_run_history(suite_id, run_id, runner.last_suite_result, model or None, batch_id)
+                    if kv_store is not None and run_id in _run_results:
+                        import json as _json
+                        try:
+                            await kv_store.put(
+                                f"run:{run_id}",
+                                _json.dumps(_run_results[run_id], default=str),
+                            )
+                        except Exception:
+                            pass  # best-effort
 
         asyncio.create_task(_bg())
-        return {"run_id": run_id, "suite_id": suite_id}
+        return run_id
+
+    @r.post("/run", dependencies=auth_dep)
+    async def start_run(payload: dict) -> dict:
+        """Start async run — returns {run_id} (or {batch_id, runs}) immediately.
+
+        Single model:  POST {suite_id, model, ...}  → {run_id, suite_id, batch_id: null}
+        Multi-model:   POST {suite_id, models: [...]} → {batch_id, suite_id, runs: [{run_id, model}]}
+        Stream progress via GET /run/stream/{run_id}.
+        Fetch result via GET /runs/{run_id} after completion.
+
+        Optional payload fields (all skipped when absent/None):
+          max_tokens   : int ≥ 64 (rejected with 400 if 1–63 — produces garbage)
+          temperature  : float in [0, 2]
+          budget_cap_usd: float ≥ 0 (advisory only — not yet enforced by runner)
+          mode         : "parallel" | "sequential" (default "parallel")
+        """
+        import uuid as _uuid
+
+        suite_id = str(payload.get("suite_id", "")).strip()
+        if not suite_id:
+            raise HTTPException(400, "suite_id required")
+
+        system_prompt = str(payload.get("prompt", "")).strip() or None
+        case_ids: list[str] | None = payload.get("case_ids") or None
+        concurrency = max(1, min(int(payload.get("concurrency", 4)), 16))
+
+        # Optional run params — None means "skip / use provider default"
+        def _opt_int(key: str) -> int | None:
+            v = payload.get(key)
+            if v in (None, "", 0):
+                return None
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+
+        def _opt_float(key: str, *, allow_zero: bool = False) -> float | None:
+            v = payload.get(key)
+            if v in (None, ""):
+                return None
+            if v == 0 and not allow_zero:
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        max_tokens: int | None = _opt_int("max_tokens")
+        if max_tokens is not None and max_tokens < 64:
+            raise HTTPException(
+                400,
+                f"max_tokens={max_tokens} too small — minimum 64. "
+                "Smaller values produce truncated/garbage output. "
+                "Omit the field to use the provider default.",
+            )
+
+        # Temperature=0 is meaningful (deterministic), so allow zero
+        temperature: float | None = _opt_float("temperature", allow_zero=True)
+        budget_cap_usd: float | None = _opt_float("budget_cap_usd")
+        if budget_cap_usd is None:
+            # UI uses "budget_usd" key — accept both
+            budget_cap_usd = _opt_float("budget_usd")
+        mode = str(payload.get("mode", "parallel")).strip().lower() or "parallel"
+        if mode not in ("parallel", "sequential"):
+            raise HTTPException(400, f"mode must be 'parallel' or 'sequential', got {mode!r}")
+
+        # Resolve model list — support both "model" (single) and "models" (batch)
+        models_raw: list[str] = payload.get("models") or []
+        model_single: str = str(payload.get("model", "")).strip()
+        if not models_raw and model_single:
+            models_raw = [model_single]
+        if not models_raw:
+            raise HTTPException(400, "No model selected — pass model=<id> or models=[<id>,...]")
+
+        if len(models_raw) == 1:
+            # Single-model path — backward-compatible response shape
+            model = models_raw[0] or None
+            run_id = await _start_single_run(
+                suite_id, model, system_prompt, case_ids, concurrency,
+                max_tokens=max_tokens, temperature=temperature,
+                budget_cap_usd=budget_cap_usd, mode=mode,
+            )
+            return {"run_id": run_id, "suite_id": suite_id, "batch_id": None}
+
+        # Multi-model batch path
+        batch_id = _uuid.uuid4().hex
+        runs: list[dict] = []
+        for m in models_raw:
+            rid = await _start_single_run(
+                suite_id, m or None, system_prompt, case_ids, concurrency, batch_id,
+                max_tokens=max_tokens, temperature=temperature,
+                budget_cap_usd=budget_cap_usd, mode=mode,
+            )
+            runs.append({"run_id": rid, "model": m})
+
+        batch_record: dict = {
+            "batch_id": batch_id,
+            "suite_id": suite_id,
+            "runs": runs,
+            "created_at": time.time(),
+        }
+        _batch_results[batch_id] = batch_record
+
+        if kv_store is not None:
+            import json as _json
+            try:
+                await kv_store.put(
+                    f"batch:{batch_id}",
+                    _json.dumps(batch_record, default=str),
+                )
+            except Exception:
+                pass  # best-effort
+
+        return {"batch_id": batch_id, "suite_id": suite_id, "runs": runs}
 
     @r.get("/run/stream/{run_id}", dependencies=auth_dep)
     async def stream_run(run_id: str) -> StreamingResponse:
@@ -595,10 +980,67 @@ def build_eval_router(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    @r.get("/batch/{batch_id}", dependencies=auth_dep)
+    async def get_batch_result(batch_id: str) -> dict:
+        """Fetch batch record by batch_id: {batch_id, suite_id, runs: [{run_id, model, status}]}."""
+        record = _batch_results.get(batch_id)
+        if record is None and kv_store is not None:
+            import json as _json
+            raw_str = await kv_store.get(f"batch:{batch_id}")
+            if raw_str:
+                record = _json.loads(raw_str)
+                _batch_results[batch_id] = record
+        if record is None:
+            raise HTTPException(404, f"Batch not found: {batch_id}")
+
+        # Enrich each run entry with live status
+        enriched_runs = []
+        for entry in record.get("runs", []):
+            rid = entry.get("run_id", "")
+            if rid in active_runners:
+                status = "running"
+            elif rid in _run_results:
+                status = "done"
+            else:
+                status = "unknown"
+            enriched_runs.append({**entry, "status": status})
+
+        return {
+            "batch_id": batch_id,
+            "suite_id": record.get("suite_id", ""),
+            "created_at": record.get("created_at"),
+            "runs": enriched_runs,
+        }
+
     @r.get("/runs/{run_id}", dependencies=auth_dep)
-    def get_run_result(run_id: str) -> dict:
+    async def get_run_result(run_id: str) -> dict:
         """Fetch completed run result by run_id, normalized to frontend RunResult shape."""
         raw = _run_results.get(run_id)
+        if raw is None and kv_store is not None:
+            import json as _json
+            try:
+                raw_str = await kv_store.get(f"run:{run_id}")
+                if raw_str:
+                    raw = _json.loads(raw_str)
+                    _run_results[run_id] = raw
+            except Exception:
+                pass  # DB unavailable — try file fallback below
+        if raw is None:
+            # Legacy migration: runs created before DB existed live in files.
+            # Read once, then write to DB so the next request hits the DB path.
+            import json as _json
+            run_file = _last_run_dir / "runs" / f"{run_id}.json"
+            if run_file.exists():
+                try:
+                    raw = _json.loads(run_file.read_text(encoding="utf-8"))
+                    _run_results[run_id] = raw
+                    if kv_store is not None:
+                        try:
+                            await kv_store.put(f"run:{run_id}", _json.dumps(raw, default=str))
+                        except Exception:
+                            pass  # migration is best-effort
+                except (OSError, _json.JSONDecodeError):
+                    pass
         if raw is None:
             raise HTTPException(404, f"Run not found: {run_id}")
         total = raw.get("total_count", 0)
@@ -624,6 +1066,7 @@ def build_eval_router(
                 "cost_usd": c.get("cost_usd"),
                 "error": c.get("error"),
                 "metadata": nested.get("metadata"),
+                "steps": c.get("steps", []),
             })
         return {
             "run_id": run_id,
@@ -637,6 +1080,7 @@ def build_eval_router(
             "failed_cases": max(0, total - passed),
             "avg_score": raw.get("pass_rate"),
             "total_cost_usd": raw.get("total_cost_usd"),
+            "params": raw.get("params"),  # run params snapshot for UI Log tab
             "cases": cases_out,
         }
 
@@ -656,7 +1100,7 @@ def build_eval_router(
             raise HTTPException(400, "suite_id required")
         case_id = str(payload.get("case_id", "adhoc")).strip() or "adhoc"
         log_path = refine_log_dir / f"{suite_id}.jsonl"
-        runner = runner_factory(suite_id, log_path)
+        runner = _call_runner_factory(suite_id, log_path, None, None)
         eval_cases = FixtureLoader.load_json([{
             "case_id": case_id,
             "input": payload.get("input", {}),
@@ -717,6 +1161,430 @@ def build_eval_router(
             "fixtures_dir": str(fixtures_dir) if fixtures_dir is not None else None,
             "ui_served": serve_ui,
         }
+
+    # ── Projects ────────────────────────────────────────────────────────
+    # A "project" groups suites. The built-in "local" project collects all
+    # suites registered via template_registry + cases_dir. External projects
+    # are remote eval2 deployments — their suite list is fetched on demand
+    # and cached to disk so discovery still works when the remote is offline.
+
+    _ext_projects: list[ExternalProject] = list(external_projects or [])
+    _project_cache_dir = _last_run_dir / "projects"
+
+    def _project_cache_path(project_id: str) -> Path:
+        return _project_cache_dir / f"{project_id}.json"
+
+    def _read_project_cache(project_id: str) -> dict | None:
+        p = _project_cache_path(project_id)
+        if not p.exists():
+            return None
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _write_project_cache(project_id: str, payload: dict) -> None:
+        try:
+            _project_cache_dir.mkdir(parents=True, exist_ok=True)
+            payload = {**payload, "cached_at": time.time()}
+            _project_cache_path(project_id).write_text(
+                json.dumps(payload, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass  # best-effort
+
+    @r.get("/projects", dependencies=auth_dep)
+    def list_projects() -> list[dict]:
+        """List all projects — local (this framework instance) + registered external."""
+        local_suite_ids = sorted({
+            t.suite_id for t in template_registry.values() if t.suite_id
+        })
+        if cases_dir.exists():
+            for d in cases_dir.iterdir():
+                if d.is_dir() and d.name not in local_suite_ids:
+                    local_suite_ids.append(d.name)
+            local_suite_ids.sort()
+
+        result: list[dict] = [{
+            "project_id": "local",
+            "title": "Local",
+            "description": "Suites defined in this framework instance.",
+            "remote": False,
+            "suite_count": len(local_suite_ids),
+            "suite_ids": local_suite_ids,
+        }]
+        for ep in _ext_projects:
+            cached = _read_project_cache(ep.project_id)
+            result.append({
+                "project_id": ep.project_id,
+                "title": ep.title,
+                "description": ep.description,
+                "remote": True,
+                "base_url": ep.base_url,
+                "suite_count": len(cached.get("suites", [])) if cached else None,
+                "cached_at": cached.get("cached_at") if cached else None,
+            })
+        return result
+
+    @r.get("/projects/{project_id}", dependencies=auth_dep)
+    async def get_project(project_id: str) -> dict:
+        """Project detail + suite list.
+
+        For "local": derives suites from template_registry + cases_dir.
+        For external: fetches ``GET {base_url}/suites`` and caches result to disk.
+          If the remote is unreachable, returns the last cached snapshot with
+          ``"stale": true`` so the UI stays functional when the remote is down.
+          Returns 502 only when remote is down AND no cache exists yet.
+        """
+        if project_id == "local":
+            return {
+                "project_id": "local",
+                "title": "Local",
+                "description": "Suites defined in this framework instance.",
+                "remote": False,
+                "suites": list_suites(),
+            }
+
+        ep = next((p for p in _ext_projects if p.project_id == project_id), None)
+        if ep is None:
+            raise HTTPException(404, f"Project not found: {project_id!r}")
+
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{ep.base_url}/suites")
+                resp.raise_for_status()
+                suites = resp.json()
+            payload = {
+                "project_id": ep.project_id,
+                "title": ep.title,
+                "description": ep.description,
+                "remote": True,
+                "base_url": ep.base_url,
+                "stale": False,
+                "suites": suites,
+            }
+            _write_project_cache(ep.project_id, payload)
+            return payload
+        except Exception:  # noqa: BLE001
+            cached = _read_project_cache(ep.project_id)
+            if cached is None:
+                raise HTTPException(
+                    502,
+                    f"Remote {ep.base_url!r} is unreachable and no local cache exists. "
+                    f"Run POST /projects/{ep.project_id}/sync while remote is online to seed the cache.",
+                )
+            return {**cached, "stale": True}
+
+    @r.get("/projects/{project_id}/suites/{suite_id}", dependencies=auth_dep)
+    async def get_project_suite(project_id: str, suite_id: str) -> dict:
+        """Suite metadata for one suite within a project.
+
+        For "local": same as GET /suites/{suite_id}.
+        For external: fetches from remote; falls back to cached suite list entry.
+        """
+        if project_id == "local":
+            return get_suite_metadata(suite_id)
+
+        ep = next((p for p in _ext_projects if p.project_id == project_id), None)
+        if ep is None:
+            raise HTTPException(404, f"Project not found: {project_id!r}")
+
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{ep.base_url}/suites/{suite_id}")
+                if resp.status_code == 404:
+                    raise HTTPException(404, f"Suite {suite_id!r} not found in project {project_id!r}")
+                resp.raise_for_status()
+                return resp.json()
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001
+            cached = _read_project_cache(ep.project_id)
+            if cached:
+                for suite in cached.get("suites", []):
+                    if suite.get("suite_id") == suite_id:
+                        return {**suite, "stale": True}
+            raise HTTPException(
+                502,
+                f"Remote {ep.base_url!r} is unreachable and suite {suite_id!r} is not in cache. "
+                f"Run POST /projects/{ep.project_id}/sync to seed the cache.",
+            )
+
+    @r.post("/projects/{project_id}/sync", dependencies=auth_dep)
+    async def sync_project(project_id: str, payload: dict | None = None) -> dict:
+        """Snapshot an external project's cases into local cases_dir.
+
+        Fetches every suite's cases from the remote and writes each one as a
+        YAML file under ``cases_dir/{suite_id}/{case_id}.yml``.  Existing
+        UI-created cases are NOT overwritten unless ``overwrite: true`` is in
+        the request body.  Synced cases carry ``metadata.source: "remote:{project_id}"``
+        so they can be distinguished from locally created ones.
+
+        After a successful sync the project is fully runnable offline: all cases
+        are available to the local runner_factory even when the remote is down.
+
+        Returns::
+
+            {project_id, synced_suites, synced_cases, skipped_cases, suite_ids, errors}
+        """
+        ep = next((p for p in _ext_projects if p.project_id == project_id), None)
+        if ep is None:
+            raise HTTPException(404, f"Project not found: {project_id!r}")
+
+        overwrite: bool = bool((payload or {}).get("overwrite", False))
+
+        try:
+            import yaml
+        except ImportError:
+            raise HTTPException(500, "PyYAML required for sync (pip install pyyaml)")
+        try:
+            import httpx
+        except ImportError:
+            raise HTTPException(500, "httpx required for sync (pip install httpx)")
+
+        synced_suites = 0
+        synced_cases = 0
+        skipped_cases = 0
+        suite_ids_out: list[str] = []
+        errors: list[str] = []
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # 1. Fetch + cache suite list
+            try:
+                r_suites = await client.get(f"{ep.base_url}/suites")
+                r_suites.raise_for_status()
+                suites = r_suites.json()
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(502, f"Cannot reach {ep.base_url}/suites: {exc}") from exc
+
+            _write_project_cache(ep.project_id, {
+                "project_id": ep.project_id,
+                "title": ep.title,
+                "description": ep.description,
+                "remote": True,
+                "base_url": ep.base_url,
+                "stale": False,
+                "suites": suites,
+            })
+
+            # 2. For each suite, fetch cases and persist locally
+            for suite in suites:
+                sid = suite.get("suite_id", "")
+                if not sid:
+                    continue
+                try:
+                    r_cases = await client.get(f"{ep.base_url}/suites/{sid}/cases")
+                    r_cases.raise_for_status()
+                    remote_cases: list[dict] = r_cases.json()
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{sid}: {exc}")
+                    continue
+
+                suite_dir = cases_dir / sid
+                suite_dir.mkdir(parents=True, exist_ok=True)
+
+                for case in remote_cases:
+                    if "error" in case:
+                        continue
+                    cid = case.get("case_id", "")
+                    if not cid:
+                        continue
+                    out_path = suite_dir / f"{cid}.yml"
+                    if out_path.exists() and not overwrite:
+                        skipped_cases += 1
+                        continue
+                    yaml_data = {
+                        "case_id": cid,
+                        "input": case.get("input"),
+                        "expected": case.get("expected"),
+                        "metadata": {
+                            **case.get("metadata", {}),
+                            "source": f"remote:{project_id}",
+                        },
+                    }
+                    out_path.write_text(
+                        yaml.safe_dump(yaml_data, sort_keys=False, allow_unicode=True),
+                        encoding="utf-8",
+                    )
+                    synced_cases += 1
+
+                synced_suites += 1
+                suite_ids_out.append(sid)
+
+        return {
+            "project_id": project_id,
+            "synced_suites": synced_suites,
+            "synced_cases": synced_cases,
+            "skipped_cases": skipped_cases,
+            "suite_ids": suite_ids_out,
+            "errors": errors,
+        }
+
+    # ── Oracle Review ──────────────────────────────────────────────────
+    # Serves fixtures from oracle_fixtures_dir for human review.
+    # Each fixture is a JSON file; companion .review.json lists low/medium
+    # confidence cells that need action before being used as ground truth.
+
+    _oracle_dir = oracle_fixtures_dir or Path("artifacts/eval/oracle_fixtures/crud_matrix")
+
+    def _list_oracle_fixtures() -> list[dict]:
+        if not _oracle_dir.exists():
+            return []
+        result = []
+        for p in sorted(_oracle_dir.glob("*.json")):
+            if p.name.endswith(".review.json"):
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            review_path = _oracle_dir / f"{p.stem}.review.json"
+            pending = 0
+            if review_path.exists():
+                try:
+                    rd = json.loads(review_path.read_text(encoding="utf-8"))
+                    pending = sum(
+                        1 for item in rd.get("needs_review", [])
+                        if item.get("action") is None
+                    )
+                except (OSError, json.JSONDecodeError):
+                    pass
+            result.append({
+                "fixture_id": data.get("fixture_id", p.stem),
+                "prompt_version": data.get("prompt_version", ""),
+                "oracle_model": data.get("oracle_model", ""),
+                "reviewed_by": data.get("reviewed_by", ""),
+                "reviewed_at": data.get("reviewed_at", ""),
+                "pending_review": pending,
+            })
+        return result
+
+    def _get_cells(expected: dict) -> dict:
+        """Return mutable cells dict, handling new {cells:{…}} and old {entity:{…}} formats."""
+        if "cells" in expected and isinstance(expected["cells"], dict):
+            return expected["cells"]
+        return expected
+
+    def _normalize_fixture_for_ui(data: dict) -> dict:
+        """Normalize on-disk fixture to a stable shape for the frontend.
+
+        Old format: route_context + expected = {entity: {field: cell}}
+        New format: input_data  + expected = {cells: {…}, valid_fields: {…}, framework: …}
+        Both become: input_data + expected = {entity: {field: cell}} + meta
+        """
+        if "input_data" not in data and "route_context" in data:
+            data["input_data"] = data.pop("route_context")
+        expected = data.get("expected", {})
+        if "cells" in expected and isinstance(expected["cells"], dict):
+            if "meta" not in data:
+                data["meta"] = {}
+            data["meta"].setdefault("valid_fields", expected.get("valid_fields", {}))
+            data["meta"].setdefault("framework", expected.get("framework", ""))
+            data["expected"] = expected["cells"]
+        elif "meta" not in data:
+            data["meta"] = {}
+        return data
+
+    @r.get("/oracle-review/", dependencies=auth_dep)
+    def list_oracle_fixtures() -> list[dict]:
+        """List all oracle fixtures with pending review counts."""
+        return _list_oracle_fixtures()
+
+    @r.get("/oracle-review/schema", dependencies=auth_dep)
+    def get_oracle_schema() -> dict:
+        """Return ReviewSchema describing how the UI should render oracle candidates."""
+        from ryuu_eval_oracle import ReviewSchema
+        schema = ReviewSchema(
+            kind="table",
+            columns=["ENTITY", "FIELD", "OP", "CONFIDENCE"],
+            actions=["approve", "fix", "remove"],
+            meta={"domain": "crud_matrix"},
+        )
+        return schema.to_dict()
+
+    @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
+    def get_oracle_fixture(fixture_id: str) -> dict:
+        """Return full fixture JSON including cells + any review items."""
+        path = _oracle_dir / f"{fixture_id}.json"
+        if not path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+        data = _normalize_fixture_for_ui(json.loads(path.read_text(encoding="utf-8")))
+        review_path = _oracle_dir / f"{fixture_id}.review.json"
+        review_items: list[dict] = []
+        if review_path.exists():
+            try:
+                rd = json.loads(review_path.read_text(encoding="utf-8"))
+                review_items = rd.get("needs_review", [])
+            except (OSError, json.JSONDecodeError):
+                pass
+        data["review_items"] = review_items
+        return data
+
+    @r.post("/oracle-review/{fixture_id}/review", dependencies=auth_dep)
+    def update_oracle_review(fixture_id: str, payload: dict) -> dict:
+        """Apply cell review actions to the review file.
+
+        payload: {
+            "actions": [
+                {"entity": "Order", "field": "status", "action": "approve"},
+                {"entity": "Order", "field": "total", "action": "fix", "corrected_op": "RU"},
+                {"entity": "Order", "field": "id", "action": "remove"}
+            ],
+            "reviewed_by": "phuong"   (optional)
+        }
+        """
+        fix_path = _oracle_dir / f"{fixture_id}.json"
+        review_path = _oracle_dir / f"{fixture_id}.review.json"
+        if not fix_path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+
+        actions: list[dict] = payload.get("actions", [])
+        reviewed_by: str = payload.get("reviewed_by", "")
+        action_map = {(a["entity"], a["field"]): a for a in actions}
+
+        fixture_data = json.loads(fix_path.read_text(encoding="utf-8"))
+        cells = _get_cells(fixture_data.get("expected", {}))
+        for entity, fields in list(cells.items()):
+            for field_name in list(fields.keys()):
+                act = action_map.get((entity, field_name))
+                if act is None:
+                    continue
+                if act["action"] == "remove":
+                    del fields[field_name]
+                elif act["action"] == "fix":
+                    fields[field_name]["op"] = act.get("corrected_op", fields[field_name]["op"])
+                    fields[field_name]["confidence"] = "high"
+                elif act["action"] == "approve":
+                    fields[field_name]["confidence"] = "high"
+
+        if reviewed_by:
+            fixture_data["reviewed_by"] = reviewed_by
+        from datetime import date as _date
+        fixture_data["reviewed_at"] = _date.today().isoformat()
+        fix_path.write_text(json.dumps(fixture_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        if review_path.exists():
+            rd = json.loads(review_path.read_text(encoding="utf-8"))
+            for item in rd.get("needs_review", []):
+                act = action_map.get((item["entity"], item["field"]))
+                if act:
+                    item["action"] = act["action"]
+                    if act["action"] == "fix":
+                        item["corrected_op"] = act.get("corrected_op")
+            review_path.write_text(json.dumps(rd, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        return {"fixture_id": fixture_id, "updated": len(actions)}
+
+    @r.get("/oracle-review/{fixture_id}/export", dependencies=auth_dep)
+    def export_oracle_fixture(fixture_id: str) -> dict:
+        """Return the approved fixture JSON ready for use as ground truth."""
+        path = _oracle_dir / f"{fixture_id}.json"
+        if not path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     # ── Static UI (Tier 1) ─────────────────────────────────────────────
 
