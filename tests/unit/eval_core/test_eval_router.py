@@ -1,14 +1,14 @@
-"""Tests for ryuu_eval.http.router — _maybe_await + fixtures + run/single."""
+"""Tests for ryuu_eval.http.router — _maybe_await + fixtures + run/single + projects."""
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ryuu_eval_core import EvalCase, EvalCaseTemplate, EvalRunner
+from ryuu_eval_core import EvalCaseTemplate, EvalRunner, ExternalProject
 from ryuu_eval.http.router import build_eval_router, _maybe_await
 
 
@@ -21,6 +21,7 @@ def _make_router(
     optimizer_callback=None,
     fixtures_dir: Path | None = None,
     cases_dir: Path | None = None,
+    external_projects: list[ExternalProject] | None = None,
 ):
     tpl = EvalCaseTemplate(
         template_id="tpl_a",
@@ -45,6 +46,8 @@ def _make_router(
         kwargs["fixtures_dir"] = fixtures_dir
     if cases_dir is not None:
         kwargs["cases_dir"] = cases_dir
+    if external_projects is not None:
+        kwargs["external_projects"] = external_projects
     return build_eval_router(**kwargs)
 
 
@@ -192,3 +195,358 @@ class TestRunSingleEndpoint:
         # CaseResult shape: case_id / passed / scores / cost_usd / latency_ms
         assert "passed" in result
         assert "scores" in result
+
+
+# ---------------------------------------------------------------------------
+# T04 — Gap 1 fix: GET /suites/{id}/cases includes fixtures
+# ---------------------------------------------------------------------------
+
+
+class TestListSuiteCasesIncludesFixtures:
+    """GET /suites/{id}/cases must merge cases_dir + fixtures_dir (Gap 1 fix)."""
+
+    def test_returns_only_cases_dir_when_no_fixtures_dir(self, tmp_path):
+        suite_dir = tmp_path / "cases" / "suite_a"
+        suite_dir.mkdir(parents=True)
+        (suite_dir / "c1.yml").write_text("case_id: c1\ninput: {q: hello}\n")
+
+        router = _make_router(cases_dir=tmp_path / "cases")
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/suites/suite_a/cases")
+        assert resp.status_code == 200
+        ids = [c["case_id"] for c in resp.json()]
+        assert ids == ["c1"]
+
+    def test_merges_fixtures_when_fixtures_dir_configured(self, tmp_path):
+        cases_dir = tmp_path / "cases"
+        fixtures_dir = tmp_path / "fixtures"
+        (cases_dir / "suite_a").mkdir(parents=True)
+        (fixtures_dir / "suite_a").mkdir(parents=True)
+        (cases_dir / "suite_a" / "ui_case.yml").write_text("case_id: ui_case\ninput: {q: ui}\n")
+        (fixtures_dir / "suite_a" / "fix_case.yml").write_text("case_id: fix_case\ninput: {q: fix}\n")
+
+        router = _make_router(cases_dir=cases_dir, fixtures_dir=fixtures_dir)
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/suites/suite_a/cases")
+        assert resp.status_code == 200
+        ids = {c["case_id"] for c in resp.json()}
+        assert ids == {"ui_case", "fix_case"}
+
+    def test_ui_case_wins_on_duplicate_case_id(self, tmp_path):
+        cases_dir = tmp_path / "cases"
+        fixtures_dir = tmp_path / "fixtures"
+        (cases_dir / "suite_a").mkdir(parents=True)
+        (fixtures_dir / "suite_a").mkdir(parents=True)
+        (cases_dir / "suite_a" / "shared.yml").write_text(
+            "case_id: shared\ninput: {source: ui}\n"
+        )
+        (fixtures_dir / "suite_a" / "shared.yml").write_text(
+            "case_id: shared\ninput: {source: fixture}\n"
+        )
+
+        router = _make_router(cases_dir=cases_dir, fixtures_dir=fixtures_dir)
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/suites/suite_a/cases")
+        assert resp.status_code == 200
+        cases = resp.json()
+        assert len(cases) == 1
+        assert cases[0]["input"]["source"] == "ui"
+
+
+# ---------------------------------------------------------------------------
+# T05 — GET /projects — local project
+# ---------------------------------------------------------------------------
+
+
+class TestListProjectsLocal:
+    """GET /projects always includes a 'local' project derived from template_registry."""
+
+    def test_local_project_present(self):
+        router = _make_router()
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/projects")
+        assert resp.status_code == 200
+        projects = resp.json()
+        ids = [p["project_id"] for p in projects]
+        assert "local" in ids
+
+    def test_local_project_lists_suite_from_template(self):
+        router = _make_router()
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/projects")
+        local = next(p for p in resp.json() if p["project_id"] == "local")
+        assert "suite_a" in local["suite_ids"]
+        assert local["remote"] is False
+
+    def test_get_local_project_detail_returns_suites(self):
+        router = _make_router()
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/projects/local")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["project_id"] == "local"
+        assert isinstance(data["suites"], list)
+        suite_ids = [s["suite_id"] for s in data["suites"]]
+        assert "suite_a" in suite_ids
+
+    def test_unknown_project_returns_404(self):
+        router = _make_router()
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/projects/no_such_project")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# T06 — GET /projects — external project (mocked httpx)
+# ---------------------------------------------------------------------------
+
+
+class TestExternalProject:
+    """GET /projects and GET /projects/{id} with a registered ExternalProject."""
+
+    _REMOTE_SUITES = [
+        {"suite_id": "crud_matrix_llm", "templates": [], "suite_count": 3},
+    ]
+
+    def _mock_httpx(self, payload):
+        """Return a context manager mock that yields a response with payload."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = payload
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        return mock_client
+
+    def test_external_project_appears_in_list(self):
+        ep = ExternalProject(
+            project_id="code-analysis",
+            title="prod-grade-code-analysis",
+            base_url="http://localhost:8000/api/eval2",
+        )
+        router = _make_router(external_projects=[ep])
+        client = TestClient(_app(router))
+        resp = client.get("/api/eval/projects")
+        assert resp.status_code == 200
+        ids = [p["project_id"] for p in resp.json()]
+        assert "local" in ids
+        assert "code-analysis" in ids
+
+    def test_external_project_detail_fetches_remote_suites(self):
+        ep = ExternalProject(
+            project_id="code-analysis",
+            title="prod-grade-code-analysis",
+            base_url="http://localhost:8000/api/eval2",
+        )
+        router = _make_router(external_projects=[ep])
+        client = TestClient(_app(router))
+
+        mock_client = self._mock_httpx(self._REMOTE_SUITES)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = client.get("/api/eval/projects/code-analysis")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["project_id"] == "code-analysis"
+        assert data["remote"] is True
+        assert data["suites"][0]["suite_id"] == "crud_matrix_llm"
+
+    def test_external_project_returns_502_when_remote_unreachable_and_no_cache(self, tmp_path):
+        ep = ExternalProject(
+            project_id="code-analysis",
+            title="prod-grade-code-analysis",
+            base_url="http://localhost:8000/api/eval2",
+        )
+        # tmp_path isolates the cache dir so no stale cache can exist
+        router = _make_router(external_projects=[ep], cases_dir=tmp_path / "cases")
+        client = TestClient(_app(router))
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = client.get("/api/eval/projects/code-analysis")
+
+        assert resp.status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# T07 — GET /projects/{id} stale cache fallback
+# ---------------------------------------------------------------------------
+
+
+class TestExternalProjectCacheFallback:
+    """When remote is down, GET /projects/{id} returns cached data with stale=True."""
+
+    _EP = ExternalProject(
+        project_id="code-analysis",
+        title="prod-grade-code-analysis",
+        base_url="http://localhost:8000/api/eval2",
+    )
+    _REMOTE_SUITES = [{"suite_id": "crud_matrix_llm", "templates": []}]
+
+    def _unreachable_mock(self):
+        m = AsyncMock()
+        m.get = AsyncMock(side_effect=Exception("connection refused"))
+        m.__aenter__ = AsyncMock(return_value=m)
+        m.__aexit__ = AsyncMock(return_value=False)
+        return m
+
+    def _ok_mock(self, payload):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = payload
+        resp.raise_for_status = MagicMock()
+        m = AsyncMock()
+        m.get = AsyncMock(return_value=resp)
+        m.__aenter__ = AsyncMock(return_value=m)
+        m.__aexit__ = AsyncMock(return_value=False)
+        return m
+
+    def test_returns_stale_cache_when_remote_down(self, tmp_path):
+        router = _make_router(
+            external_projects=[self._EP],
+            cases_dir=tmp_path / "cases",
+        )
+        client = TestClient(_app(router))
+
+        # First call succeeds — seeds the cache
+        with patch("httpx.AsyncClient", return_value=self._ok_mock(self._REMOTE_SUITES)):
+            r1 = client.get("/api/eval/projects/code-analysis")
+        assert r1.status_code == 200
+        assert r1.json()["stale"] is False
+
+        # Second call — remote down, should fall back to cache
+        with patch("httpx.AsyncClient", return_value=self._unreachable_mock()):
+            r2 = client.get("/api/eval/projects/code-analysis")
+        assert r2.status_code == 200
+        data = r2.json()
+        assert data["stale"] is True
+        assert data["suites"][0]["suite_id"] == "crud_matrix_llm"
+
+    def test_list_projects_shows_cached_suite_count(self, tmp_path):
+        router = _make_router(
+            external_projects=[self._EP],
+            cases_dir=tmp_path / "cases",
+        )
+        client = TestClient(_app(router))
+
+        # Seed cache via successful fetch
+        with patch("httpx.AsyncClient", return_value=self._ok_mock(self._REMOTE_SUITES)):
+            client.get("/api/eval/projects/code-analysis")
+
+        # List projects — should show suite_count from cache without hitting remote
+        r = client.get("/api/eval/projects")
+        ext = next(p for p in r.json() if p["project_id"] == "code-analysis")
+        assert ext["suite_count"] == 1
+        assert ext["cached_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# T08 — POST /projects/{id}/sync
+# ---------------------------------------------------------------------------
+
+
+class TestSyncProject:
+    """POST /projects/{id}/sync snapshots remote cases into local cases_dir."""
+
+    _EP = ExternalProject(
+        project_id="code-analysis",
+        title="prod-grade-code-analysis",
+        base_url="http://localhost:8000/api/eval2",
+    )
+    _SUITES = [{"suite_id": "crud_matrix_llm", "templates": []}]
+    _CASES = [
+        {"case_id": "case1", "input": {"q": "hello"}, "expected": {"verdict": "populated"}, "metadata": {}},
+        {"case_id": "case2", "input": {"q": "world"}, "expected": {"verdict": "empty"}, "metadata": {}},
+    ]
+
+    def _sync_mock(self):
+        """Mock that returns suites on first call, cases on second call."""
+        call_count = 0
+        async def _get(url, **_):
+            nonlocal call_count
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.raise_for_status = MagicMock()
+            if call_count == 0:
+                resp.json.return_value = self._SUITES
+            else:
+                resp.json.return_value = self._CASES
+            call_count += 1
+            return resp
+        m = AsyncMock()
+        m.get = _get
+        m.__aenter__ = AsyncMock(return_value=m)
+        m.__aexit__ = AsyncMock(return_value=False)
+        return m
+
+    def test_sync_writes_cases_to_cases_dir(self, tmp_path):
+        cases_dir = tmp_path / "cases"
+        router = _make_router(external_projects=[self._EP], cases_dir=cases_dir)
+        client = TestClient(_app(router))
+
+        with patch("httpx.AsyncClient", return_value=self._sync_mock()):
+            resp = client.post("/api/eval/projects/code-analysis/sync", json={})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["synced_suites"] == 1
+        assert data["synced_cases"] == 2
+        assert data["skipped_cases"] == 0
+        assert "crud_matrix_llm" in data["suite_ids"]
+        assert (cases_dir / "crud_matrix_llm" / "case1.yml").exists()
+        assert (cases_dir / "crud_matrix_llm" / "case2.yml").exists()
+
+    def test_sync_marks_source_metadata(self, tmp_path):
+        import yaml as _yaml
+        cases_dir = tmp_path / "cases"
+        router = _make_router(external_projects=[self._EP], cases_dir=cases_dir)
+        client = TestClient(_app(router))
+
+        with patch("httpx.AsyncClient", return_value=self._sync_mock()):
+            client.post("/api/eval/projects/code-analysis/sync", json={})
+
+        written = _yaml.safe_load((cases_dir / "crud_matrix_llm" / "case1.yml").read_text())
+        assert written["metadata"]["source"] == "remote:code-analysis"
+
+    def test_sync_skips_existing_cases_by_default(self, tmp_path):
+        cases_dir = tmp_path / "cases"
+        (cases_dir / "crud_matrix_llm").mkdir(parents=True)
+        (cases_dir / "crud_matrix_llm" / "case1.yml").write_text("case_id: case1\ninput: {q: existing}\n")
+
+        router = _make_router(external_projects=[self._EP], cases_dir=cases_dir)
+        client = TestClient(_app(router))
+
+        with patch("httpx.AsyncClient", return_value=self._sync_mock()):
+            resp = client.post("/api/eval/projects/code-analysis/sync", json={})
+
+        data = resp.json()
+        assert data["synced_cases"] == 1   # only case2 written
+        assert data["skipped_cases"] == 1  # case1 skipped
+
+    def test_sync_overwrites_when_flag_set(self, tmp_path):
+        cases_dir = tmp_path / "cases"
+        (cases_dir / "crud_matrix_llm").mkdir(parents=True)
+        (cases_dir / "crud_matrix_llm" / "case1.yml").write_text("case_id: case1\ninput: {q: old}\n")
+
+        router = _make_router(external_projects=[self._EP], cases_dir=cases_dir)
+        client = TestClient(_app(router))
+
+        with patch("httpx.AsyncClient", return_value=self._sync_mock()):
+            resp = client.post("/api/eval/projects/code-analysis/sync", json={"overwrite": True})
+
+        data = resp.json()
+        assert data["synced_cases"] == 2
+        assert data["skipped_cases"] == 0
+
+    def test_sync_unknown_project_returns_404(self):
+        router = _make_router()
+        client = TestClient(_app(router))
+        resp = client.post("/api/eval/projects/no_such/sync", json={})
+        assert resp.status_code == 404

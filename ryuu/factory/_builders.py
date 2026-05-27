@@ -81,15 +81,20 @@ def apply_yaml_tool_schemas(agent: "Agent", registry: ToolRegistry) -> None:
 
 
 def build_hook_registry(agent: "Agent") -> HookRegistry | None:
-    """Build HookRegistry from `hooks={"event": [handlers]}` dict.
+    """Build HookRegistry from hooks/around_llm/around_tool config.
 
-    Returns None if hooks is empty/missing — internal agent skips firing
-    when registry is None for zero overhead.
+    Returns None when all three are empty — internal agent skips all hook
+    logic for zero overhead when nothing is registered.
     """
-    if not agent.hooks:
+    if not agent.hooks and not agent.around_llm and not agent.around_tool:
         return None
     registry = HookRegistry()
-    registry.register_dict(agent.hooks)   # type: ignore[arg-type]
+    if agent.hooks:
+        registry.register_dict(agent.hooks)   # type: ignore[arg-type]
+    for h in (agent.around_llm or []):
+        registry.around_llm(h)
+    for h in (agent.around_tool or []):
+        registry.around_tool(h)
     return registry
 
 
@@ -105,39 +110,56 @@ def wrap_tool_registry_with_hooks(
     """
     if hook_registry is None:
         return
-    if not (hook_registry.has_handlers(HookEvent.PRE_TOOL)
-            or hook_registry.has_handlers(HookEvent.POST_TOOL)):
+    has_fire = (
+        hook_registry.has_handlers(HookEvent.PRE_TOOL)
+        or hook_registry.has_handlers(HookEvent.POST_TOOL)
+    )
+    has_wrap = hook_registry.has_tool_wraps()
+    if not has_fire and not has_wrap:
         return
+
+    _scope = scope or ContextScope(user_id="", session_id="", domain="")
 
     for name, handler in list(tool_registry._handlers.items()):
         original_execute = handler.execute
 
-        async def wrapped(args: dict[str, Any], _name: str = name,
-                          _orig: Any = original_execute) -> Any:
-            # Fire PRE_TOOL
+        async def wrapped(
+            args: dict[str, Any],
+            _name: str = name,
+            _orig: Any = original_execute,
+        ) -> Any:
+            # Fire PRE_TOOL (may mutate args)
             pre_ctx = PreToolContext(
                 event=HookEvent.PRE_TOOL,
                 correlation_id="",
-                scope=scope or ContextScope(user_id="", session_id="", domain=""),
+                scope=_scope,
                 tool_name=_name,
                 args=args,
             )
-            result_ctx = await hook_registry.fire(HookEvent.PRE_TOOL, pre_ctx)
-            args = result_ctx.args if isinstance(result_ctx, PreToolContext) else args
+            if hook_registry.has_handlers(HookEvent.PRE_TOOL):
+                result_ctx = await hook_registry.fire(HookEvent.PRE_TOOL, pre_ctx)
+                args = result_ctx.args if isinstance(result_ctx, PreToolContext) else args
+                pre_ctx = pre_ctx.replace(args=args)
 
-            # Execute real handler
-            result = await _orig(args)
+            # Execute real handler — via wrap chain if registered, else direct
+            if hook_registry.has_tool_wraps():
+                async def _do_tool(ctx: PreToolContext) -> Any:
+                    return await _orig(ctx.args)
+                result = await hook_registry.apply_tool_wraps(pre_ctx, _do_tool)
+            else:
+                result = await _orig(args)
 
             # Fire POST_TOOL
-            post_ctx = PostToolContext(
-                event=HookEvent.POST_TOOL,
-                correlation_id="",
-                scope=scope or ContextScope(user_id="", session_id="", domain=""),
-                tool_name=_name,
-                args=args,
-                result=result,
-            )
-            await hook_registry.fire(HookEvent.POST_TOOL, post_ctx)
+            if hook_registry.has_handlers(HookEvent.POST_TOOL):
+                post_ctx = PostToolContext(
+                    event=HookEvent.POST_TOOL,
+                    correlation_id="",
+                    scope=_scope,
+                    tool_name=_name,
+                    args=args,
+                    result=result,
+                )
+                await hook_registry.fire(HookEvent.POST_TOOL, post_ctx)
             return result
 
         handler.execute = wrapped   # type: ignore[method-assign]

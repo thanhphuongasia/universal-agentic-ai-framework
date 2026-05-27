@@ -3,14 +3,14 @@
     python -m examples.ryuu_sensei.eval.suites.model_routing_suite
 
 Dùng lại RoutingTarget từ framework. Fixtures thuần heuristic (không tốn LLM)
-đã chuyển về evals/cognitive/adaptive_routing/ — chạy thẳng suite framework:
+đã chuyển về eval_consumer/cognitive/adaptive_routing/ — chạy thẳng suite framework:
 
-    python -m evals.cognitive.adaptive_routing.suites.routing_suite
+    python -m eval_consumer.cognitive.adaptive_routing.suites.routing_suite
 
 File này chỉ còn là entry point tiện lợi — delegate về framework suite.
 """
 
-from evals.cognitive.adaptive_routing.suites.routing_suite import main  # noqa: F401
+from eval_consumer.cognitive.adaptive_routing.suites.routing_suite import main  # noqa: F401
 
 if __name__ == "__main__":
     import asyncio

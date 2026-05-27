@@ -173,6 +173,9 @@ class _FactoryLLMAgent(LLMAgent):
         messages.append(Message(role="user", content=user_content))
 
         # ── Fire PRE_LLM ──
+        # Declared before the guard so Pyright knows it's always bound when
+        # _hook_registry is not None (required for apply_llm_wraps below).
+        pre_llm_ctx: PreLLMContext | None = None
         if self._hook_registry is not None:
             pre_llm_ctx = PreLLMContext(
                 event=HookEvent.PRE_LLM,
@@ -202,10 +205,20 @@ class _FactoryLLMAgent(LLMAgent):
             response_schema=self._output_schema,   # Phase 11.y
         )
 
-        # Phase 10.6 failover: try primary, then each fallback in order.
-        output, usage = await self._react_loop_with_failover(
-            request, domain=context.scope.domain
-        )
+        # Phase 10.6 + 9.3: failover wrapped by LLM middleware chain if registered.
+        if self._hook_registry is not None and self._hook_registry.has_llm_wraps():
+            assert pre_llm_ctx is not None  # always true: registry is not None → ctx was built above
+            async def _do_llm(ctx: PreLLMContext) -> Any:
+                return await self._react_loop_with_failover(
+                    request, domain=context.scope.domain
+                )
+            output, usage = await self._hook_registry.apply_llm_wraps(
+                pre_llm_ctx, _do_llm
+            )
+        else:
+            output, usage = await self._react_loop_with_failover(
+                request, domain=context.scope.domain
+            )
 
         # ── Fire POST_LLM ──
         if self._hook_registry is not None:

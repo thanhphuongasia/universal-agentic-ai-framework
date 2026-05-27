@@ -107,10 +107,43 @@ class CaseResult:
     """How many refine iterations Evaluator needed (if target wraps Evaluator)."""
     refine_feedback_history: list[str] = field(default_factory=list)
     """Per-iteration verifier feedback during refine loop."""
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    """Intermediate execution steps emitted by agent/ReAct targets.
+
+    Each step dict must have a ``type`` key. Common types:
+      - ``"thought"``      — model's inner reasoning text
+      - ``"tool_call"``    — tool invocation with name + args
+      - ``"observation"``  — tool result / environment feedback
+      - ``"llm_input"``    — raw prompt sent to the model
+      - ``"llm_output"``   — raw completion received
+    Optional keys: ``content``, ``label``, ``ts`` (epoch float).
+    """
 
     @property
     def passed(self) -> bool:
         return self.error is None and all(s.passed for s in self.scores)
+
+
+@dataclass(frozen=True)
+class ExternalProject:
+    """Remote eval project reachable via the /api/eval2/* HTTP API.
+
+    Pass a list of these to ``build_eval_router(external_projects=[...])`` so
+    the framework can proxy discovery calls to that project's suites.
+
+    Example::
+
+        ExternalProject(
+            project_id="code-analysis",
+            title="prod-grade-code-analysis",
+            base_url="http://localhost:8000/api/eval2",
+        )
+    """
+
+    project_id: str
+    title: str
+    base_url: str  # no trailing slash, e.g. "http://localhost:8000/api/eval2"
+    description: str = ""
 
 
 def _new_run_id() -> str:

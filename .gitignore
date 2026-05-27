@@ -4,6 +4,9 @@ __pycache__/
 .Python
 build/
 dist/
+# The Python wheel ships built UI artifacts — don't ignore them
+!packages/ryuu-eval-ui/src/ryuu_eval_ui/dist/
+!packages/ryuu-eval-ui/src/ryuu_eval_ui/dist/**
 *.egg-info/
 .eggs/
 .venv/
@@ -21,3 +24,9 @@ htmlcov/
 
 # Claude Code internal
 .claude/
+
+# ryuu-eval-ui React source — build artifacts, not source
+packages/ryuu-eval-ui/web/node_modules/
+packages/ryuu-eval-ui/web/.vite/
+# dist/ under web/ is intermediate; the real dist lives in src/ryuu_eval_ui/dist/
+packages/ryuu-eval-ui/web/dist/

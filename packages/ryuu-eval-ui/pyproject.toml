@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ryuu-eval-frontend"
-version = "0.1.0a1"
-description = "Pre-built eval workbench UI — serves at /api/eval/ui via FastAPI."
+name = "ryuu-eval-ui"
+version = "0.2.0a1"
+description = "React eval workbench UI — serves at /api/eval/ui via FastAPI."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -23,4 +23,4 @@ Documentation = "https://github.com/anthropics/ryuu/blob/main/docs/guides/quicks
 where = ["src"]
 
 [tool.setuptools.package-data]
-ryuu_eval_frontend = ["dist/*", "dist/**/*"]
+ryuu_eval_ui = ["dist/*", "dist/**/*", "dist/.vite/manifest.json"]

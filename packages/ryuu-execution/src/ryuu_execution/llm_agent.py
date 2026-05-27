@@ -148,12 +148,19 @@ class LLMAgent(BaseAgent):
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
                 tools=request.tools,
+                system=request.system,
+                response_schema=request.response_schema,
             )
             response = await self.llm.complete(current_req)
             total_input += response.usage.input_tokens
             total_output += response.usage.output_tokens
 
-            tool_calls: list[dict[str, Any]] = response.metadata.get("tool_calls", [])
+            # Fire thinking blocks (extended thinking / CoT) before tool/final check
+            for thinking_text in response.thinking:
+                if thinking_text.strip():
+                    await cb.on_thought(thinking_text)
+
+            tool_calls: list[dict[str, Any]] = response.tool_calls or response.metadata.get("tool_calls", [])
 
             if not tool_calls:
                 await cb.on_final(response.content)

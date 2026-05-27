@@ -21,8 +21,8 @@ Public API:
 from ryuu_eval_oracle.fixture import OracleFixture
 from ryuu_eval_oracle.input_sources import FileInputSource
 from ryuu_eval_oracle.protocols import (
-    IOracleStrategy,
     IInputSource,
+    IOracleStrategy,
     IProductionTarget,
 )
 from ryuu_eval_oracle.review_schema import ReviewSchema

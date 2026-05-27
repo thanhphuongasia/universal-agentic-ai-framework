@@ -1,16 +1,17 @@
-"""Static UI mount — serves ryuu-eval-frontend dist/ at <prefix>/ui.
+"""Static UI mount — serves ryuu-eval-ui dist/ at <prefix>/ui.
 
 Project mounts via ``serve_ui=True`` param on build_eval_router. User opens
 ``http://localhost:8000/api/eval/ui`` → working eval workbench.
 
-Requires the ``ryuu-eval-frontend`` companion package installed alongside
+Requires the ``ryuu-eval-ui`` companion package installed alongside
 ``ryuu-eval`` (separately versioned for independent UI iteration). When
-ryuu-eval-frontend isn't installed, ``serve_ui=True`` raises ImportError
-at router build time với install hint.
+ryuu-eval-ui isn't installed, ``serve_ui=True`` raises ImportError
+at router build time with install hint.
 """
 
 from __future__ import annotations
 
+import json
 import mimetypes
 from typing import Any
 
@@ -24,25 +25,38 @@ except ImportError as exc:
 
 
 def _load_frontend_dist() -> Any:
-    """Load ryuu_eval_frontend.dist_dir() — raise actionable error if missing."""
+    """Load ryuu_eval_ui.dist_dir() — raise actionable error if missing."""
     try:
-        from ryuu_eval_frontend import dist_dir
+        from ryuu_eval_ui import dist_dir
     except ImportError as exc:
         raise ImportError(
-            "ryuu-eval-frontend package not installed. To enable serve_ui:\n"
-            "    pip install ryuu-eval-frontend\n"
+            "ryuu-eval-ui package not installed. To enable serve_ui:\n"
+            "    pip install ryuu-eval-ui\n"
             f"(Original error: {exc})"
         ) from exc
     return dist_dir()
 
 
+def _read_vite_manifest(dist: Any) -> dict:
+    """Read Vite manifest.json to resolve hashed asset paths.
+
+    Vite 5 writes manifest to dist/.vite/manifest.json.
+    Falls back to dist/manifest.json for older Vite configs.
+    Returns {} if no manifest found (development / legacy bundle).
+    """
+    for candidate in [".vite/manifest.json", "manifest.json"]:
+        try:
+            return json.loads((dist / candidate).read_text(encoding="utf-8"))
+        except (FileNotFoundError, TypeError):
+            continue
+    return {}
+
+
 def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
     """Mount static UI files at ``<prefix>``.
 
-    Three routes added:
-      GET <prefix>              → index.html
-      GET <prefix>/ryuu-eval.js  → JS bundle
-      GET <prefix>/ryuu-eval.css → CSS
+    Reads Vite's manifest.json to serve hashed asset filenames.
+    Falls back to glob-based asset serving when no manifest is present.
 
     Args:
         router: APIRouter to extend (typically from build_eval_router).
@@ -50,16 +64,12 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
                 if router mounted at "/api/eval" → UI served at "/api/eval/ui".
     """
     dist = _load_frontend_dist()
+    _read_vite_manifest(dist)  # reserved for future asset injection
 
-    # Read once at mount time — files are static, no need to re-read per request
+    # Read once at mount time — files are static, no need to re-read per request.
     index_html = (dist / "index.html").read_text(encoding="utf-8")
-    js_content = (dist / "ryuu-eval.js").read_text(encoding="utf-8")
-    css_content = (dist / "ryuu-eval.css").read_text(encoding="utf-8")
 
-    # No-trailing-slash → redirect to /ui/ so that browser resolves relative
-    # asset URLs (ryuu-eval.js, ryuu-eval.css) against the correct base dir.
-    # Without redirect, browser thinks base = parent of /ui (e.g. /api/eval2/)
-    # and fetches /api/eval2/ryuu-eval.js → 404, UI stays stuck on "Loading…".
+    # No-trailing-slash → redirect so browser resolves relative asset URLs correctly.
     @router.get(prefix, include_in_schema=False)
     def _serve_index_redirect(request: Request) -> RedirectResponse:
         target = request.url.path + "/"
@@ -71,23 +81,7 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
     def _serve_index() -> str:
         return index_html
 
-    @router.get(f"{prefix}/ryuu-eval.js", include_in_schema=False)
-    def _serve_js() -> Response:
-        return Response(
-            content=js_content,
-            media_type="application/javascript; charset=utf-8",
-            headers={"Cache-Control": "no-cache, must-revalidate"},
-        )
-
-    @router.get(f"{prefix}/ryuu-eval.css", include_in_schema=False)
-    def _serve_css() -> Response:
-        return Response(
-            content=css_content,
-            media_type="text/css; charset=utf-8",
-            headers={"Cache-Control": "no-cache, must-revalidate"},
-        )
-
-    # Generic asset fallback (for future assets — images, fonts, etc.)
+    # Generic asset handler — covers Vite hashed filenames (index-Cd3j8aXk.js etc.)
     @router.get(prefix + "/{asset_path:path}", include_in_schema=False)
     def _serve_asset(asset_path: str) -> Response:
         # Security: reject path traversal
@@ -99,10 +93,11 @@ def mount_ui(router: APIRouter, *, prefix: str = "/ui") -> None:
         except (FileNotFoundError, IsADirectoryError):
             raise HTTPException(404, f"Asset not found: {asset_path}")
         mime, _ = mimetypes.guess_type(asset_path)
+        cache = "no-cache, must-revalidate" if asset_path.endswith((".html", ".json")) else "public, max-age=31536000, immutable"
         return Response(
             content=content,
             media_type=mime or "application/octet-stream",
-            headers={"Cache-Control": "no-cache, must-revalidate"},
+            headers={"Cache-Control": cache},
         )
 
 

@@ -1,7 +1,13 @@
-# ryuu-eval-frontend
+# ryuu-eval-ui
 
-Pre-built eval workbench UI for ryuu framework. Static bundle (vanilla JS +
-Preact + htm) — no Node.js build pipeline needed at install time.
+React eval workbench UI for the Ryuu framework. Built with Vite + React 18 +
+TypeScript + Tailwind CSS. Served as a pre-built static bundle via FastAPI.
+
+## Installation
+
+```bash
+pip install ryuu-eval-ui
+```
 
 ## Usage
 
@@ -13,45 +19,64 @@ app = FastAPI()
 app.include_router(build_eval_router(
     runner_factory=my_runner_factory,
     template_registry={my_template.template_id: my_template},
-    serve_ui=True,     # ← serves UI at /api/eval/ui
+    serve_ui=True,      # ← serves UI at /api/eval/ui
 ), prefix="/api/eval")
 ```
 
-User opens `http://localhost:8000/api/eval/ui` → working eval workbench:
-- Template gallery (filter by tags)
-- Form editor (auto-rendered from JSON Schema)
-- Live SSE progress
-- Diff view (actual vs expected)
-- Refine history panel
-- 1-click prompt optimization
+Open `http://localhost:8000/api/eval/ui` → full eval workbench:
 
-## What's Inside
+- **Dashboard** — suite overview, pass-rate stats, recent runs
+- **Suite Detail** — cases table, scorers, last run summary
+- **Run Config** — model, prompt, parallel/sequential, concurrency, budget cap
+- **Live Run Monitor** — SSE progress, cost meter, per-case status, cancel
+- **Run Results** — stat cards, score distribution chart, failure clusters, CSV export
+- **Case Detail** — input/expected/actual diff view, keyboard nav, human review
+- **Comparison** — suite A vs suite B metric diff
+- **Prompt Playground** — single-case run, version history, output panel
+- **Dark mode** — auto-detects system preference, persists to localStorage
 
-```
-dist/
-├── index.html              entry HTML, loads bundle
-├── ryuu-eval.js             ~20KB — UI logic (Preact + htm + Ajv via CDN)
-└── ryuu-eval.css            ~5KB — styles
-```
+## Dev workflow (React source)
 
-## Customization
-
-Set `window.RYUU_EVAL_CONFIG` before bundle loads to override defaults:
-
-```html
-<script>
-  window.RYUU_EVAL_CONFIG = {
-    apiPrefix: "/api/v2/eval",  // custom prefix
-    defaultSuiteId: "intent_classifier",
-    theme: "dark",
-  };
-</script>
+```bash
+cd packages/ryuu-eval-ui/web
+npm install
+npm run dev          # Vite dev server at :5173, proxies /api → localhost:8000
+npm run build        # builds into src/ryuu_eval_ui/dist/ for the Python wheel
+npm run lint         # ESLint
 ```
 
-## Tiers (Roadmap)
+## Architecture
 
-- **Tier 1 (this package)** — Standalone static UI, served by Python.
-- **Tier 2 (future)** — npm package `@ryuu/eval-frontend-react` for projects
-  với existing React app, composable components.
-- **Tier 3 (future)** — MCP server `ryuu_eval.mcp` for Claude desktop / agents
-  to query eval data directly.
+```
+packages/ryuu-eval-ui/
+├── pyproject.toml              Python wheel (name: ryuu-eval-ui)
+├── src/ryuu_eval_ui/
+│   ├── __init__.py             exports dist_dir()
+│   └── dist/                  built Vite output (shipped in wheel)
+│       ├── index.html
+│       ├── .vite/manifest.json
+│       └── assets/            hashed JS + CSS chunks
+└── web/                       React source (Vite + TS)
+    ├── vite.config.ts          outDir → ../src/ryuu_eval_ui/dist
+    └── src/
+        ├── api/               TanStack Query hooks + types
+        ├── components/        Layout, StatusBadge, ScoreBar, Skeleton…
+        └── pages/             Dashboard, SuiteDetail, RunMonitor…
+```
+
+## Backward compatibility
+
+The old package name `ryuu-eval-frontend` still works via a meta-package shim
+that depends on `ryuu-eval-ui`. It will be removed in the next minor release.
+
+```bash
+# Migrate
+pip uninstall ryuu-eval-frontend
+pip install ryuu-eval-ui
+```
+
+## Roadmap
+
+- **v2 (next)** — Trace tree (requires backend span events), analytics trends, suite/case CRUD
+- **Tier 2 (future)** — npm package `@ryuu/eval-ui` for embedding in existing React apps
+- **Tier 3 (future)** — MCP server `ryuu_eval.mcp` for agents to query eval data directly

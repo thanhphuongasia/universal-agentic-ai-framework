@@ -13,9 +13,10 @@ Phase 9.2 extends with 4 more events + parallel mode:
   ON_RATE_LIMITED     — when RateLimitTimeout raised
   Parallel fire mode  — fire-and-forget for metrics/logging (won't block path)
 
-Deferred to Phase 9.3:
-  - Decorator / class-based registration styles
-  - PRE_HOOK_EVENT meta-hook (hook observing other hooks)
+Phase 9.3 adds wrap-style middleware (around_llm / around_tool):
+  Wrap handlers receive (next, ctx) and can call next() 0/1/N times.
+  Enables retry, fallback, circuit-breaker patterns natively.
+  First registered = outermost wrapper (FIFO nesting).
 
 See: docs/guides/hooks.md, docs/guides/quickstart.md §1.6.
 """
@@ -49,6 +50,11 @@ __all__ = [
     "OnBudgetExceededContext",
     "OnRateLimitedContext",
     "HookRegistry",
+    # Phase 9.3 wrap-style types
+    "LLMCallable",
+    "ToolCallable",
+    "WrapLLMHandler",
+    "WrapToolHandler",
 ]
 
 _log = logging.getLogger(__name__)
@@ -175,6 +181,19 @@ class OnCompleteContext(HookContext):
 
 HookHandler = Callable[[HookContext], HookContext | None | Awaitable[HookContext | None]]
 
+# Phase 9.3 — wrap-style middleware type aliases
+LLMCallable = Callable[["PreLLMContext"], Awaitable[Any]]
+ToolCallable = Callable[["PreToolContext"], Awaitable[Any]]
+WrapLLMHandler = Callable[[LLMCallable, "PreLLMContext"], Awaitable[Any]]
+WrapToolHandler = Callable[[ToolCallable, "PreToolContext"], Awaitable[Any]]
+
+
+def _nest(handler: Any, inner: Any) -> Any:
+    """Build one layer of the wrap chain without closing over a mutable loop var."""
+    async def _wrapped(ctx: Any) -> Any:
+        return await handler(inner, ctx)
+    return _wrapped
+
 
 class HookRegistry:
     """Owns lifecycle handlers + fires them on events.
@@ -193,6 +212,8 @@ class HookRegistry:
 
     def __init__(self) -> None:
         self._handlers: dict[HookEvent, list[tuple[HookHandler, str]]] = defaultdict(list)
+        self._wrap_llm: list[WrapLLMHandler] = []
+        self._wrap_tool: list[WrapToolHandler] = []
 
     def register(
         self,
@@ -230,6 +251,61 @@ class HookRegistry:
 
     def has_handlers(self, event: HookEvent) -> bool:
         return bool(self._handlers.get(event))
+
+    # ------------------------------------------------------------------
+    # Phase 9.3 — wrap-style middleware
+    # ------------------------------------------------------------------
+
+    def around_llm(self, handler: WrapLLMHandler) -> WrapLLMHandler:
+        """Register a wrap-style handler around every LLM call.
+
+        Usage::
+
+            @registry.around_llm
+            async def retry(next, ctx):
+                for attempt in range(3):
+                    try:
+                        return await next(ctx)
+                    except Exception:
+                        if attempt == 2:
+                            raise
+
+        First registered = outermost wrapper (FIFO nesting).
+        """
+        self._wrap_llm.append(handler)
+        return handler
+
+    def around_tool(self, handler: WrapToolHandler) -> WrapToolHandler:
+        """Register a wrap-style handler around every tool invocation.
+
+        First registered = outermost wrapper (FIFO nesting).
+        """
+        self._wrap_tool.append(handler)
+        return handler
+
+    def has_llm_wraps(self) -> bool:
+        return bool(self._wrap_llm)
+
+    def has_tool_wraps(self) -> bool:
+        return bool(self._wrap_tool)
+
+    async def apply_llm_wraps(self, ctx: "PreLLMContext", fn: LLMCallable) -> Any:
+        """Call ``fn`` through the registered LLM wrap chain.
+
+        Wraps are applied FIFO so the first-registered handler is the
+        outermost layer (controls whether / how many times inner is called).
+        """
+        chain: Any = fn
+        for handler in reversed(self._wrap_llm):
+            chain = _nest(handler, chain)
+        return await chain(ctx)
+
+    async def apply_tool_wraps(self, ctx: "PreToolContext", fn: ToolCallable) -> Any:
+        """Call ``fn`` through the registered tool wrap chain."""
+        chain: Any = fn
+        for handler in reversed(self._wrap_tool):
+            chain = _nest(handler, chain)
+        return await chain(ctx)
 
     async def fire(self, event: HookEvent, ctx: HookContext) -> HookContext:
         """Fire all handlers for an event.
