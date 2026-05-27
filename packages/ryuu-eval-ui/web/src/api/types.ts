@@ -215,6 +215,7 @@ export type ReviewAction = "approve" | "fix" | "remove";
 
 export interface OracleFixtureSummary {
   fixture_id: string;
+  suite_id?: string;
   prompt_version: string;
   oracle_model: string;
   reviewed_by: string;

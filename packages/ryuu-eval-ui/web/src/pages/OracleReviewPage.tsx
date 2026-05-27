@@ -1,23 +1,22 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
 import {
+  useSuites, useSuite, useSaveDefaultPrompt,
   useOracleFixtures, useOracleFixture,
   useUpdateOracleReview, useOraclePrompt, useRunOracle,
   useGenerateOracle, useDeleteOracleFixture,
+  useCreateSuite, useUpdateSuite, useDeleteSuite,
 } from "@/api/hooks";
 import type {
-  OracleFixtureDetail, OracleFixtureSummary, OracleReviewItem,
+  Suite,
+  OracleFixtureDetail, OracleReviewItem,
   ReviewActionPayload, OracleRunPreview,
 } from "@/api/types";
 
 // ─── CollapseSection ──────────────────────────────────────────────────────────
 
 function CollapseSection({ title, badge, children, defaultOpen = false, onOpen }: {
-  title: string;
-  badge?: string;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-  onOpen?: () => void;
+  title: string; badge?: string; children: React.ReactNode;
+  defaultOpen?: boolean; onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   function toggle() {
@@ -60,22 +59,21 @@ function CodePane({ title, content, maxHeight = "260px", badge }: {
   }
   return (
     <div className="flex flex-col border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">{title}</span>
-          {badge && (
-            <span className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-gray-900 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">
-              {badge}
-            </span>
-          )}
+      {(title || badge) && (
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <div className="flex items-center gap-2">
+            {title && <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">{title}</span>}
+            {badge && (
+              <span className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-gray-900 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                {badge}
+              </span>
+            )}
+          </div>
+          <button className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-mono transition-colors" onClick={copy}>
+            {copied ? "✓ copied" : "copy"}
+          </button>
         </div>
-        <button
-          className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-mono transition-colors"
-          onClick={copy}
-        >
-          {copied ? "✓ copied" : "copy"}
-        </button>
-      </div>
+      )}
       <div className="flex min-h-0 overflow-y-auto" style={{ maxHeight }}>
         <div className="shrink-0 bg-gray-50 dark:bg-gray-900 text-gray-400 text-right px-2.5 py-3 select-none border-r border-gray-200 dark:border-gray-700 text-[10px] leading-5 font-mono min-w-[36px]">
           {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
@@ -88,31 +86,7 @@ function CodePane({ title, content, maxHeight = "260px", badge }: {
   );
 }
 
-// ─── StepCard ─────────────────────────────────────────────────────────────────
-
-function StepCard({ num, title, status, children }: {
-  num: number; title: string; status: "done" | "active" | "pending"; children: React.ReactNode;
-}) {
-  const dotCls =
-    status === "done"   ? "bg-green-500 text-white" :
-    status === "active" ? "bg-indigo-500 text-white" :
-                          "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400";
-  const borderCls =
-    status === "active" ? "border-indigo-200 dark:border-indigo-800" : "border-gray-200 dark:border-gray-700";
-  return (
-    <div className={`rounded-xl border ${borderCls} bg-white dark:bg-gray-900 overflow-hidden shadow-sm`}>
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 dark:border-gray-800">
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${dotCls}`}>
-          {status === "done" ? "✓" : num}
-        </div>
-        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</h3>
-      </div>
-      <div className="p-5 space-y-3">{children}</div>
-    </div>
-  );
-}
-
-// ─── Badges ───────────────────────────────────────────────────────────────────
+// ─── OpBadge / ConfBadge ──────────────────────────────────────────────────────
 
 function OpBadge({ op }: { op: string }) {
   const colors: Record<string, string> = {
@@ -145,18 +119,65 @@ function ConfBadge({ confidence }: { confidence: string }) {
   );
 }
 
-// ─── Step 1: Input ─────────────────────────────────────────────────────────────
+// ─── TabBar ───────────────────────────────────────────────────────────────────
 
-function Step1_Input({ fixture }: { fixture: OracleFixtureDetail }) {
-  const inputJson = JSON.stringify(fixture.input_data, null, 2);
+type TabId = "input" | "oracle-prompt" | "expectation" | "review";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "input",         label: "1. Input" },
+  { id: "oracle-prompt", label: "2. Oracle Prompt" },
+  { id: "expectation",   label: "3. Expectation" },
+  { id: "review",        label: "4. Review" },
+];
+
+function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) {
+  return (
+    <div className="flex border-b border-gray-200 dark:border-gray-700 shrink-0">
+      {TABS.map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            active === tab.id
+              ? "border-indigo-500 text-indigo-600 dark:text-indigo-400"
+              : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Tab 1: Input ─────────────────────────────────────────────────────────────
+
+function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteId: string }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const input = fixture.input_data as any;
   const route    = input?.route;
   const entities = input?.entities ?? [];
   const routeBadge = route ? `${route.http_method ?? ""} ${route.endpoint ?? ""}`.trim() : undefined;
+  const inputJson  = JSON.stringify(fixture.input_data, null, 2);
+
+  const { data: suite } = useSuite(suiteId);
+  const saveMutation = useSaveDefaultPrompt(suiteId);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [promptDraft, setPromptDraft] = useState("");
+  const productionPrompt = suite?.default_system_prompt ?? "";
+
+  function startEdit() {
+    setPromptDraft(productionPrompt);
+    setEditingPrompt(true);
+  }
+
+  async function savePrompt() {
+    await saveMutation.mutateAsync(promptDraft);
+    setEditingPrompt(false);
+  }
 
   return (
-    <>
+    <div className="space-y-3">
       {/* Fixture meta */}
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-gray-400 pb-1">
         <span><span className="font-medium text-gray-700 dark:text-gray-300">ID</span>{" "}{fixture.fixture_id}</span>
@@ -168,7 +189,49 @@ function Step1_Input({ fixture }: { fixture: OracleFixtureDetail }) {
         </span>
       </div>
 
-      {/* Route Context JSON */}
+      {/* Production Prompt — shared with SuiteDetail */}
+      <CollapseSection title="Production Prompt (System)">
+        {editingPrompt ? (
+          <div className="p-3 space-y-2">
+            <textarea
+              className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-none"
+              rows={8}
+              value={promptDraft}
+              onChange={e => setPromptDraft(e.target.value)}
+              placeholder="Enter the production system prompt…"
+            />
+            <div className="flex gap-2">
+              <button
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 transition-colors"
+                disabled={saveMutation.isPending}
+                onClick={savePrompt}
+              >{saveMutation.isPending ? "Saving…" : "Save"}</button>
+              <button
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => setEditingPrompt(false)}
+              >Cancel</button>
+            </div>
+          </div>
+        ) : productionPrompt ? (
+          <div className="relative">
+            <CodePane title="" content={productionPrompt} maxHeight="280px" />
+            <button
+              className="absolute top-2 right-12 text-[10px] px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 transition-colors"
+              onClick={startEdit}
+            >✏ Edit</button>
+          </div>
+        ) : (
+          <div className="px-4 py-3 flex items-center gap-3 text-xs text-gray-400">
+            <span>No production prompt set for this suite.</span>
+            <button
+              className="px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors font-medium"
+              onClick={startEdit}
+            >+ Add prompt</button>
+          </div>
+        )}
+      </CollapseSection>
+
+      {/* Route Context */}
       <CollapseSection title="Route Context JSON" badge={routeBadge}>
         <div className="p-3">
           <CodePane title="input_data" content={inputJson} maxHeight="300px" />
@@ -196,63 +259,40 @@ function Step1_Input({ fixture }: { fixture: OracleFixtureDetail }) {
           </div>
         </CollapseSection>
       )}
-
-      {/* Production prompt */}
-      <CollapseSection title="Production Prompt">
-        <div className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500 italic">
-          Attach a <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded not-italic">prompt_resolver</code> to{" "}
-          <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded not-italic">build_eval_router()</code> to surface the production prompt here.
-        </div>
-      </CollapseSection>
-    </>
+    </div>
   );
 }
 
-// ─── Step 2: Oracle Prompt ────────────────────────────────────────────────────
+// ─── Tab 2: Oracle Prompt ─────────────────────────────────────────────────────
 
-function Step2_OraclePrompt({ fixtureId }: { fixtureId: string }) {
+function Tab2_OraclePrompt({ fixtureId }: { fixtureId: string }) {
   const [promptEnabled, setPromptEnabled] = useState(false);
   const { data: prompt, isLoading, isError } = useOraclePrompt(fixtureId, promptEnabled);
-
   function enable() { setPromptEnabled(true); }
 
-  function PromptContent({ text }: { text: string }) {
+  function Content({ text }: { text: string }) {
     return <div className="p-3"><CodePane title="" content={text} maxHeight="320px" /></div>;
   }
-
-  function LoadingOrError() {
+  function Status() {
     if (isLoading) return <div className="px-4 py-3 text-xs text-gray-400 animate-pulse">Loading…</div>;
-    if (isError || !prompt) return <div className="px-4 py-3 text-xs text-red-500">Failed to load prompt — check that oracle_strategy_factory implements render_prompt().</div>;
+    if (isError || !prompt) return <div className="px-4 py-3 text-xs text-red-500">Failed — check that oracle_strategy_factory implements render_prompt().</div>;
     return null;
   }
 
   return (
-    <>
+    <div className="space-y-3">
       <p className="text-xs text-gray-500 dark:text-gray-400">
         Rendered by <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">render_prompt(input_data)</code> on the oracle strategy.
         Expand a section to fetch, or paste manually below.
       </p>
-
       <CollapseSection title="System Prompt" onOpen={enable}>
-        {!promptEnabled ? (
-          <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
-        ) : !prompt ? (
-          <LoadingOrError />
-        ) : (
-          <PromptContent text={prompt.system} />
-        )}
+        {!promptEnabled ? <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
+          : !prompt ? <Status /> : <Content text={prompt.system} />}
       </CollapseSection>
-
       <CollapseSection title="User Prompt" onOpen={enable}>
-        {!promptEnabled ? (
-          <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
-        ) : !prompt ? (
-          <LoadingOrError />
-        ) : (
-          <PromptContent text={prompt.user} />
-        )}
+        {!promptEnabled ? <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
+          : !prompt ? <Status /> : <Content text={prompt.user} />}
       </CollapseSection>
-
       <CollapseSection title="Manual Override (optional)">
         <div className="p-3">
           <textarea
@@ -262,42 +302,33 @@ function Step2_OraclePrompt({ fixtureId }: { fixtureId: string }) {
           />
         </div>
       </CollapseSection>
-    </>
+    </div>
   );
 }
 
-// ─── Step 3: Expectation ──────────────────────────────────────────────────────
+// ─── Tab 3: Expectation ───────────────────────────────────────────────────────
 
-function Step3_Expectation({ fixture, onRun, isRunning, preview }: {
-  fixture: OracleFixtureDetail;
-  onRun: () => void;
-  isRunning: boolean;
-  preview: OracleRunPreview | null;
+function Tab3_Expectation({ fixture, onRun, isRunning, preview }: {
+  fixture: OracleFixtureDetail; onRun: () => void; isRunning: boolean; preview: OracleRunPreview | null;
 }) {
   const source = preview ? preview.cells : fixture.expected;
   const entities = Object.keys(source);
   const hasCells = entities.length > 0;
 
   return (
-    <>
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {hasCells
             ? <>{entities.length} entities · {entities.reduce((n, e) => n + Object.keys(source[e]).length, 0)} cells</>
-            : "No expectation yet — run the oracle to generate."
-          }
-          {preview && (
-            <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-medium">(preview · not saved)</span>
-          )}
+            : "No expectation yet — run the oracle to generate."}
+          {preview && <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-medium">(preview · not saved)</span>}
         </p>
         <button
-          onClick={onRun}
-          disabled={isRunning}
+          onClick={onRun} disabled={isRunning}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
         >
-          {isRunning
-            ? <><span className="animate-spin inline-block">⟳</span> Running…</>
-            : <>▶ Run Oracle</>}
+          {isRunning ? <><span className="animate-spin inline-block">⟳</span> Running…</> : <>▶ Run Oracle</>}
         </button>
       </div>
 
@@ -319,9 +350,7 @@ function Step3_Expectation({ fixture, onRun, isRunning, preview }: {
                     <td className="px-3 py-2 font-mono text-gray-500 dark:text-gray-400">{field}</td>
                     <td className="px-3 py-2"><OpBadge op={cell.op} /></td>
                     <td className="px-3 py-2"><ConfBadge confidence={cell.confidence} /></td>
-                    <td className="px-3 py-2 text-gray-500 dark:text-gray-400 max-w-[240px] truncate" title={cell.oracle_why}>
-                      {cell.oracle_why}
-                    </td>
+                    <td className="px-3 py-2 text-gray-500 dark:text-gray-400 max-w-[240px] truncate" title={cell.oracle_why}>{cell.oracle_why}</td>
                   </tr>
                 ))
               )}
@@ -329,16 +358,14 @@ function Step3_Expectation({ fixture, onRun, isRunning, preview }: {
           </table>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
-// ─── Step 4: Human Review ─────────────────────────────────────────────────────
+// ─── Tab 4: Human Review ──────────────────────────────────────────────────────
 
 function ReviewCell({ item, pending, onAction }: {
-  item: OracleReviewItem;
-  pending: ReviewActionPayload | undefined;
-  onAction: (a: ReviewActionPayload) => void;
+  item: OracleReviewItem; pending: ReviewActionPayload | undefined; onAction: (a: ReviewActionPayload) => void;
 }) {
   const current = pending?.action ?? item.action;
   const [showFix, setShowFix] = useState(false);
@@ -363,37 +390,18 @@ function ReviewCell({ item, pending, onAction }: {
           </div>
           <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2">{item.oracle_why}</p>
         </div>
-
         <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={() => onAction({ entity: item.entity, field: item.field, action: "approve" })}
-            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${
-              current === "approve"
-                ? "bg-green-500 border-green-500 text-white"
-                : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-green-300 hover:text-green-600 dark:hover:border-green-600 dark:hover:text-green-400"
-            }`}
-          >✓ Approve</button>
-
-          <button
-            onClick={() => setShowFix(f => !f)}
-            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${
-              current === "fix"
-                ? "bg-yellow-500 border-yellow-500 text-white"
-                : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-yellow-300 hover:text-yellow-600 dark:hover:border-yellow-600 dark:hover:text-yellow-400"
-            }`}
-          >✏ Fix</button>
-
-          <button
-            onClick={() => onAction({ entity: item.entity, field: item.field, action: "remove" })}
-            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${
-              current === "remove"
-                ? "bg-red-500 border-red-500 text-white"
-                : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-red-300 hover:text-red-600 dark:hover:border-red-600 dark:hover:text-red-400"
-            }`}
-          >✕ Remove</button>
+          <button onClick={() => onAction({ entity: item.entity, field: item.field, action: "approve" })}
+            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${current === "approve" ? "bg-green-500 border-green-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-green-300 hover:text-green-600"}`}>
+            ✓ Approve</button>
+          <button onClick={() => setShowFix(f => !f)}
+            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${current === "fix" ? "bg-yellow-500 border-yellow-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-yellow-300 hover:text-yellow-600"}`}>
+            ✏ Fix</button>
+          <button onClick={() => onAction({ entity: item.entity, field: item.field, action: "remove" })}
+            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${current === "remove" ? "bg-red-500 border-red-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-red-300 hover:text-red-600"}`}>
+            ✕ Remove</button>
         </div>
       </div>
-
       {showFix && (
         <div className="mt-2 flex items-center gap-2">
           <input
@@ -405,10 +413,7 @@ function ReviewCell({ item, pending, onAction }: {
           <button
             className="text-xs px-2 py-1 rounded bg-yellow-500 text-white font-semibold disabled:opacity-50"
             disabled={!customOp.trim()}
-            onClick={() => {
-              onAction({ entity: item.entity, field: item.field, action: "fix", corrected_op: customOp });
-              setShowFix(false);
-            }}
+            onClick={() => { onAction({ entity: item.entity, field: item.field, action: "fix", corrected_op: customOp }); setShowFix(false); }}
           >Apply</button>
         </div>
       )}
@@ -416,28 +421,24 @@ function ReviewCell({ item, pending, onAction }: {
   );
 }
 
-function Step4_Review({ fixture, pendingActions, onAction, onSave, isSaving, reviewerName, onReviewerChange }: {
-  fixture: OracleFixtureDetail;
-  pendingActions: ReviewActionPayload[];
-  onAction: (a: ReviewActionPayload) => void;
-  onSave: () => void;
-  isSaving: boolean;
-  reviewerName: string;
-  onReviewerChange: (s: string) => void;
+function Tab4_Review({ fixture, pendingActions, onAction, onSave, isSaving, reviewerName, onReviewerChange }: {
+  fixture: OracleFixtureDetail; pendingActions: ReviewActionPayload[];
+  onAction: (a: ReviewActionPayload) => void; onSave: () => void;
+  isSaving: boolean; reviewerName: string; onReviewerChange: (s: string) => void;
 }) {
   const pendingMap = new Map(pendingActions.map(a => [`${a.entity}::${a.field}`, a]));
   const pendingCount = fixture.review_items.filter(r => r.action == null).length;
 
   if (fixture.review_items.length === 0) {
     return (
-      <p className="text-sm text-center py-6 text-gray-400 dark:text-gray-500">
+      <p className="text-sm text-center py-8 text-gray-400 dark:text-gray-500">
         No review items — all cells are high-confidence or expectation not yet generated.
       </p>
     );
   }
 
   return (
-    <>
+    <div className="space-y-3">
       <div className="flex items-center gap-3">
         <input
           className="flex-1 text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400"
@@ -448,8 +449,7 @@ function Step4_Review({ fixture, pendingActions, onAction, onSave, isSaving, rev
         <span className="text-xs shrink-0">
           {pendingCount > 0
             ? <span className="text-yellow-600 dark:text-yellow-400">{pendingCount} pending</span>
-            : <span className="text-green-600 dark:text-green-400">✓ all reviewed</span>
-          }
+            : <span className="text-green-600 dark:text-green-400">✓ all reviewed</span>}
         </span>
         <button
           onClick={onSave}
@@ -459,7 +459,6 @@ function Step4_Review({ fixture, pendingActions, onAction, onSave, isSaving, rev
           {isSaving ? "Saving…" : `Save (${pendingActions.length})`}
         </button>
       </div>
-
       <div className="space-y-2">
         {fixture.review_items.map(item => (
           <ReviewCell
@@ -470,81 +469,213 @@ function Step4_Review({ fixture, pendingActions, onAction, onSave, isSaving, rev
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Fixture list (within an expanded suite) ──────────────────────────────────
+
+function SuiteFixtures({ suiteId, selectedId, onSelect, onDelete }: {
+  suiteId: string; selectedId: string;
+  onSelect: (id: string) => void; onDelete: (id: string) => void;
+}) {
+  const { data: fixtures = [], isLoading } = useOracleFixtures(suiteId);
+
+  if (isLoading) return <div className="px-5 py-2 text-[10px] text-gray-400 animate-pulse">Loading…</div>;
+  if (fixtures.length === 0) return (
+    <div className="px-5 py-2 text-[10px] text-gray-400">No cases yet</div>
+  );
+
+  return (
+    <>
+      {fixtures.map(f => (
+        <div
+          key={f.fixture_id}
+          onClick={() => onSelect(f.fixture_id)}
+          className={`pl-8 pr-3 py-2 cursor-pointer flex items-center gap-2 transition-colors ${
+            f.fixture_id === selectedId
+              ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300"
+              : "hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${f.pending_review > 0 ? "bg-yellow-400" : "bg-green-500"}`} />
+          <span className="text-xs truncate flex-1" title={f.fixture_id}>{f.fixture_id}</span>
+          {f.fixture_id === selectedId && (
+            <button
+              className="text-[10px] px-1 py-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900 text-gray-400 hover:text-red-500 transition-colors"
+              onClick={e => { e.stopPropagation(); onDelete(f.fixture_id); }}
+            >🗑</button>
+          )}
+        </div>
+      ))}
     </>
   );
 }
 
-// ─── Fixture sidebar ──────────────────────────────────────────────────────────
+// ─── Sidebar tree ─────────────────────────────────────────────────────────────
 
-function FixtureSidebar({ summaries, activeId, onSelect, onAdd, onEdit, onDelete, isLoading }: {
-  summaries: OracleFixtureSummary[];
-  activeId: string;
-  onSelect: (id: string) => void;
-  onAdd: () => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  isLoading: boolean;
+function OracleTree({ suites, expandedId, selectedFixtureId, onToggleSuite, onSelectFixture,
+  onAddSuite, onEditSuite, onDeleteSuite, onAddCase, onDeleteCase, isLoadingSuites }: {
+  suites: Suite[]; expandedId: string; selectedFixtureId: string;
+  onToggleSuite: (id: string) => void; onSelectFixture: (suiteId: string, fixtureId: string) => void;
+  onAddSuite: () => void; onEditSuite: (suite: Suite) => void; onDeleteSuite: (id: string) => void;
+  onAddCase: (suiteId: string) => void; onDeleteCase: (suiteId: string, fixtureId: string) => void;
+  isLoadingSuites: boolean;
 }) {
   return (
-    <aside className="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900">
+    <aside className="w-60 shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       <div className="px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Oracle Fixtures</div>
+        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Oracle Review</div>
         <button
-          onClick={onAdd}
+          onClick={onAddSuite}
           className="w-full text-xs py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
-        >+ New Fixture</button>
+        >+ New Suite</button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {isLoadingSuites ? (
           <div className="p-4 text-xs text-gray-400 text-center animate-pulse">Loading…</div>
-        ) : summaries.length === 0 ? (
-          <div className="p-4 text-xs text-gray-400 text-center">No fixtures yet</div>
-        ) : summaries.map(s => (
-          <div
-            key={s.fixture_id}
-            onClick={() => onSelect(s.fixture_id)}
-            className={`px-3 py-2.5 cursor-pointer border-l-2 transition-colors ${
-              s.fixture_id === activeId
-                ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
-                : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${s.pending_review > 0 ? "bg-yellow-400" : "bg-green-500"}`} />
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate flex-1" title={s.fixture_id}>
-                {s.fixture_id}
-              </span>
-            </div>
-            <div className="ml-4">
-              <div className="text-[10px] text-gray-400 font-mono truncate">{s.oracle_model}</div>
-              <div className="text-[10px] mt-0.5">
-                {s.pending_review > 0
-                  ? <span className="text-yellow-500">{s.pending_review} pending</span>
-                  : <span className="text-green-500">✓ reviewed</span>
-                }
+        ) : suites.length === 0 ? (
+          <div className="p-4 text-xs text-gray-400 text-center">No suites yet</div>
+        ) : suites.map(suite => {
+          const isExpanded = suite.suite_id === expandedId;
+          return (
+            <div key={suite.suite_id}>
+              {/* Suite row */}
+              <div
+                className={`px-3 py-2.5 flex items-center gap-2 cursor-pointer group transition-colors ${
+                  isExpanded ? "bg-gray-50 dark:bg-gray-800" : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                }`}
+                onClick={() => onToggleSuite(suite.suite_id)}
+              >
+                <span className={`text-[10px] text-gray-400 transition-transform duration-150 shrink-0 ${isExpanded ? "rotate-90" : ""}`}>▶</span>
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate flex-1">
+                  {suite.title ?? suite.suite_id}
+                </span>
+                <div className="hidden group-hover:flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                  <button
+                    className="text-[10px] p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 hover:text-gray-600 transition-colors"
+                    onClick={() => onEditSuite(suite)}
+                    title="Edit suite"
+                  >✏</button>
+                  <button
+                    className="text-[10px] p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900 text-gray-400 hover:text-red-500 transition-colors"
+                    onClick={() => onDeleteSuite(suite.suite_id)}
+                    title="Delete suite"
+                  >🗑</button>
+                </div>
               </div>
+
+              {/* Expanded: fixtures + add button */}
+              {isExpanded && (
+                <>
+                  <SuiteFixtures
+                    suiteId={suite.suite_id}
+                    selectedId={selectedFixtureId}
+                    onSelect={id => onSelectFixture(suite.suite_id, id)}
+                    onDelete={id => onDeleteCase(suite.suite_id, id)}
+                  />
+                  <div className="pl-8 pr-3 py-1.5">
+                    <button
+                      onClick={() => onAddCase(suite.suite_id)}
+                      className="w-full text-[10px] py-1 rounded border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 hover:text-indigo-500 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors"
+                    >+ New Case</button>
+                  </div>
+                </>
+              )}
             </div>
-            {s.fixture_id === activeId && (
-              <div className="ml-4 mt-1.5 flex gap-1" onClick={e => e.stopPropagation()}>
-                <button
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 transition-colors"
-                  onClick={() => onEdit(s.fixture_id)}
-                >✏ Edit</button>
-                <button
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-red-100 dark:hover:bg-red-900 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                  onClick={() => onDelete(s.fixture_id)}
-                >🗑</button>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </aside>
   );
 }
 
-// ─── Add / Edit modal ─────────────────────────────────────────────────────────
+// ─── Suite modal (create / edit) ──────────────────────────────────────────────
+
+function SuiteModal({ mode, suite, onClose }: {
+  mode: "create" | "edit"; suite?: Suite; onClose: () => void;
+}) {
+  const [suiteId, setSuiteId] = useState(suite?.suite_id ?? "");
+  const [title, setTitle]     = useState(suite?.title ?? suite?.suite_id ?? "");
+  const [prompt, setPrompt]   = useState(suite?.default_system_prompt ?? "");
+
+  const createMutation = useCreateSuite();
+  const updateMutation = useUpdateSuite(suite?.suite_id ?? "");
+
+  async function handleSubmit() {
+    if (mode === "create") {
+      await createMutation.mutateAsync({ suite_id: suiteId, title: title || undefined, default_system_prompt: prompt || undefined });
+    } else {
+      await updateMutation.mutateAsync({ title: title || undefined, default_system_prompt: prompt || undefined });
+    }
+    onClose();
+  }
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-[580px] max-h-[88vh] flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+            {mode === "create" ? "New Suite" : `Edit Suite — ${suite?.suite_id}`}
+          </h2>
+          <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none" onClick={onClose}>×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {mode === "create" && (
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Suite ID</label>
+              <input
+                className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-mono placeholder-gray-400 focus:outline-none focus:border-indigo-400"
+                placeholder="e.g. crud_matrix_llm"
+                value={suiteId}
+                onChange={e => setSuiteId(e.target.value.replace(/\s+/g, "_"))}
+              />
+            </div>
+          )}
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Title</label>
+            <input
+              className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:border-indigo-400"
+              placeholder="e.g. CRUD Matrix LLM"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+              Production System Prompt <span className="font-normal text-gray-400 normal-case">(optional — shared with SuiteDetail)</span>
+            </label>
+            <textarea
+              className="w-full text-xs font-mono border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-none"
+              rows={8}
+              placeholder="Paste your production system prompt here…"
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700 shrink-0">
+          <button className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" onClick={onClose}>Cancel</button>
+          <button
+            className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 transition-colors"
+            disabled={isPending || (mode === "create" && !suiteId.trim())}
+            onClick={handleSubmit}
+          >
+            {isPending ? "Saving…" : mode === "create" ? "Create Suite" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Fixture (case) modal ─────────────────────────────────────────────────────
 
 const INPUT_PLACEHOLDER = `{
   "route": {
@@ -558,17 +689,14 @@ const INPUT_PLACEHOLDER = `{
   "call_subgraph": {}
 }`;
 
-function FixtureModal({ mode, fixture, onClose, onGenerate, isGenerating }: {
-  mode: "add" | "edit";
-  fixture: OracleFixtureDetail | null;
-  onClose: () => void;
-  onGenerate: (caseId: string, inputData: Record<string, unknown>) => void;
+function FixtureModal({ suiteId, fixture, onClose, onGenerate, isGenerating }: {
+  suiteId: string; fixture?: OracleFixtureDetail;
+  onClose: () => void; onGenerate: (caseId: string, inputData: Record<string, unknown>) => void;
   isGenerating: boolean;
 }) {
-  const [caseId, setCaseId] = useState(mode === "edit" && fixture ? fixture.fixture_id : "");
-  const [inputJson, setInputJson] = useState(
-    mode === "edit" && fixture ? JSON.stringify(fixture.input_data, null, 2) : ""
-  );
+  const isEdit = !!fixture;
+  const [caseId, setCaseId]     = useState(fixture?.fixture_id ?? "");
+  const [inputJson, setInputJson] = useState(fixture ? JSON.stringify(fixture.input_data, null, 2) : "");
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   function handleSubmit() {
@@ -591,11 +719,9 @@ function FixtureModal({ mode, fixture, onClose, onGenerate, isGenerating }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div>
             <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-              {mode === "add" ? "New Oracle Fixture" : "Edit Oracle Fixture"}
+              {isEdit ? "Edit Oracle Case" : "New Oracle Case"}
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Provide route context JSON, then generate oracle expectation.
-            </p>
+            <p className="text-xs text-gray-500 mt-0.5">Suite: <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">{suiteId}</code></p>
           </div>
           <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none" onClick={onClose}>×</button>
         </div>
@@ -605,13 +731,12 @@ function FixtureModal({ mode, fixture, onClose, onGenerate, isGenerating }: {
             <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Case ID</label>
             <input
               className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-mono placeholder-gray-400 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
-              placeholder="e.g. case2_update_order"
+              placeholder="e.g. case2_delete_order"
               value={caseId}
               onChange={e => setCaseId(e.target.value.replace(/\s+/g, "_"))}
-              disabled={mode === "edit"}
+              disabled={isEdit}
             />
           </div>
-
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Input Data (JSON)</label>
@@ -633,9 +758,7 @@ function FixtureModal({ mode, fixture, onClose, onGenerate, isGenerating }: {
         </div>
 
         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700 shrink-0">
-          <button className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" onClick={onClose}>
-            Cancel
-          </button>
+          <button className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" onClick={onClose}>Cancel</button>
           <button
             className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-2 transition-colors"
             disabled={!caseId.trim() || !inputJson.trim() || isGenerating}
@@ -652,29 +775,48 @@ function FixtureModal({ mode, fixture, onClose, onGenerate, isGenerating }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function OracleReviewPage() {
-  const { suiteId } = useParams<{ suiteId: string }>();
-  const { data: summaries = [], isLoading: loadingList } = useOracleFixtures(suiteId);
+  const { data: suites = [], isLoading: loadingSuites } = useSuites();
 
-  const [selectedId, setSelectedId] = useState<string>("");
-  const activeId = selectedId || summaries[0]?.fixture_id || "";
+  const [expandedSuiteId, setExpandedSuiteId]       = useState("");
+  const [selectedFixtureId, setSelectedFixtureId]   = useState("");
+  const [activeTab, setActiveTab]                   = useState<TabId>("input");
+  const [suiteModal, setSuiteModal]                 = useState<null | { mode: "create" } | { mode: "edit"; suite: Suite }>(null);
+  const [fixtureModal, setFixtureModal]             = useState<null | { suiteId: string; fixture?: OracleFixtureDetail }>(null);
+  const [pendingActions, setPendingActions]         = useState<ReviewActionPayload[]>([]);
+  const [reviewerName, setReviewerName]             = useState("");
+  const [preview, setPreview]                       = useState<OracleRunPreview | null>(null);
 
-  const { data: fixture, isLoading: loadingFixture } = useOracleFixture(activeId);
-  const updateMutation  = useUpdateOracleReview(activeId);
-  const runMutation     = useRunOracle();
+  const { data: fixture, isLoading: loadingFixture } = useOracleFixture(selectedFixtureId);
+  const updateMutation   = useUpdateOracleReview(selectedFixtureId);
+  const runMutation      = useRunOracle();
   const generateMutation = useGenerateOracle();
-  const deleteMutation  = useDeleteOracleFixture();
+  const deleteMutation   = useDeleteOracleFixture();
+  const deleteSuite      = useDeleteSuite();
 
-  const [pendingActions, setPendingActions] = useState<ReviewActionPayload[]>([]);
-  const [reviewerName, setReviewerName]     = useState("");
-  const [preview, setPreview]               = useState<OracleRunPreview | null>(null);
-  const [modal, setModal]                   = useState<"add" | "edit" | null>(null);
-
-  // Reset on fixture change
-  const [lastId, setLastId] = useState(activeId);
-  if (lastId !== activeId) {
-    setLastId(activeId);
+  // Reset pending state when fixture changes
+  const [lastFixtureId, setLastFixtureId] = useState(selectedFixtureId);
+  if (lastFixtureId !== selectedFixtureId) {
+    setLastFixtureId(selectedFixtureId);
     setPendingActions([]);
     setPreview(null);
+    setActiveTab("input");
+  }
+
+  function handleSelectFixture(suiteId: string, fixtureId: string) {
+    setExpandedSuiteId(suiteId);
+    setSelectedFixtureId(fixtureId);
+    setPendingActions([]);
+    setPreview(null);
+    setActiveTab("input");
+  }
+
+  function handleToggleSuite(suiteId: string) {
+    if (expandedSuiteId === suiteId) {
+      setExpandedSuiteId("");
+    } else {
+      setExpandedSuiteId(suiteId);
+      setSelectedFixtureId("");
+    }
   }
 
   function handleAction(action: ReviewActionPayload) {
@@ -691,91 +833,145 @@ export function OracleReviewPage() {
 
   async function handleRun() {
     setPreview(null);
-    const result = await runMutation.mutateAsync(activeId);
+    const result = await runMutation.mutateAsync(selectedFixtureId);
     setPreview(result);
   }
 
   async function handleGenerate(caseId: string, inputData: Record<string, unknown>) {
-    await generateMutation.mutateAsync({ case_id: caseId, input_data: inputData });
-    setModal(null);
-    setSelectedId(caseId);
+    const suiteId = fixtureModal?.suiteId ?? expandedSuiteId;
+    await generateMutation.mutateAsync({ case_id: caseId, suite_id: suiteId, input_data: inputData });
+    setFixtureModal(null);
+    setExpandedSuiteId(suiteId);
+    setSelectedFixtureId(caseId);
   }
 
-  function handleDelete(id: string) {
-    if (!window.confirm(`Delete fixture "${id}"?`)) return;
-    deleteMutation.mutate(id, {
-      onSuccess: () => { if (selectedId === id) setSelectedId(""); },
+  function handleDeleteCase(_suiteId: string, fixtureId: string) {
+    if (!window.confirm(`Delete case "${fixtureId}"?`)) return;
+    deleteMutation.mutate(fixtureId, {
+      onSuccess: () => { if (selectedFixtureId === fixtureId) setSelectedFixtureId(""); },
     });
   }
 
-  const hasCells    = fixture ? Object.keys(fixture.expected).length > 0 : false;
+  function handleDeleteSuite(suiteId: string) {
+    if (!window.confirm(`Delete suite "${suiteId}" and all its cases?`)) return;
+    deleteSuite.mutate(suiteId, {
+      onSuccess: () => {
+        if (expandedSuiteId === suiteId) { setExpandedSuiteId(""); setSelectedFixtureId(""); }
+      },
+    });
+  }
+
+  const hasCells     = fixture ? Object.keys(fixture.expected).length > 0 : false;
   const pendingCount = fixture ? fixture.review_items.filter(r => r.action == null).length : 0;
-  const allReviewed = hasCells && pendingCount === 0;
 
   return (
     <div className="h-[calc(100vh-56px)] flex bg-gray-50 dark:bg-gray-950">
-      <FixtureSidebar
-        summaries={summaries}
-        activeId={activeId}
-        onSelect={id => { setSelectedId(id); setPendingActions([]); setPreview(null); }}
-        onAdd={() => setModal("add")}
-        onEdit={id => { setSelectedId(id); setModal("edit"); }}
-        onDelete={handleDelete}
-        isLoading={loadingList}
+      <OracleTree
+        suites={suites}
+        expandedId={expandedSuiteId}
+        selectedFixtureId={selectedFixtureId}
+        onToggleSuite={handleToggleSuite}
+        onSelectFixture={handleSelectFixture}
+        onAddSuite={() => setSuiteModal({ mode: "create" })}
+        onEditSuite={suite => setSuiteModal({ mode: "edit", suite })}
+        onDeleteSuite={handleDeleteSuite}
+        onAddCase={suiteId => setFixtureModal({ suiteId })}
+        onDeleteCase={handleDeleteCase}
+        isLoadingSuites={loadingSuites}
       />
 
-      <main className="flex-1 min-w-0 overflow-y-auto p-6">
-        {loadingFixture ? (
-          <div className="flex items-center justify-center h-64 text-sm text-gray-400">Loading…</div>
-        ) : !fixture ? (
-          <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
-            <p className="text-sm text-gray-400 dark:text-gray-500">Select a fixture from the sidebar</p>
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        {!expandedSuiteId ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+            <p className="text-sm text-gray-400 dark:text-gray-500">Select a suite from the sidebar</p>
             <button
               className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
-              onClick={() => setModal("add")}
-            >
-              + Create First Fixture
-            </button>
+              onClick={() => setSuiteModal({ mode: "create" })}
+            >+ Create First Suite</button>
+          </div>
+        ) : !selectedFixtureId ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+            <p className="text-sm text-gray-400 dark:text-gray-500">Select a case or create one</p>
+            <button
+              className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
+              onClick={() => setFixtureModal({ suiteId: expandedSuiteId })}
+            >+ New Case</button>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto space-y-4">
-            <StepCard num={1} title="Input" status="done">
-              <Step1_Input fixture={fixture} />
-            </StepCard>
+          <>
+            {/* Header breadcrumb */}
+            <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span className="font-semibold text-gray-700 dark:text-gray-200">
+                {suites.find(s => s.suite_id === expandedSuiteId)?.title ?? expandedSuiteId}
+              </span>
+              <span>›</span>
+              <span className="font-mono text-gray-500">{selectedFixtureId}</span>
+              {hasCells && pendingCount === 0 && (
+                <span className="ml-auto text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-700 px-2 py-0.5 rounded-full">✓ reviewed</span>
+              )}
+              {pendingCount > 0 && (
+                <span className="ml-auto text-[10px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-700 px-2 py-0.5 rounded-full">{pendingCount} pending</span>
+              )}
+            </div>
 
-            <StepCard num={2} title="Oracle Prompt" status={hasCells ? "done" : "active"}>
-              <Step2_OraclePrompt fixtureId={activeId} />
-            </StepCard>
+            {/* Tabs */}
+            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">
+              <TabBar active={activeTab} onChange={setActiveTab} />
+            </div>
 
-            <StepCard num={3} title="Generate Expectation" status={hasCells ? "done" : "pending"}>
-              <Step3_Expectation
-                fixture={fixture}
-                onRun={handleRun}
-                isRunning={runMutation.isPending}
-                preview={preview}
-              />
-            </StepCard>
-
-            <StepCard num={4} title="Human Review" status={allReviewed ? "done" : hasCells ? "active" : "pending"}>
-              <Step4_Review
-                fixture={fixture}
-                pendingActions={pendingActions}
-                onAction={handleAction}
-                onSave={handleSave}
-                isSaving={updateMutation.isPending}
-                reviewerName={reviewerName}
-                onReviewerChange={setReviewerName}
-              />
-            </StepCard>
-          </div>
+            {/* Tab content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingFixture ? (
+                <div className="flex items-center justify-center h-32 text-sm text-gray-400">Loading…</div>
+              ) : !fixture ? (
+                <div className="flex items-center justify-center h-32 text-sm text-gray-400">Fixture not found</div>
+              ) : (
+                <div className="max-w-3xl mx-auto">
+                  {activeTab === "input" && (
+                    <Tab1_Input fixture={fixture} suiteId={expandedSuiteId} />
+                  )}
+                  {activeTab === "oracle-prompt" && (
+                    <Tab2_OraclePrompt fixtureId={selectedFixtureId} />
+                  )}
+                  {activeTab === "expectation" && (
+                    <Tab3_Expectation
+                      fixture={fixture}
+                      onRun={handleRun}
+                      isRunning={runMutation.isPending}
+                      preview={preview}
+                    />
+                  )}
+                  {activeTab === "review" && (
+                    <Tab4_Review
+                      fixture={fixture}
+                      pendingActions={pendingActions}
+                      onAction={handleAction}
+                      onSave={handleSave}
+                      isSaving={updateMutation.isPending}
+                      reviewerName={reviewerName}
+                      onReviewerChange={setReviewerName}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </main>
 
-      {modal && (
+      {suiteModal && (
+        <SuiteModal
+          mode={suiteModal.mode}
+          suite={suiteModal.mode === "edit" ? suiteModal.suite : undefined}
+          onClose={() => setSuiteModal(null)}
+        />
+      )}
+
+      {fixtureModal && (
         <FixtureModal
-          mode={modal}
-          fixture={modal === "edit" ? (fixture ?? null) : null}
-          onClose={() => setModal(null)}
+          suiteId={fixtureModal.suiteId}
+          fixture={fixtureModal.fixture}
+          onClose={() => setFixtureModal(null)}
           onGenerate={handleGenerate}
           isGenerating={generateMutation.isPending}
         />

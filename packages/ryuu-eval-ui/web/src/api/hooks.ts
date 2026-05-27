@@ -36,6 +36,33 @@ export function useSaveDefaultPrompt(suiteId: string) {
   });
 }
 
+export function useCreateSuite() {
+  const qc = useQueryClient();
+  return useMutation<Suite, Error, { suite_id: string; title?: string; default_system_prompt?: string }>({
+    mutationFn: (body) => apiFetch("/suites", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["suites"] }),
+  });
+}
+
+export function useUpdateSuite(suiteId: string) {
+  const qc = useQueryClient();
+  return useMutation<Suite, Error, { title?: string; default_system_prompt?: string }>({
+    mutationFn: (body) => apiFetch(`/suites/${suiteId}`, { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["suites"] });
+      qc.invalidateQueries({ queryKey: ["suite", suiteId] });
+    },
+  });
+}
+
+export function useDeleteSuite() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: string }, Error, string>({
+    mutationFn: (suiteId) => apiFetch(`/suites/${suiteId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["suites"] }),
+  });
+}
+
 export function useCases(suiteId: string) {
   return useQuery<Case[]>({
     queryKey: ["cases", suiteId],
@@ -294,10 +321,13 @@ export function useRunOracle() {
 
 export function useGenerateOracle() {
   const qc = useQueryClient();
-  return useMutation<OracleFixtureDetail, Error, { case_id: string; input_data: Record<string, unknown> }>({
+  return useMutation<OracleFixtureDetail, Error, { case_id: string; suite_id?: string; input_data: Record<string, unknown> }>({
     mutationFn: (payload) =>
       apiFetch("/oracle-review/generate", { method: "POST", body: JSON.stringify(payload) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["oracle-fixtures"] }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["oracle-fixtures"] });
+      if (vars.suite_id) qc.invalidateQueries({ queryKey: ["oracle-fixtures", vars.suite_id] });
+    },
   });
 }
 

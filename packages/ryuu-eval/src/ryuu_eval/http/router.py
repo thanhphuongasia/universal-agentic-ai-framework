@@ -420,6 +420,47 @@ def build_eval_router(
         _write_suite_config(suite_id, {"default_system_prompt": prompt})
         return {"default_system_prompt": prompt}
 
+    @r.post("/suites", dependencies=auth_dep)
+    def create_suite(body: dict) -> dict:
+        """Create a new suite directory + optional config."""
+        suite_id = str(body.get("suite_id", "")).strip().replace(" ", "_")
+        if not suite_id:
+            raise HTTPException(400, "suite_id required")
+        if not all(c.isalnum() or c in "_-" for c in suite_id):
+            raise HTTPException(400, "suite_id may only contain letters, numbers, _ and -")
+        suite_dir = _suite_dir(suite_id)
+        suite_dir.mkdir(parents=True, exist_ok=True)
+        cfg: dict[str, Any] = {}
+        for key in ("title", "description", "default_system_prompt"):
+            if body.get(key) is not None:
+                cfg[key] = body[key]
+        if cfg:
+            _write_suite_config(suite_id, cfg)
+        return {"suite_id": suite_id, **_read_suite_config(suite_id)}
+
+    @r.put("/suites/{suite_id}", dependencies=auth_dep)
+    def update_suite_metadata(suite_id: str, body: dict) -> dict:
+        """Update suite title / description / default_system_prompt."""
+        update: dict[str, Any] = {}
+        for key in ("title", "description", "default_system_prompt"):
+            if key in body:
+                update[key] = body[key]
+        if update:
+            _write_suite_config(suite_id, update)
+        return {"suite_id": suite_id, **_read_suite_config(suite_id)}
+
+    @r.delete("/suites/{suite_id}", dependencies=auth_dep)
+    def delete_suite(suite_id: str) -> dict:
+        """Delete suite directory and its config file."""
+        import shutil
+        suite_dir = _suite_dir(suite_id)
+        if suite_dir.exists():
+            shutil.rmtree(suite_dir)
+        cfg_path = _suite_config_dir / f"{suite_id}.json"
+        if cfg_path.exists():
+            cfg_path.unlink()
+        return {"deleted": suite_id}
+
     # ── Templates ──────────────────────────────────────────────────────
 
     @r.get("/templates", dependencies=auth_dep)
@@ -1430,7 +1471,7 @@ def build_eval_router(
 
     _oracle_dir = oracle_fixtures_dir or Path("artifacts/eval/oracle_fixtures/crud_matrix")
 
-    def _list_oracle_fixtures() -> list[dict]:
+    def _list_oracle_fixtures(suite_id: str | None = None) -> list[dict]:
         if not _oracle_dir.exists():
             return []
         result = []
@@ -1441,6 +1482,10 @@ def build_eval_router(
                 data = json.loads(p.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            fixture_suite = data.get("suite_id", "")
+            if suite_id:
+                if fixture_suite != suite_id:
+                    continue
             review_path = _oracle_dir / f"{p.stem}.review.json"
             pending = 0
             if review_path.exists():
@@ -1454,6 +1499,7 @@ def build_eval_router(
                     pass
             result.append({
                 "fixture_id": data.get("fixture_id", p.stem),
+                "suite_id": fixture_suite,
                 "prompt_version": data.get("prompt_version", ""),
                 "oracle_model": data.get("oracle_model", ""),
                 "reviewed_by": data.get("reviewed_by", ""),
@@ -1489,9 +1535,9 @@ def build_eval_router(
         return data
 
     @r.get("/oracle-review/", dependencies=auth_dep)
-    def list_oracle_fixtures() -> list[dict]:
-        """List all oracle fixtures with pending review counts."""
-        return _list_oracle_fixtures()
+    def list_oracle_fixtures(suite_id: str | None = None) -> list[dict]:
+        """List oracle fixtures. Pass ?suite_id=xxx to filter by suite."""
+        return _list_oracle_fixtures(suite_id)
 
     @r.get("/oracle-review/schema", dependencies=auth_dep)
     def get_oracle_schema() -> dict:
@@ -1511,6 +1557,7 @@ def build_eval_router(
         if not all(c.isalnum() or c in "_-" for c in case_id):
             raise HTTPException(400, "case_id may only contain letters, numbers, _ and -")
         input_data = payload.get("input_data")
+        suite_id_val = str(payload.get("suite_id", "")).strip()
         if not isinstance(input_data, dict):
             raise HTTPException(400, "input_data must be a JSON object")
 
@@ -1521,6 +1568,7 @@ def build_eval_router(
 
         fixture: dict = {
             "fixture_id": case_id,
+            "suite_id": suite_id_val,
             "prompt_version": getattr(strategy, "prompt_version", "unknown"),
             "oracle_model": getattr(strategy, "_model", ""),
             "reviewed_by": "",
