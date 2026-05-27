@@ -98,6 +98,7 @@ If it does not exist but feels generic (reusable beyond this feature) → **stop
 |---|---|---|
 | `ryuu-eval-core` | `ryuu_eval_core` | `EvalCase`, `EvalCaseTemplate`, `EvalRunner`, `CaseResult`, `ScoreResult`, `SuiteResult`, `ProgressEvent`, `ProgressEventType`, `Scorer` protocol, `EvalTarget` protocol |
 | `ryuu-eval-scorers` | `ryuu_eval_scorers` | `ExactMatch`, `Contains`, `Regex`, `Constraint`, `Threshold`, `Composite`, `LLMJudge`, `SemanticSimilarity` |
+| `ryuu-eval-oracle` | `ryuu_eval_oracle` | `IOracleStrategy`, `IInputSource`, `IProductionTarget`, `ReviewSchema`, `OracleFixture`, `OracleWorkflow`, `FileInputSource` |
 | `ryuu-eval` | `ryuu_eval` | `build_eval_router`, HTTP/SSE layer, UI serving |
 
 ---

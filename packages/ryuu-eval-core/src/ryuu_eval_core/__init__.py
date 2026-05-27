@@ -7,6 +7,9 @@ Public API:
     FixtureLoader                                   — YAML loader
     TerminalRenderer, GitHubActionsRenderer         — output formatters
 
+Oracle ground truth (OracleFixture, OracleWorkflow, IOracleStrategy, …)
+has moved to the `ryuu-eval-oracle` package.
+
 For built-in scorer implementations (ExactMatch, Constraint, Threshold, …)
 install the sibling `ryuu-eval-scorers` package.
 """
@@ -16,6 +19,7 @@ from ryuu_eval_core.models import (
     CaseResult,
     EvalCase,
     EvalCaseTemplate,
+    ExternalProject,
     ProgressEvent,
     ProgressEventType,
     ScoreResult,
@@ -32,6 +36,7 @@ __all__ = [
     "EvalCaseTemplate",
     "EvalRunner",
     "EvalTarget",
+    "ExternalProject",
     "FixtureLoader",
     "ProgressEvent",
     "ProgressEventType",
