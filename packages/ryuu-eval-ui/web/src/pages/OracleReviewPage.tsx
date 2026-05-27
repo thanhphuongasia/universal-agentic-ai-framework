@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
@@ -12,6 +12,75 @@ import type {
   OracleFixtureDetail, OracleReviewItem,
   ReviewActionPayload, OracleRunPreview,
 } from "@/api/types";
+
+// ─── Pipeline Header ──────────────────────────────────────────────────────────
+
+type PipeStatus = "done" | "active" | "pending" | "na";
+
+const PIPE_STEPS = [
+  { label: "Input",         desc: "Route Context JSON" },
+  { label: "Oracle Gen",    desc: "Generate expectation" },
+  { label: "Actual Output", desc: "Model output (opt.)" },
+  { label: "Evaluation",    desc: "Score & evidence" },
+  { label: "Human Review",  desc: "Approve / Adjust" },
+  { label: "Finalized",     desc: "Locked for regression" },
+];
+
+function pipeStatuses(fixture: OracleFixtureDetail | null): PipeStatus[] {
+  if (!fixture) return ["pending", "pending", "na", "na", "pending", "pending"];
+  const hasCells = Object.keys(fixture.expected).length > 0;
+  const pendingCount = fixture.review_items.filter(r => r.action == null).length;
+  const allReviewed = hasCells && pendingCount === 0;
+  const finalized = allReviewed && !!fixture.reviewed_by;
+  return [
+    "done",
+    hasCells ? "done" : "active",
+    "na",
+    "na",
+    allReviewed ? "done" : (hasCells ? "active" : "pending"),
+    finalized ? "done" : "pending",
+  ];
+}
+
+function PipelineHeader({ fixture }: { fixture: OracleFixtureDetail | null }) {
+  const statuses = pipeStatuses(fixture);
+  const statusLabel: Record<PipeStatus, string> = {
+    done: "Completed", active: "In Progress", pending: "Pending", na: "N/A",
+  };
+  return (
+    <div className="flex items-start gap-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0 overflow-x-auto">
+      {PIPE_STEPS.map((step, i) => {
+        const s = statuses[i];
+        const ringCls =
+          s === "done"   ? "bg-green-500 border-green-500 text-white" :
+          s === "active" ? "bg-yellow-400 border-yellow-400 text-black" :
+          s === "na"     ? "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500" :
+                           "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500";
+        const labelCls =
+          s === "done"   ? "text-green-600 dark:text-green-400" :
+          s === "active" ? "text-yellow-600 dark:text-yellow-400" :
+                           "text-gray-400 dark:text-gray-500";
+        return (
+          <div key={i} className="flex items-start shrink-0">
+            <div className="flex flex-col items-center min-w-[100px]">
+              <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold ${ringCls}`}>
+                {s === "done" ? "✓" : i + 1}
+              </div>
+              <div className="mt-1.5 text-center px-1">
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 leading-tight">{step.label}</div>
+                <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-tight">{step.desc}</div>
+                <div className={`text-[10px] mt-1 font-medium ${labelCls}`}>{statusLabel[s]}</div>
+              </div>
+            </div>
+            {i < PIPE_STEPS.length - 1 && (
+              <div className={`h-px w-8 mt-4 shrink-0 ${s === "done" ? "bg-green-500" : "bg-gray-200 dark:bg-gray-700"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ─── CollapseSection ──────────────────────────────────────────────────────────
 
@@ -124,29 +193,166 @@ function ConfBadge({ confidence }: { confidence: string }) {
 
 type TabId = "input" | "oracle-prompt" | "expectation" | "review";
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "input",         label: "1. Input" },
-  { id: "oracle-prompt", label: "2. Oracle Prompt" },
-  { id: "expectation",   label: "3. Expectation" },
-  { id: "review",        label: "4. Review" },
+const TABS: { id: TabId; label: string; group: "Preparation" | "Execution" | "Review" }[] = [
+  { id: "input",         label: "1. Input",         group: "Preparation" },
+  { id: "oracle-prompt", label: "2. Oracle Prompt", group: "Preparation" },
+  { id: "expectation",   label: "3. Execution",     group: "Execution" },
+  { id: "review",        label: "4. Review & Approve", group: "Review" },
 ];
 
 function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) {
+  const nodes: ReactNode[] = [];
+  TABS.forEach((tab, i) => {
+    const prevGroup = i > 0 ? TABS[i - 1].group : null;
+    if (prevGroup !== null && prevGroup !== tab.group) {
+      nodes.push(
+        <div
+          key={`sep-${tab.id}`}
+          className="self-center h-6 mx-1 border-l border-gray-300 dark:border-gray-600"
+        />,
+      );
+    }
+    nodes.push(
+      <button
+        key={tab.id}
+        type="button"
+        onClick={() => onChange(tab.id)}
+        className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px cursor-pointer select-none ${
+          active === tab.id
+            ? "border-indigo-500 text-indigo-600 dark:text-indigo-400"
+            : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+        }`}
+      >
+        <span className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mr-1.5">
+          {tab.group}
+        </span>
+        {tab.label}
+      </button>,
+    );
+  });
   return (
-    <div className="flex border-b border-gray-200 dark:border-gray-700 shrink-0">
-      {TABS.map(tab => (
+    <div className="flex items-end border-b border-gray-200 dark:border-gray-700 shrink-0">
+      {nodes}
+    </div>
+  );
+}
+
+// ─── Input JSON editor (Tab 1) — edit then regenerate oracle ─────────────────
+
+function InputJsonEditor({ fixtureId, suiteId, initialJson }: {
+  fixtureId: string; suiteId: string; initialJson: string;
+}) {
+  const [value, setValue] = useState(initialJson);
+  const [error, setError] = useState<string | null>(null);
+  const generate = useGenerateOracle();
+
+  // Reset when fixture changes
+  useEffect(() => { setValue(initialJson); setError(null); }, [initialJson]);
+
+  const isDirty = value.trim() !== initialJson.trim();
+
+  async function handleSave() {
+    setError(null);
+    let parsed: Record<string, unknown>;
+    try {
+      const obj = JSON.parse(value);
+      if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+        throw new Error("Must be a JSON object");
+      }
+      parsed = obj as Record<string, unknown>;
+    } catch (e) {
+      setError((e as Error).message);
+      return;
+    }
+    if (!window.confirm(
+      "Saving will re-run the oracle and overwrite the existing expectation. Continue?",
+    )) return;
+    try {
+      await generate.mutateAsync({ case_id: fixtureId, suite_id: suiteId, input_data: parsed });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      <div className="flex items-center justify-between text-[11px]">
+        <p className="text-gray-500 dark:text-gray-400">
+          Edit the route context JSON. Save will re-run the oracle and overwrite the expectation.
+        </p>
+        {error && <span className="text-red-500">⚠ {error}</span>}
+      </div>
+      <textarea
+        className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-y min-h-[260px]"
+        value={value}
+        onChange={e => { setValue(e.target.value); setError(null); }}
+        spellCheck={false}
+      />
+      <div className="flex items-center gap-2">
         <button
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-            active === tab.id
-              ? "border-indigo-500 text-indigo-600 dark:text-indigo-400"
-              : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          }`}
+          onClick={handleSave}
+          disabled={!isDirty || generate.isPending}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
         >
-          {tab.label}
+          {generate.isPending ? <><span className="animate-spin">⟳</span> Regenerating…</> : "Save & regenerate"}
         </button>
-      ))}
+        {isDirty && (
+          <button
+            onClick={() => { setValue(initialJson); setError(null); }}
+            disabled={generate.isPending}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Reset
+          </button>
+        )}
+        {!isDirty && <span className="text-[11px] text-gray-400">No changes</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Actual Output editor (Tab 1) — local-only, persisted to sessionStorage ──
+
+function ActualOutputEditor({ fixtureId }: { fixtureId: string }) {
+  const storageKey = `oracle-actual::${fixtureId}`;
+  const [value, setValue] = useState<string>(() => {
+    try { return sessionStorage.getItem(storageKey) ?? ""; } catch { return ""; }
+  });
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    try { sessionStorage.setItem(storageKey, value); } catch { /* ignore */ }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        Paste the actual model output here — used in step 4 to compare against expectation.
+        Stored locally in your browser only.
+      </p>
+      <textarea
+        className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-none"
+        rows={8}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        placeholder={`{\n  "User": {\n    "id": { "op": "R", "confidence": 0.9, "reason": "..." }\n  }\n}`}
+        spellCheck={false}
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={save}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
+        >Save locally</button>
+        {saved && <span className="text-[11px] text-green-600 dark:text-green-400">✓ saved</span>}
+        {value && (
+          <button
+            onClick={() => { setValue(""); try { sessionStorage.removeItem(storageKey); } catch {} }}
+            className="ml-auto text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+          >Clear</button>
+        )}
+      </div>
     </div>
   );
 }
@@ -232,11 +438,14 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
         )}
       </CollapseSection>
 
-      {/* Route Context */}
+      {/* Route Context — editable */}
       <CollapseSection title="Route Context JSON" badge={routeBadge}>
-        <div className="p-3">
-          <CodePane title="input_data" content={inputJson} maxHeight="300px" />
-        </div>
+        <InputJsonEditor fixtureId={fixture.fixture_id} suiteId={suiteId} initialJson={inputJson} />
+      </CollapseSection>
+
+      {/* Actual Output (optional) — for offline comparison */}
+      <CollapseSection title="Actual Output (optional)" badge="paste model output">
+        <ActualOutputEditor fixtureId={fixture.fixture_id} />
       </CollapseSection>
 
       {/* Entities */}
@@ -260,6 +469,51 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
           </div>
         </CollapseSection>
       )}
+    </div>
+  );
+}
+
+// ─── Manual prompt override (Tab 2) — local persist ──────────────────────────
+
+function ManualPromptOverride({ fixtureId }: { fixtureId: string }) {
+  const storageKey = `oracle-prompt-override::${fixtureId}`;
+  const [value, setValue] = useState<string>(() => {
+    try { return sessionStorage.getItem(storageKey) ?? ""; } catch { return ""; }
+  });
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    try { sessionStorage.setItem(storageKey, value); } catch { /* ignore */ }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        Paste a custom prompt here to override the auto-generated one when running the oracle in step 3.
+      </p>
+      <textarea
+        className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-none"
+        rows={6}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        placeholder="Type or paste a custom eval prompt…"
+        spellCheck={false}
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={save}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
+        >Save locally</button>
+        {saved && <span className="text-[11px] text-green-600 dark:text-green-400">✓ saved</span>}
+        {value && (
+          <button
+            onClick={() => { setValue(""); try { sessionStorage.removeItem(storageKey); } catch {} }}
+            className="ml-auto text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+          >Clear</button>
+        )}
+      </div>
     </div>
   );
 }
@@ -294,14 +548,8 @@ function Tab2_OraclePrompt({ fixtureId }: { fixtureId: string }) {
         {!promptEnabled ? <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
           : !prompt ? <Status /> : <Content text={prompt.user} />}
       </CollapseSection>
-      <CollapseSection title="Manual Override (optional)">
-        <div className="p-3">
-          <textarea
-            className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-none"
-            rows={5}
-            placeholder="Paste a custom prompt here to override the auto-generated one when running the oracle…"
-          />
-        </div>
+      <CollapseSection title="Manual Override (optional)" badge="local only">
+        <ManualPromptOverride fixtureId={fixtureId} />
       </CollapseSection>
     </div>
   );
@@ -318,20 +566,28 @@ function Tab3_Expectation({ fixture, onRun, isRunning, preview }: {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {hasCells
-            ? <>{entities.length} entities · {entities.reduce((n, e) => n + Object.keys(source[e]).length, 0)} cells</>
-            : "No expectation yet — run the oracle to generate."}
-          {preview && <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-medium">(preview · not saved)</span>}
-        </p>
-        <button
-          onClick={onRun} disabled={isRunning}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-        >
-          {isRunning ? <><span className="animate-spin inline-block">⟳</span> Running…</> : <>▶ Run Oracle</>}
-        </button>
+      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Run oracle agent</div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              Executes the eval prompt (from step 2) against the input (from step 1).
+              {preview && <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-medium">Preview shown — not yet saved.</span>}
+            </p>
+          </div>
+          <button
+            onClick={onRun} disabled={isRunning}
+            className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+          >
+            {isRunning ? <><span className="animate-spin inline-block">⟳</span> Running…</> : <>▶ Run Oracle</>}
+          </button>
+        </div>
       </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        {hasCells
+          ? <>Last result: <span className="font-semibold">{entities.length}</span> entities · <span className="font-semibold">{entities.reduce((n, e) => n + Object.keys(source[e]).length, 0)}</span> cells</>
+          : "No expectation yet — run the oracle to generate."}
+      </p>
 
       {hasCells && (
         <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
@@ -429,37 +685,81 @@ function Tab4_Review({ fixture, pendingActions, onAction, onSave, isSaving, revi
 }) {
   const pendingMap = new Map(pendingActions.map(a => [`${a.entity}::${a.field}`, a]));
   const pendingCount = fixture.review_items.filter(r => r.action == null).length;
+  const totalCount = fixture.review_items.length;
 
-  if (fixture.review_items.length === 0) {
+  // Pull Actual Output from sessionStorage (saved in step 1)
+  const actualRaw = (() => {
+    try { return sessionStorage.getItem(`oracle-actual::${fixture.fixture_id}`) ?? ""; } catch { return ""; }
+  })();
+  const actualParsed = (() => {
+    if (!actualRaw.trim()) return null;
+    try { return JSON.parse(actualRaw); } catch { return actualRaw; }
+  })();
+
+  function approveAll() {
+    for (const item of fixture.review_items) {
+      if (item.action == null && !pendingMap.has(`${item.entity}::${item.field}`)) {
+        onAction({ entity: item.entity, field: item.field, action: "approve" });
+      }
+    }
+  }
+
+  if (totalCount === 0) {
     return (
       <p className="text-sm text-center py-8 text-gray-400 dark:text-gray-500">
-        No review items — all cells are high-confidence or expectation not yet generated.
+        No review items — run the oracle in step 3 to generate the expectation first.
       </p>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <input
-          className="flex-1 text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400"
-          placeholder="Reviewer name…"
-          value={reviewerName}
-          onChange={e => onReviewerChange(e.target.value)}
-        />
-        <span className="text-xs shrink-0">
-          {pendingCount > 0
-            ? <span className="text-yellow-600 dark:text-yellow-400">{pendingCount} pending</span>
-            : <span className="text-green-600 dark:text-green-400">✓ all reviewed</span>}
-        </span>
-        <button
-          onClick={onSave}
-          disabled={isSaving || pendingActions.length === 0}
-          className="text-sm px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40 transition-colors shrink-0"
-        >
-          {isSaving ? "Saving…" : `Save (${pendingActions.length})`}
-        </button>
+    <div className="space-y-4">
+      {/* Compare actual vs expected */}
+      {actualParsed != null && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-3 py-2 text-[10px] uppercase font-semibold tracking-wider text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            Actual Output (from step 1)
+          </div>
+          <pre className="text-xs font-mono p-3 max-h-48 overflow-auto whitespace-pre-wrap break-all bg-white dark:bg-gray-950">
+            {typeof actualParsed === "string" ? actualParsed : JSON.stringify(actualParsed, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {/* Reviewer + actions row */}
+      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            className="flex-1 min-w-[180px] text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400"
+            placeholder="Reviewer name…"
+            value={reviewerName}
+            onChange={e => onReviewerChange(e.target.value)}
+          />
+          <span className="text-xs shrink-0 font-semibold">
+            {pendingCount > 0
+              ? <span className="text-yellow-600 dark:text-yellow-400">{pendingCount}/{totalCount} pending</span>
+              : <span className="text-green-600 dark:text-green-400">✓ all reviewed</span>}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={approveAll}
+            disabled={pendingCount === 0}
+            className="text-xs px-3 py-1.5 rounded-lg border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/40 font-semibold disabled:opacity-40 transition-colors"
+          >
+            ✓ Approve all remaining ({pendingCount})
+          </button>
+          <button
+            onClick={onSave}
+            disabled={isSaving || pendingActions.length === 0}
+            className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40 transition-colors"
+          >
+            {isSaving ? "Saving…" : `Save & lock to suite (${pendingActions.length})`}
+          </button>
+        </div>
       </div>
+
+      {/* Per-cell review list */}
       <div className="space-y-2">
         {fixture.review_items.map(item => (
           <ReviewCell
@@ -470,6 +770,117 @@ function Tab4_Review({ fixture, pendingActions, onAction, onSave, isSaving, revi
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── SuiteDetailPane — shown when suite is expanded but no fixture selected ───
+
+function SuiteDetailPane({ suiteId, onAddCase, onEditSuite, suites }: {
+  suiteId: string;
+  onAddCase: (suiteId: string) => void;
+  onEditSuite: (suite: Suite) => void;
+  suites: Suite[];
+}) {
+  const { data: fixtures = [], isLoading: fixturesLoading } = useOracleFixtures(suiteId);
+  const suite = suites.find(s => s.suite_id === suiteId);
+
+  const totalCases = fixtures.length;
+  const pendingCount = fixtures.reduce((n, f) => n + f.pending_review, 0);
+  const reviewedCount = totalCases - fixtures.filter(f => f.pending_review > 0).length;
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto p-6">
+      {/* Suite header */}
+      <div className="flex items-start justify-between gap-3 mb-6">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">
+            {suite?.title ?? suiteId}
+          </h2>
+          <p className="text-xs font-mono text-gray-400 mt-0.5">{suiteId}</p>
+          {suite?.description && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{suite.description}</p>
+          )}
+        </div>
+        {suite && (
+          <button
+            onClick={() => onEditSuite(suite)}
+            className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            ✏ Edit
+          </button>
+        )}
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 text-center">
+          <div className="text-lg font-bold text-gray-800 dark:text-gray-100 tabular-nums">
+            {fixturesLoading ? "…" : totalCases}
+          </div>
+          <div className="text-[10px] text-gray-400 uppercase tracking-wider mt-0.5">Cases</div>
+        </div>
+        <div className="rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30 p-3 text-center">
+          <div className="text-lg font-bold text-yellow-700 dark:text-yellow-400 tabular-nums">
+            {fixturesLoading ? "…" : pendingCount}
+          </div>
+          <div className="text-[10px] text-yellow-600 dark:text-yellow-500 uppercase tracking-wider mt-0.5">Pending</div>
+        </div>
+        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-3 text-center">
+          <div className="text-lg font-bold text-green-700 dark:text-green-400 tabular-nums">
+            {fixturesLoading ? "…" : reviewedCount}
+          </div>
+          <div className="text-[10px] text-green-600 dark:text-green-500 uppercase tracking-wider mt-0.5">Reviewed</div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => onAddCase(suiteId)}
+          className="flex-1 text-sm py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
+        >
+          + New Case
+        </button>
+      </div>
+
+      {/* Case list preview */}
+      {totalCases > 0 && (
+        <div>
+          <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Cases ({totalCases})
+          </div>
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
+            {fixtures.map(f => (
+              <div key={f.fixture_id} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-900">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${f.pending_review > 0 ? "bg-yellow-400" : "bg-green-500"}`} />
+                <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate flex-1">
+                  {f.fixture_id}
+                </span>
+                {f.pending_review > 0 ? (
+                  <span className="text-[10px] text-yellow-600 dark:text-yellow-400">{f.pending_review} pending</span>
+                ) : (
+                  <span className="text-[10px] text-green-600 dark:text-green-400">✓</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2 text-center">
+            Select a case from the sidebar to review
+          </p>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!fixturesLoading && totalCases === 0 && (
+        <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center py-8">
+          <div className="text-3xl mb-1">🔬</div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No oracle cases yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 max-w-xs">
+            Create a case manually or use the oracle to generate expected outputs from your LLM.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -897,13 +1308,12 @@ export function OracleReviewPage() {
             >+ Create First Suite</button>
           </div>
         ) : !selectedFixtureId ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-            <p className="text-sm text-gray-400 dark:text-gray-500">Select a case or create one</p>
-            <button
-              className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
-              onClick={() => setFixtureModal({ suiteId: expandedSuiteId })}
-            >+ New Case</button>
-          </div>
+          <SuiteDetailPane
+            suiteId={expandedSuiteId}
+            onAddCase={suiteId => setFixtureModal({ suiteId })}
+            onEditSuite={suite => setSuiteModal({ mode: "edit", suite })}
+            suites={suites}
+          />
         ) : (
           <>
             {/* Header breadcrumb */}
@@ -923,6 +1333,9 @@ export function OracleReviewPage() {
                 <span className="ml-auto text-[10px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-700 px-2 py-0.5 rounded-full">{pendingCount} pending</span>
               )}
             </div>
+
+            {/* Pipeline header — 6-step Oracle Evaluation Flow */}
+            <PipelineHeader fixture={fixture ?? null} />
 
             {/* Tabs */}
             <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">

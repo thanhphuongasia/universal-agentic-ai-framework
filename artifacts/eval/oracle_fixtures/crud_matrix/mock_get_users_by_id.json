@@ -1,0 +1,83 @@
+{
+  "fixture_id": "mock_get_users_by_id",
+  "suite_id": "crud_matrix_llm",
+  "prompt_version": "crud_matrix_oracle.v1",
+  "oracle_model": "gpt-4o-mini",
+  "reviewed_by": "",
+  "reviewed_at": "2026-05-27",
+  "review_note": "",
+  "input_data": {
+    "route": {
+      "endpoint": "/users/{id}",
+      "http_method": "GET",
+      "use_case": "GET user by ID"
+    },
+    "entities": [
+      {
+        "short_name": "User",
+        "fields": [
+          {
+            "name": "id",
+            "db_column": "id",
+            "type": "Long",
+            "annotations": ["@Id", "@GeneratedValue"]
+          },
+          {
+            "name": "email",
+            "db_column": "email",
+            "type": "String",
+            "annotations": []
+          },
+          {
+            "name": "name",
+            "db_column": "name",
+            "type": "String",
+            "annotations": []
+          },
+          {
+            "name": "createdAt",
+            "db_column": "created_at",
+            "type": "Instant",
+            "annotations": ["@CreatedDate"]
+          }
+        ]
+      }
+    ],
+    "call_subgraph": {
+      "test::UserController::getUserById::()": [
+        { "to_class": "UserService", "to_method": "findById" },
+        { "to_class": "UserRepository", "to_method": "findById" }
+      ]
+    }
+  },
+  "expected": {
+    "User": {
+      "id": {
+        "op": "R",
+        "confidence": "high",
+        "oracle_why": "GET method + findById primary key lookup → read id."
+      },
+      "email": {
+        "op": "R",
+        "confidence": "high",
+        "oracle_why": "GET method returns full User entity → all columns read."
+      },
+      "name": {
+        "op": "R",
+        "confidence": "high",
+        "oracle_why": "GET method returns full User entity → all columns read."
+      },
+      "created_at": {
+        "op": "R",
+        "confidence": "medium",
+        "oracle_why": "@CreatedDate audit column, returned in GET response."
+      }
+    }
+  },
+  "meta": {
+    "valid_fields": {
+      "User": ["id", "email", "name", "created_at"]
+    },
+    "framework": "java_spring_boot"
+  }
+}
