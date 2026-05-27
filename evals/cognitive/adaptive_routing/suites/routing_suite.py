@@ -2,8 +2,8 @@
 
     python -m evals.cognitive.adaptive_routing.suites.routing_suite
 
-Kiểm tra _heuristic_difficulty() + tier_models có classify đúng không.
-Zero cost — không gọi LLM.
+Kiểm tra difficulty_fn + tier_models có classify đúng không.
+Truyền difficulty_fn vào RoutingTarget.build() — không có default.
 """
 
 from __future__ import annotations
@@ -19,6 +19,19 @@ from ..targets.routing_target import ModelTierScorer, RoutingTarget
 HERE = Path(__file__).parent
 FIXTURES_DIR = HERE.parent / "fixtures"
 
+_HARD_KW = ("analyze", "compare", "design", "evaluate", "phân tích", "so sánh", "thiết kế")
+_TRIVIAL_KW = ("what is", "list", "define", "hi", "hello", "là gì", "liệt kê")
+
+
+def _eval_difficulty_fn(query: str) -> str:
+    """Deterministic classifier for eval suite — not for production use."""
+    q = query.lower()
+    if any(kw in q for kw in _HARD_KW) or len(q.split()) > 30:
+        return "hard"
+    if any(kw in q for kw in _TRIVIAL_KW) and len(q.split()) <= 10:
+        return "trivial"
+    return "medium"
+
 
 async def main() -> None:
     cases = []
@@ -26,7 +39,7 @@ async def main() -> None:
         cases.extend(FixtureLoader.load(yml_file))
     print(f"Loaded {len(cases)} fixture(s) from {FIXTURES_DIR}")
 
-    target = RoutingTarget.build()
+    target = RoutingTarget.build(difficulty_fn=_eval_difficulty_fn)
     runner = EvalRunner(suite_id="adaptive_routing", target=target, scorers=[ModelTierScorer()])
     result = await runner.run(cases)
 

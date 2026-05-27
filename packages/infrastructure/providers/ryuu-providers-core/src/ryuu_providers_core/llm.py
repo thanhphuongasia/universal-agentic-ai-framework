@@ -29,6 +29,8 @@ class Response:
     model: str
     usage: TokenUsage
     finish_reason: str = "stop"
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    thinking: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -54,6 +56,12 @@ class CompletionRequest:
     response_schema: dict[str, Any] | None = None
     tools: list[dict[str, Any]] | None = None
     system: str | None = None
+    # Signals "think hard" — each provider handles differently:
+    #   Anthropic sonnet/opus → native Extended Thinking (content visible)
+    #   Anthropic haiku / unsupported → fallback to CoT prompt injection
+    #   OpenAI o-series       → implicit (reasoning_tokens in metadata, content hidden)
+    #   OpenAI gpt-4o etc.   → fallback to CoT prompt injection
+    thinking_budget: int | None = None
 
 
 @runtime_checkable

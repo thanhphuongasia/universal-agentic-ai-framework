@@ -43,13 +43,13 @@ def test_adaptive_off_returns_settings_model_for_hard() -> None:
 # ---------------------------------------------------------------------------
 
 def test_trivial_query_routes_to_mini() -> None:
-    h = _handler()
+    h = _handler(difficulty_fn=lambda _: "trivial")
     s = _settings(adaptive_routing=True)
     assert h._select_model("hi", s) == "gpt-4o-mini"
 
 
 def test_hard_query_routes_to_full_model() -> None:
-    h = _handler()
+    h = _handler(difficulty_fn=lambda _: "hard")
     s = _settings(adaptive_routing=True)
     hard = "analyze the architecture and compare performance trade-offs between the two systems"
     assert h._select_model(hard, s) == "gpt-4o"

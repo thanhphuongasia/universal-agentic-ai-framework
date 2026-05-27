@@ -6,6 +6,7 @@ Install with: ``pip install "ryuu-providers[openai]"``
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -27,16 +28,34 @@ try:
 except ImportError:  # pragma: no cover
     AsyncOpenAI = None  # type: ignore[assignment,misc]
 
+log = logging.getLogger(__name__)
 
 # Phase 11.y — OpenAI models supporting strict JSON Schema mode.
 # gpt-4o, gpt-4o-mini, o1, o3 series. Older models (gpt-3.5, gpt-4 base)
 # fall back to basic `response_format={"type": "json_object"}`.
 _STRICT_SCHEMA_PREFIXES = ("gpt-4o", "gpt-5", "o1", "o3", "o4")
 
+# CoT prompt injected when thinking_budget set but model has no native reasoning.
+_COT_SUFFIX = (
+    "\n\nProduce your response in two parts:\n"
+    "<thinking>\nReason step by step. Decompose the problem. "
+    "Identify failure modes of a quick answer.\n</thinking>\n"
+    "<answer>\nConcise, direct answer.\n</answer>\n"
+    "Always emit BOTH tags."
+)
+
 
 def _supports_strict_schema(model: str) -> bool:
     """Detect if model supports `response_format={"type": "json_schema", ...}`."""
     return any(model.startswith(prefix) for prefix in _STRICT_SCHEMA_PREFIXES)
+
+
+def _is_unsupported_param_error(exc: Exception) -> bool:
+    """True when API rejected a parameter the model doesn't support (e.g. temperature on o-series)."""
+    msg = str(exc).lower()
+    return "unsupported_parameter" in msg or (
+        "temperature" in msg and ("not supported" in msg or "unsupported" in msg)
+    )
 
 
 class OpenAIProvider:
@@ -87,6 +106,17 @@ class OpenAIProvider:
         if request.system:
             messages.insert(0, {"role": "system", "content": request.system})
 
+        cot_injected = False
+
+        # thinking_budget on OpenAI: o-series thinks implicitly (no opt-in flag).
+        # For non-o-series models, inject CoT prompt as fallback.
+        if request.thinking_budget:
+            log.debug(
+                "openai.complete thinking_budget=%d model=%s → will try; "
+                "o-series thinks implicitly, others get CoT injection",
+                request.thinking_budget, model,
+            )
+
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -113,17 +143,65 @@ class OpenAIProvider:
         try:
             resp = await self._client.chat.completions.create(**kwargs)
         except Exception as exc:
-            raise classify_external_error(exc) from exc
+            if _is_unsupported_param_error(exc):
+                # o-series rejects temperature + uses max_completion_tokens.
+                # Detected at runtime — no hardcoded model list needed.
+                log.debug(
+                    "openai.complete model=%s rejected temperature → retrying "
+                    "without temperature, switching to max_completion_tokens",
+                    model,
+                )
+                kwargs.pop("temperature", None)
+                kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 1024)
+                if request.thinking_budget and request.messages:
+                    # o-series thinks implicitly — inject CoT only for non-o models.
+                    # Since we got an unsupported-param error, this IS an o-series.
+                    pass  # no CoT needed, reasoning is implicit
+                try:
+                    resp = await self._client.chat.completions.create(**kwargs)
+                except Exception as exc2:
+                    raise classify_external_error(exc2) from exc2
+            else:
+                # Non-o-series + thinking_budget → inject CoT into system prompt.
+                if request.thinking_budget:
+                    log.debug(
+                        "openai.complete model=%s has no native thinking → CoT injection",
+                        model,
+                    )
+                    sys_msg = next(
+                        (m for m in messages if m.get("role") == "system"), None
+                    )
+                    if sys_msg:
+                        sys_msg["content"] = (sys_msg["content"] or "") + _COT_SUFFIX
+                    else:
+                        messages.insert(0, {"role": "system", "content": _COT_SUFFIX.strip()})
+                    cot_injected = True
+                    try:
+                        resp = await self._client.chat.completions.create(**kwargs)
+                    except Exception as exc2:
+                        raise classify_external_error(exc2) from exc2
+                else:
+                    raise classify_external_error(exc) from exc
 
         choice = resp.choices[0]
         usage = resp.usage
         input_tok = usage.prompt_tokens if usage else 0
         output_tok = usage.completion_tokens if usage else 0
 
+        # Extract reasoning_tokens from o-series usage (hidden content, visible count).
+        reasoning_tokens = 0
+        if usage and hasattr(usage, "completion_tokens_details") and usage.completion_tokens_details:
+            reasoning_tokens = getattr(usage.completion_tokens_details, "reasoning_tokens", 0) or 0
+
+        log.debug(
+            "openai.complete done model=%s input=%d output=%d reasoning_tokens=%d cot_fallback=%s",
+            model, input_tok, output_tok, reasoning_tokens, cot_injected,
+        )
+
         import json as _json
-        metadata: dict[str, Any] = {}
+        tool_calls: list[dict[str, Any]] = []
         if choice.message.tool_calls:
-            metadata["tool_calls"] = [
+            tool_calls = [
                 {
                     "id": tc.id,
                     "function": {
@@ -134,11 +212,16 @@ class OpenAIProvider:
                 for tc in choice.message.tool_calls
             ]
 
+        metadata: dict[str, Any] = {"thinking_cot_fallback": cot_injected}
+        if reasoning_tokens:
+            metadata["reasoning_tokens"] = reasoning_tokens
+
         return Response(
             content=choice.message.content or "",
             model=model,
             usage=TokenUsage(input_tokens=input_tok, output_tokens=output_tok),
             finish_reason=choice.finish_reason or "stop",
+            tool_calls=tool_calls,
             metadata=metadata,
         )
 

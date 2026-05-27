@@ -23,8 +23,11 @@ def _api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_factory_adaptive_classifies_trivial() -> None:
-    """Short greeting → trivial → gpt-4o-mini + max_iter=2."""
-    agent = Agent(model="gpt-4o-mini", instructions="...", adaptive_compute=True)
+    """difficulty_fn returns trivial → gpt-4o-mini + max_iter=2."""
+    agent = Agent(
+        model="gpt-4o-mini", instructions="...",
+        adaptive_compute=True, difficulty_fn=lambda q: "trivial",
+    )
     agent._agent.llm = FakeLLMProvider(responses=[_fake("hi")])  # type: ignore[attr-defined]
 
     result = await agent.run("hello")
@@ -33,8 +36,11 @@ async def test_factory_adaptive_classifies_trivial() -> None:
 
 
 async def test_factory_adaptive_classifies_hard() -> None:
-    """Long analyze query → hard → gpt-4o."""
-    agent = Agent(model="gpt-4o-mini", instructions="...", adaptive_compute=True)
+    """difficulty_fn returns hard → gpt-4o."""
+    agent = Agent(
+        model="gpt-4o-mini", instructions="...",
+        adaptive_compute=True, difficulty_fn=lambda q: "hard",
+    )
     agent._agent.llm = FakeLLMProvider(responses=[_fake("complex result")])  # type: ignore[attr-defined]
 
     result = await agent.run("Analyze and compare these 3 architectures step by step")
@@ -47,6 +53,7 @@ async def test_factory_adaptive_custom_tier_models() -> None:
     agent = Agent(
         model="gpt-4o-mini", instructions="...",
         adaptive_compute=True,
+        difficulty_fn=lambda q: "hard",
         tier_models={"trivial": "gpt-3.5", "medium": "gpt-4o-mini", "hard": "claude-opus"},
     )
     agent._agent.llm = FakeLLMProvider(responses=[_fake("result")])  # type: ignore[attr-defined]

@@ -139,6 +139,7 @@ class Agent:
     #   medium  → gpt-4o-mini, max_iter=4, max_tokens=800
     #   hard    → gpt-4o,       max_iter=8, max_tokens=2000
     adaptive_compute: bool = False
+    difficulty_fn: Callable[[str], str] | None = None
     tier_models: dict[str, str] | None = None
     tier_max_iterations: dict[str, int] | None = None
     tier_max_tokens: dict[str, int] | None = None
@@ -454,12 +455,13 @@ class Agent:
         tier_max_iter = self.tier_max_iterations or {"trivial": 2, "medium": 4, "hard": 8}
         tier_max_tok = self.tier_max_tokens or {"trivial": 300, "medium": 800, "hard": 2000}
 
-        # Use cheap heuristic classifier (deterministic, no extra LLM call yet —
-        # full LLM-backed classifier deferred; consumer can pass difficulty_fn
-        # via explicit AdaptiveStrategy(strategy=...)).
-        from ryuu_cognitive.strategies.adaptive_strategy import _heuristic_difficulty
-
-        difficulty = _heuristic_difficulty(user_content)
+        if self.difficulty_fn is None:
+            raise ValueError(
+                "adaptive_compute=True requires difficulty_fn. "
+                "Pass difficulty_fn=<callable str->'trivial'|'medium'|'hard'>, "
+                "e.g. backed by ryuu-intent LLM difficulty classifier."
+            )
+        difficulty = self.difficulty_fn(user_content)
 
         # Swap internal agent fields temporarily
         original_model = self._agent._model_name

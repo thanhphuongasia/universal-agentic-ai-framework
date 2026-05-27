@@ -510,9 +510,12 @@ class RyuuHandler:
         """
         if not settings.adaptive_routing:
             return settings.model
-        from ryuu_cognitive.strategies.adaptive_strategy import _heuristic_difficulty  # noqa: PLC0415
-        classify = self.difficulty_fn or _heuristic_difficulty
-        difficulty = classify(text)
+        if self.difficulty_fn is None:
+            raise ValueError(
+                "adaptive_routing=True requires difficulty_fn on RyuuHandler. "
+                "Pass difficulty_fn=<callable str->'trivial'|'medium'|'hard'>."
+            )
+        difficulty = self.difficulty_fn(text)
         candidate = self.tier_models.get(difficulty, settings.model)
         return candidate if candidate in ALLOWED_MODELS else settings.model
 

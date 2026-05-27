@@ -8,6 +8,7 @@ Install with: ``pip install "ryuu-providers[anthropic]"``
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -28,7 +29,26 @@ try:
 except ImportError:  # pragma: no cover
     AsyncAnthropic = None  # type: ignore[assignment,misc]
 
+log = logging.getLogger(__name__)
+
 _STRUCTURED_TOOL_NAME = "structured_output"
+
+# Injected into system prompt when native thinking is unavailable (haiku, etc.)
+_COT_SUFFIX = (
+    "\n\nProduce your response in two parts:\n"
+    "<thinking>\nReason step by step. Decompose the problem. "
+    "Identify failure modes of a quick answer.\n</thinking>\n"
+    "<answer>\nConcise, direct answer.\n</answer>\n"
+    "Always emit BOTH tags."
+)
+
+
+def _is_thinking_unsupported(exc: Exception) -> bool:
+    """True when the API rejected the thinking param (model doesn't support it)."""
+    msg = str(exc).lower()
+    return "thinking" in msg and (
+        "not supported" in msg or "invalid" in msg or "unsupported" in msg
+    )
 
 
 class AnthropicProvider:
@@ -73,18 +93,51 @@ class AnthropicProvider:
         elif request.tools:
             kwargs["tools"] = request.tools
 
+        used_native_thinking = False
+        cot_injected = False
+
+        if request.thinking_budget:
+            # max_tokens must exceed budget_tokens; Anthropic enforces this.
+            kwargs["max_tokens"] = max(kwargs["max_tokens"], request.thinking_budget + 100)
+            # Thinking mode requires temperature=1 (Anthropic requirement).
+            kwargs.pop("temperature", None)
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": request.thinking_budget}
+            log.debug(
+                "anthropic.complete thinking=native model=%s budget_tokens=%d max_tokens=%d",
+                model, request.thinking_budget, kwargs["max_tokens"],
+            )
+
         try:
             resp = await self._client.messages.create(**kwargs)
+            if request.thinking_budget:
+                used_native_thinking = True
         except Exception as exc:
-            raise classify_external_error(exc) from exc
+            if request.thinking_budget and _is_thinking_unsupported(exc):
+                # Model doesn't support native thinking → fall back to CoT prompt.
+                log.warning(
+                    "anthropic.complete thinking=native UNSUPPORTED model=%s "
+                    "budget_tokens=%d → falling back to CoT prompt",
+                    model, request.thinking_budget,
+                )
+                kwargs.pop("thinking", None)
+                kwargs["system"] = (kwargs.get("system") or "") + _COT_SUFFIX
+                try:
+                    resp = await self._client.messages.create(**kwargs)
+                    cot_injected = True
+                except Exception as exc2:
+                    raise classify_external_error(exc2) from exc2
+            else:
+                raise classify_external_error(exc) from exc
 
         content_text = ""
-        metadata: dict[str, Any] = {}
-        tool_calls = []
+        tool_calls: list[dict[str, Any]] = []
+        thinking: list[str] = []
 
         for block in resp.content:
             if block.type == "text":
                 content_text = block.text
+            elif block.type == "thinking":
+                thinking.append(getattr(block, "thinking", ""))
             elif block.type == "tool_use":
                 if block.name == _STRUCTURED_TOOL_NAME:
                     content_text = json.dumps(block.input)
@@ -97,10 +150,20 @@ class AnthropicProvider:
                         },
                     })
 
-        if tool_calls:
-            metadata["tool_calls"] = tool_calls
-
         usage = resp.usage
+        thinking_tokens = getattr(usage, "cache_creation_input_tokens", 0)  # proxy when absent
+
+        log.debug(
+            "anthropic.complete done model=%s input=%d output=%d "
+            "thinking_blocks=%d native=%s cot_fallback=%s",
+            model,
+            usage.input_tokens,
+            usage.output_tokens,
+            len(thinking),
+            used_native_thinking,
+            cot_injected,
+        )
+
         return Response(
             content=content_text,
             model=model,
@@ -109,7 +172,12 @@ class AnthropicProvider:
                 output_tokens=usage.output_tokens,
             ),
             finish_reason=resp.stop_reason or "end_turn",
-            metadata=metadata,
+            tool_calls=tool_calls,
+            thinking=thinking,
+            metadata={
+                "thinking_native": used_native_thinking,
+                "thinking_cot_fallback": cot_injected,
+            },
         )
 
     async def stream(self, request: CompletionRequest) -> AsyncIterator[StreamChunk]:

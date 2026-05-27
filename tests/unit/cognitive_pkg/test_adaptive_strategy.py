@@ -47,9 +47,9 @@ class _NoopVerifier:
 
 
 async def test_adaptive_trivial_uses_cheap_tier() -> None:
-    """Short greeting → trivial tier → gpt-4o-mini, max_iter=2, max_tokens=300."""
+    """trivial difficulty_fn → gpt-4o-mini, max_iter=2, max_tokens=300."""
     pool = _CaptureAgentPool()
-    strategy = AdaptiveStrategy()
+    strategy = AdaptiveStrategy(difficulty_fn=lambda q: "trivial")
     await strategy.execute(_intent("hi"), _ctx(), pool, _NoopVerifier())
 
     assert pool.last_task is not None
@@ -60,9 +60,9 @@ async def test_adaptive_trivial_uses_cheap_tier() -> None:
 
 
 async def test_adaptive_hard_uses_powerful_tier() -> None:
-    """Analyze keyword → hard → gpt-4o + max_iter=8 + max_tokens=2000."""
+    """hard difficulty_fn → gpt-4o + max_iter=8 + max_tokens=2000."""
     pool = _CaptureAgentPool()
-    strategy = AdaptiveStrategy()
+    strategy = AdaptiveStrategy(difficulty_fn=lambda q: "hard")
     await strategy.execute(
         _intent("Analyze the architecture and trace control flow"),
         _ctx(), pool, _NoopVerifier(),

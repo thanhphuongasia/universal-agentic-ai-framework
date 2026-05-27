@@ -98,44 +98,13 @@ class AdaptiveStrategy:
         )
 
     def _classify(self, query: str) -> Difficulty:
-        """Use difficulty_fn if provided, else keyword heuristic."""
-        if self.difficulty_fn is not None:
-            return self.difficulty_fn(query)
-        return _heuristic_difficulty(query)
-
-
-_HARD_KEYWORDS = frozenset({
-    # English
-    "analyze", "compare", "evaluate", "design", "architect", "trace",
-    "explain why", "breakdown", "strategy", "optimize", "diagnose",
-    # Vietnamese
-    "phân tích", "so sánh", "đánh giá", "thiết kế", "kiến trúc",
-    "giải thích tại sao", "tối ưu", "chiến lược", "chẩn đoán",
-    "tradeoff", "trade-off", "trade off",
-})
-
-_TRIVIAL_KEYWORDS = frozenset({
-    # English
-    "what is", "define", "list", "show", "hi", "hello", "thanks",
-    # Vietnamese
-    "là gì", "định nghĩa", "liệt kê", "chào", "cảm ơn", "xin chào",
-})
-
-
-def _heuristic_difficulty(query: str) -> Difficulty:
-    """Cheap fallback when no explicit difficulty_fn provided.
-
-    Reads keywords + word count. Production should pass `difficulty_fn=`
-    backed by a real LLM classifier (e.g. gpt-4o-mini, 5 tokens).
-    """
-    q = query.lower()
-    word_count = len(q.split())
-
-    if any(kw in q for kw in _HARD_KEYWORDS) or word_count > 30:
-        return "hard"
-    if any(kw in q for kw in _TRIVIAL_KEYWORDS) and word_count <= 10:
-        return "trivial"
-    return "medium"
+        if self.difficulty_fn is None:
+            raise ValueError(
+                "AdaptiveStrategy requires difficulty_fn. "
+                "Pass a callable (str) -> 'trivial'|'medium'|'hard', "
+                "e.g. backed by LLMIntentAnalyzer or ryuu-intent difficulty YAML."
+            )
+        return self.difficulty_fn(query)
 
 
 __all__ = ["AdaptiveStrategy", "Difficulty"]

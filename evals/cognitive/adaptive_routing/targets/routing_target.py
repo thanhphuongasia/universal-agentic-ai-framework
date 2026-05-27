@@ -1,7 +1,7 @@
-"""RoutingTarget — EvalTarget cho adaptive routing heuristic.
+"""RoutingTarget — EvalTarget cho adaptive routing.
 
-Test _heuristic_difficulty() + tier_models mapping — không gọi LLM.
-Fast, deterministic, zero cost. Dùng được ở bất kỳ project nào import framework.
+Test difficulty_fn + tier_models mapping. `difficulty_fn` phải được truyền vào
+từ caller — thường là LLMIntentAnalyzer hoặc callable tự định nghĩa.
 
 Usage:
     target = RoutingTarget.build()
@@ -14,10 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ryuu_cognitive.strategies.adaptive_strategy import (
-    _DEFAULT_TIER_MODELS,
-    _heuristic_difficulty,
-)
+from ryuu_cognitive.strategies.adaptive_strategy import _DEFAULT_TIER_MODELS
 from ryuu_eval_core.models import CaseResult, EvalCase, ScoreResult
 
 
@@ -50,13 +47,13 @@ class RoutingTarget:
     @classmethod
     def build(
         cls,
-        difficulty_fn: Callable[[str], str] | None = None,
+        difficulty_fn: Callable[[str], str],
         tier_models: dict[str, str] | None = None,
         allowed_models: tuple[str, ...] = ("gpt-4o-mini", "gpt-4o"),
         fallback_model: str = "gpt-4o-mini",
     ) -> "RoutingTarget":
         return cls(
-            _difficulty_fn=difficulty_fn or _heuristic_difficulty,
+            _difficulty_fn=difficulty_fn,
             _tier_models=tier_models or dict(_DEFAULT_TIER_MODELS),
             _allowed_models=allowed_models,
             _fallback_model=fallback_model,
