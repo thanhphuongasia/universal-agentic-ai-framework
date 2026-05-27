@@ -258,3 +258,13 @@ export interface ReviewActionPayload {
   action: ReviewAction;
   corrected_op?: string;
 }
+
+export interface OraclePrompt {
+  system: string;
+  user: string;
+}
+
+export interface OracleRunPreview {
+  cells: Record<string, Record<string, OracleCellData>>;
+  valid_fields: Record<string, string[]>;
+}

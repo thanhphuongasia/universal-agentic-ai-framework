@@ -84,6 +84,16 @@ class CrudMatrixOracleStrategy:
             "framework": self._framework,
         }
 
+    def render_prompt(self, input_data: dict[str, Any]) -> dict[str, str]:
+        """Return {"system": ..., "user": ...} with route_context injected."""
+        route_context: dict[str, Any] = input_data.get("input", input_data)
+        cfg = self._prompt_cfg
+        user_text = cfg["user_template"].replace(
+            "{{ route_context_json }}",
+            json.dumps(route_context, ensure_ascii=False, indent=2),
+        )
+        return {"system": cfg["system"], "user": user_text}
+
     async def _call_oracle(self, route_context: dict[str, Any]) -> dict[str, Any]:
         from ryuu_providers_anthropic import AnthropicProvider  # lazy import
         from ryuu_providers_core import CompletionRequest, Message

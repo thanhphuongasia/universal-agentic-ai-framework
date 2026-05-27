@@ -94,6 +94,7 @@ def build_eval_router(
     ui_prefix: str = "/ui",
     kv_store: Any | None = None,
     oracle_fixtures_dir: Path | None = None,
+    oracle_strategy_factory: Callable[[], Any] | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -1505,6 +1506,69 @@ def build_eval_router(
         )
         return schema.to_dict()
 
+    @r.post("/oracle-review/generate", dependencies=auth_dep)
+    async def generate_oracle_fixture(payload: dict) -> dict:
+        """Create or regenerate an oracle fixture by running the oracle strategy on input_data."""
+        if oracle_strategy_factory is None:
+            raise HTTPException(501, "No oracle_strategy_factory configured")
+        case_id = payload.get("case_id", "").strip()
+        if not case_id:
+            raise HTTPException(400, "case_id is required")
+        if not all(c.isalnum() or c in "_-" for c in case_id):
+            raise HTTPException(400, "case_id may only contain letters, numbers, _ and -")
+        input_data = payload.get("input_data")
+        if not isinstance(input_data, dict):
+            raise HTTPException(400, "input_data must be a JSON object")
+
+        strategy = oracle_strategy_factory()
+        candidate = await strategy.generate_candidate(input_data)
+        cells = candidate.get("cells", candidate)
+        valid_fields = candidate.get("valid_fields", {})
+
+        fixture: dict = {
+            "fixture_id": case_id,
+            "prompt_version": getattr(strategy, "prompt_version", "unknown"),
+            "oracle_model": getattr(strategy, "_model", ""),
+            "reviewed_by": "",
+            "reviewed_at": "",
+            "review_note": "",
+            "input_data": input_data,
+            "expected": {"cells": cells, "valid_fields": valid_fields},
+            "meta": {"valid_fields": valid_fields},
+        }
+        _oracle_dir.mkdir(parents=True, exist_ok=True)
+        path = _oracle_dir / f"{case_id}.json"
+        path.write_text(json.dumps(fixture, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        needs_review = [
+            {
+                "entity": entity,
+                "field": field_name,
+                "op": cell.get("op", ""),
+                "confidence": cell.get("confidence"),
+                "oracle_why": cell.get("oracle_why", ""),
+                "action": None,
+                "corrected_op": None,
+            }
+            for entity, fields in cells.items()
+            for field_name, cell in fields.items()
+            if cell.get("confidence") in ("low", "medium")
+        ]
+        review_path = _oracle_dir / f"{case_id}.review.json"
+        if needs_review:
+            from datetime import datetime as _dt
+            review_path.write_text(json.dumps({
+                "fixture_id": case_id,
+                "generated_at": _dt.now().isoformat(),
+                "needs_review": needs_review,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+        elif review_path.exists():
+            review_path.unlink()
+
+        normalized = _normalize_fixture_for_ui(json.loads(path.read_text(encoding="utf-8")))
+        normalized["review_items"] = needs_review
+        return normalized
+
     @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
     def get_oracle_fixture(fixture_id: str) -> dict:
         """Return full fixture JSON including cells + any review items."""
@@ -1585,6 +1649,45 @@ def build_eval_router(
         if not path.exists():
             raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
         return json.loads(path.read_text(encoding="utf-8"))
+
+    @r.get("/oracle-review/{fixture_id}/prompt", dependencies=auth_dep)
+    def get_oracle_prompt(fixture_id: str) -> dict:
+        """Return rendered oracle prompt (system + user with route_context injected)."""
+        if oracle_strategy_factory is None:
+            raise HTTPException(501, "No oracle_strategy_factory configured")
+        path = _oracle_dir / f"{fixture_id}.json"
+        if not path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        strategy = oracle_strategy_factory()
+        if not hasattr(strategy, "render_prompt"):
+            raise HTTPException(501, "Strategy does not implement render_prompt")
+        return strategy.render_prompt(data.get("input_data", {}))
+
+    @r.post("/oracle-review/{fixture_id}/run", dependencies=auth_dep)
+    async def run_oracle_preview(fixture_id: str) -> dict:
+        """Re-run oracle on fixture input_data, return preview without saving."""
+        if oracle_strategy_factory is None:
+            raise HTTPException(501, "No oracle_strategy_factory configured")
+        path = _oracle_dir / f"{fixture_id}.json"
+        if not path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        strategy = oracle_strategy_factory()
+        candidate = await strategy.generate_candidate(data.get("input_data", {}))
+        return candidate
+
+    @r.delete("/oracle-review/{fixture_id}", dependencies=auth_dep)
+    def delete_oracle_fixture(fixture_id: str) -> dict:
+        """Delete a fixture and its companion review file."""
+        path = _oracle_dir / f"{fixture_id}.json"
+        if not path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+        path.unlink()
+        review_path = _oracle_dir / f"{fixture_id}.review.json"
+        if review_path.exists():
+            review_path.unlink()
+        return {"deleted": fixture_id}
 
     # ── Static UI (Tier 1) ─────────────────────────────────────────────
 

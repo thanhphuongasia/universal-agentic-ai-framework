@@ -233,6 +233,8 @@ import type {
   OracleFixtureDetail,
   ReviewActionPayload,
   ReviewSchema,
+  OraclePrompt,
+  OracleRunPreview,
 } from "./types";
 
 export function useOracleSchema() {
@@ -271,5 +273,38 @@ export function useUpdateOracleReview(fixtureId: string) {
       qc.invalidateQueries({ queryKey: ["oracle-fixture", fixtureId] });
       qc.invalidateQueries({ queryKey: ["oracle-fixtures"] });
     },
+  });
+}
+
+export function useOraclePrompt(fixtureId: string, enabled: boolean) {
+  return useQuery<OraclePrompt>({
+    queryKey: ["oracle-prompt", fixtureId],
+    queryFn: () => apiFetch(`/oracle-review/${fixtureId}/prompt`),
+    enabled: !!fixtureId && enabled,
+    staleTime: Infinity,
+  });
+}
+
+export function useRunOracle() {
+  return useMutation<OracleRunPreview, Error, string>({
+    mutationFn: (fixtureId: string) =>
+      apiFetch(`/oracle-review/${fixtureId}/run`, { method: "POST" }),
+  });
+}
+
+export function useGenerateOracle() {
+  const qc = useQueryClient();
+  return useMutation<OracleFixtureDetail, Error, { case_id: string; input_data: Record<string, unknown> }>({
+    mutationFn: (payload) =>
+      apiFetch("/oracle-review/generate", { method: "POST", body: JSON.stringify(payload) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["oracle-fixtures"] }),
+  });
+}
+
+export function useDeleteOracleFixture() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: string }, Error, string>({
+    mutationFn: (fixtureId) => apiFetch(`/oracle-review/${fixtureId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["oracle-fixtures"] }),
   });
 }
