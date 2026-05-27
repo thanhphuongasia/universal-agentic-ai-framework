@@ -44,9 +44,8 @@ except ImportError as exc:
         "FastAPI required for ryuu_eval.http. Install: pip install fastapi"
     ) from exc
 
-from ryuu_eval_core import EvalCase, EvalCaseTemplate, EvalRunner, ExternalProject
+from ryuu_eval_core import EvalCaseTemplate, EvalRunner, ExternalProject
 from ryuu_eval_core.fixture_loader import FixtureLoader
-
 
 # ----------------------------------------------------------------------------
 # Type aliases — caller provides these
@@ -130,7 +129,7 @@ def build_eval_router(
     # Active runners keyed by run_id.
     active_runners: dict[str, EvalRunner] = {}
     # SSE event queues keyed by run_id (None sentinel = stream ended).
-    _run_queues: dict[str, "asyncio.Queue[dict | None]"] = {}
+    _run_queues: dict[str, asyncio.Queue[dict | None]] = {}
     # Completed run results keyed by run_id (in-memory, survives until process restart).
     _run_results: dict[str, dict] = {}
     # Batch results keyed by batch_id (in-memory).
@@ -968,7 +967,7 @@ def build_eval_router(
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=120.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield "data: {}\n\n"  # keepalive ping
                     continue
                 if event is None:
@@ -1497,14 +1496,9 @@ def build_eval_router(
     @r.get("/oracle-review/schema", dependencies=auth_dep)
     def get_oracle_schema() -> dict:
         """Return ReviewSchema describing how the UI should render oracle candidates."""
-        from ryuu_eval_oracle import ReviewSchema
-        schema = ReviewSchema(
-            kind="table",
-            columns=["ENTITY", "FIELD", "OP", "CONFIDENCE"],
-            actions=["approve", "fix", "remove"],
-            meta={"domain": "crud_matrix"},
-        )
-        return schema.to_dict()
+        if oracle_strategy_factory is None:
+            raise HTTPException(501, "No oracle_strategy_factory configured")
+        return oracle_strategy_factory().review_schema().to_dict()
 
     @r.post("/oracle-review/generate", dependencies=auth_dep)
     async def generate_oracle_fixture(payload: dict) -> dict:

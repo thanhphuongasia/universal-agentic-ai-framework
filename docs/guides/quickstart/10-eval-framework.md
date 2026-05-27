@@ -262,7 +262,7 @@ app.include_router(router, prefix="/api/eval")
 Add `serve_ui=True` để get a full eval workbench UI at no extra effort:
 
 ```python
-# Install: pip install ryuu-eval-frontend
+# Install: pip install ryuu-eval-ui
 app.include_router(build_eval_router(
     runner_factory=my_factory,
     template_registry={...},
@@ -493,7 +493,108 @@ If your project has custom eval code (subprocess + bespoke routes), migrate grad
 
 ---
 
-## 11. References
+## 11. Oracle Review — Ground Truth Generation with Human Review
+
+When LLM eval requires a structured *expected output* (e.g. CRUD matrix, class diagram), you can't hand-label thousands of cases. `ryuu-eval-oracle` automates ground truth generation with an LLM oracle, then surfaces low-confidence cells for human review.
+
+```
+Input → Oracle LLM → Candidate expected → Human reviews low-confidence cells → Finalized fixture
+```
+
+### 11.1 Install
+
+```bash
+pip install ryuu-eval-oracle
+# or with ryuu-eval oracle extra:
+pip install "ryuu-eval[oracle]"
+```
+
+### 11.2 Implement IOracleStrategy
+
+```python
+# my_project/oracle/strategy.py
+from ryuu_eval_oracle import IOracleStrategy, ReviewSchema, OracleFixture
+from my_project.oracle.prompts import build_prompt
+
+class CrudMatrixOracle(IOracleStrategy):
+    def review_schema(self) -> ReviewSchema:
+        return ReviewSchema(
+            kind="table",
+            columns=["ENTITY", "FIELD", "OP", "CONFIDENCE"],
+            actions=["approve", "fix", "remove"],
+            meta={"domain": "crud_matrix"},
+        )
+
+    async def generate_candidate(self, input: dict, existing_output=None) -> dict:
+        system, user = build_prompt(input)
+        # call LLM → parse cells
+        cells = await self._call_llm(system, user)
+        return {"cells": cells, "valid_fields": _extract_valid_fields(input)}
+```
+
+### 11.3 Wire into build_eval_router
+
+```python
+from ryuu_eval.http import build_eval_router
+from my_project.oracle.strategy import CrudMatrixOracle
+
+app.include_router(
+    build_eval_router(
+        runner_factory=my_factory,
+        template_registry={...},
+        serve_ui=True,
+        oracle_strategy_factory=CrudMatrixOracle,  # ← enables oracle review routes
+    ),
+    prefix="/api/eval",
+)
+```
+
+This mounts 6 extra endpoints under `/api/eval/oracle-review/`:
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/oracle-review/schema` | ReviewSchema (drives UI layout) |
+| GET | `/oracle-review/` | List fixtures with pending review counts |
+| GET | `/oracle-review/{id}` | Fixture detail + review items |
+| POST | `/oracle-review/generate` | Run oracle on `input_data`, save fixture |
+| POST | `/oracle-review/{id}/review` | Submit approve/fix/remove actions |
+| GET | `/oracle-review/{id}/prompt` | Surface the rendered system+user prompt |
+| POST | `/oracle-review/{id}/run` | Preview oracle re-run without saving |
+| DELETE | `/oracle-review/{id}` | Delete fixture |
+
+### 11.4 Human Review UI
+
+When `serve_ui=True`, the Oracle Review page is available at `/api/eval/ui` → "Oracle Review" nav item:
+
+- **Pipeline header** — 6-step progress: Input → Oracle Gen → Actual Output → Evaluation → Human Review → Finalized
+- **Sidebar** — fixture list with pending-review count badges; "+ New Fixture" button
+- **Input tab** — full `route_context` JSON + structured entity tree
+- **Oracle Gen tab** — rendered system + user prompts (side by side)
+- **Expectation tab** — CRUD matrix table with confidence + oracle reasoning
+- **Preview tab** — live oracle re-run result for comparison
+- **Review panel** — Approve & Lock / Reject / Adjust per cell; reviewer name + notes
+
+### 11.5 OracleWorkflow (CLI / scripts)
+
+```python
+from ryuu_eval_oracle import OracleWorkflow, FileInputSource
+from my_project.oracle.strategy import CrudMatrixOracle
+
+workflow = OracleWorkflow(
+    strategy=CrudMatrixOracle(),
+    input_source=FileInputSource("artifacts/eval/cases/crud_matrix"),
+    output_dir="artifacts/eval/oracle_fixtures/crud_matrix",
+)
+
+# Generate oracle candidate for one case
+fixture: OracleFixture = await workflow.run_case("case_happy_path_v1")
+```
+
+`OracleFixture` is saved as `{case_id}.fixture.json`. Low-/medium-confidence cells are saved separately as `{case_id}.review.json` for the human review queue.
+
+---
+
+## 12. References
 
 - [Prompt Optimizer (07)](07-prompt-optimizer.md) — uses `RefineLogger` events as training data
 - [Cross-cutting (03)](03-cross-cutting.md) — `RefineLogger` joins audit/tracer/cost as opt-in observability

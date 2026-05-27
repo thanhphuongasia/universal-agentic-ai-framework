@@ -15,5 +15,8 @@ dependencies = [
     "ryuu-eval-scorers>=0.3.0a1",
 ]
 
+[project.optional-dependencies]
+oracle = ["ryuu-eval-oracle>=0.1.0a1"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/ryuu_eval"]
