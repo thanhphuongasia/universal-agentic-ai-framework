@@ -4,12 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ryuu Eval Workbench</title>
-    <script type="module" crossorigin src="./assets/index-CeV9rSp8.js"></script>
+    <script>
+      (function () {
+        var dark = localStorage.getItem("ryuu-eval-dark");
+        if (dark === "true") document.documentElement.classList.add("dark");
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-CiTPgkvk.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-QTnfLwEv.js">
     <link rel="modulepreload" crossorigin href="./assets/charts-BHXj8Pak.js">
     <link rel="modulepreload" crossorigin href="./assets/query-2jX299At.js">
     <link rel="modulepreload" crossorigin href="./assets/vendor-CQlzEucf.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-DyqWehGt.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-Bni9RUjR.css">
   </head>
   <body>
     <div id="ryuu-eval-root"></div>

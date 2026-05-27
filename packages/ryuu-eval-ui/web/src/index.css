@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+}
+
+/* Prevent flash of dark mode on initial load */
+html:not(.dark) {
+  color-scheme: light;
+}

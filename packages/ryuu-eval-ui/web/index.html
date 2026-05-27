@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ryuu Eval Workbench</title>
+    <script>
+      (function () {
+        var dark = localStorage.getItem("ryuu-eval-dark");
+        if (dark === "true") document.documentElement.classList.add("dark");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="ryuu-eval-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
