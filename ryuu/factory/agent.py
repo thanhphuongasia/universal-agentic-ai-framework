@@ -117,6 +117,13 @@ class Agent:
     #   hooks={"pre_execute": [my_hook], "on_error": [error_logger]}
     hooks: dict[str, list[Callable[..., Any]]] | None = None
 
+    # Phase 9.3 — wrap-style middleware. Handlers receive (next, ctx) and can
+    # call next 0/1/N times (retry, fallback, circuit-breaker patterns).
+    #   around_llm  — wraps the entire LLM call chain per execute()
+    #   around_tool — wraps each individual tool handler call
+    around_llm: list[Callable[..., Any]] | None = None
+    around_tool: list[Callable[..., Any]] | None = None
+
     # Phase 14.1 — Thinking mode (Layer B ergonomic wire to ThinkingStrategy).
     # When True, Factory wraps execution with <thinking>/<answer> tags and
     # populates AgentResult.thinking. Internally creates a ThinkingStrategy
@@ -263,13 +270,40 @@ class Agent:
             else self.model.split(":", 1)[-1] if ":" in self.model
             else self.model
         )
+
+        # ── Fire PRE_LLM (mirrors _run_inner; allows message mutation) ──
+        pre_llm_ctx: PreLLMContext | None = None
+        hook_reg = self._agent._hook_registry
+        if hook_reg is not None:
+            pre_llm_ctx = PreLLMContext(
+                event=HookEvent.PRE_LLM,
+                correlation_id="",
+                scope=ContextScope(user_id="", session_id="", domain=""),
+                messages=messages,
+                model=model_name,
+            )
+            await hook_reg.fire(HookEvent.PRE_LLM, pre_llm_ctx)
+            messages = pre_llm_ctx.messages  # accept mutations
+
         request = CompletionRequest(
             messages=messages, model=model_name,
             temperature=self.temperature, max_tokens=self.max_tokens, tools=None,
         )
 
+        # ── LLM wrap chain (streaming variant) ──
+        # next(ctx) in wrap handlers returns AsyncIterator[StreamChunk].
+        if hook_reg is not None and hook_reg.has_llm_wraps():
+            assert pre_llm_ctx is not None
+
+            async def _get_stream(ctx: PreLLMContext) -> Any:
+                return self._agent.llm.stream(request)
+
+            raw_stream = await hook_reg.apply_llm_wraps(pre_llm_ctx, _get_stream)
+        else:
+            raw_stream = self._agent.llm.stream(request)
+
         full_text_parts: list[str] = []
-        async for chunk in self._agent.llm.stream(request):
+        async for chunk in raw_stream:
             if chunk.content:
                 full_text_parts.append(chunk.content)
                 yield StreamEvent(type="token", text=chunk.content)
