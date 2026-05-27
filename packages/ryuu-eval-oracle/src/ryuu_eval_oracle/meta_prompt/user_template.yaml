@@ -1,0 +1,13 @@
+name: "oracle_meta_prompt_user_template"
+version: "1.0.0"
+description: >
+  User-side template fed into the meta-prompt. Carries the per-call domain
+  context (project name, domain hint, production prompt text) — keeps the
+  system prompt fully generic.
+
+user_template: |
+  PROJECT: {{ project_name }}
+  DOMAIN/FRAMEWORK (if known): {{ domain_hint }}
+
+  PRODUCTION PROMPT:
+  {{ production_prompt_text }}
