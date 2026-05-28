@@ -1990,6 +1990,103 @@ def build_eval_router(
         candidate = await strategy.generate_candidate(data.get("input_data", {}))
         return candidate
 
+    @r.post("/oracle-review/{fixture_id}/promote-to-suite", dependencies=auth_dep)
+    def promote_oracle_fixture_to_suite(fixture_id: str, payload: dict) -> dict:
+        """Copy a reviewed oracle fixture into a suite's cases dir as a YAML case.
+
+        Step 5 of the Studio flow: once cells are reviewed and approved, the
+        fixture becomes a regression case the suite re-runs every time.
+
+        Body:
+            target_suite_id (str, required):  destination suite. The YAML lands
+                                              at cases_dir/<target_suite_id>/.
+            case_id         (str, optional):  override the YAML stem; defaults
+                                              to fixture_id.
+            overwrite       (bool, optional): replace existing case (default False).
+
+        Returns:
+            {written_path, case_id, target_suite_id, cells_count}
+
+        The written YAML keeps `input` (from fixture.input_data), `expected`
+        (cells flattened to {entity, column, op} list), and a `metadata` block
+        carrying audit pointers (oracle_prompt_version, meta_prompt_version,
+        oracle_model, source_fixture). Review-only fields (reviewed_by,
+        production_prompt, full oracle_prompt text) are stripped to keep the
+        case file lean.
+        """
+        target_suite = str(payload.get("target_suite_id", "")).strip()
+        if not target_suite:
+            raise HTTPException(400, "target_suite_id is required")
+        if not all(c.isalnum() or c in "_-" for c in target_suite):
+            raise HTTPException(
+                400, "target_suite_id may only contain letters, numbers, _ and -",
+            )
+
+        src_path = _oracle_dir / f"{fixture_id}.json"
+        if not src_path.exists():
+            raise HTTPException(404, f"Oracle fixture not found: {fixture_id!r}")
+        data = _normalize_fixture_for_ui(json.loads(src_path.read_text(encoding="utf-8")))
+
+        case_id = str(payload.get("case_id", "")).strip() or fixture_id
+        if not all(c.isalnum() or c in "_-" for c in case_id):
+            raise HTTPException(400, "case_id may only contain letters, numbers, _ and -")
+        overwrite = bool(payload.get("overwrite", False))
+
+        # Flatten cells {entity:{field:cell}} → list[{entity, column, op}]
+        cells_map = data.get("expected") or {}
+        cells_list: list[dict] = []
+        for entity, fields in cells_map.items():
+            if not isinstance(fields, dict):
+                continue
+            for field_name, cell in fields.items():
+                if not isinstance(cell, dict):
+                    continue
+                op = str(cell.get("op", "")).strip()
+                if not op:
+                    continue
+                cells_list.append({
+                    "entity": entity,
+                    "column": field_name,
+                    "op": op,
+                })
+
+        verdict = "populated" if cells_list else "empty"
+        promoted = {
+            "case_id": case_id,
+            "input": data.get("input_data", {}),
+            "expected": {
+                "verdict": verdict,
+                "cells": cells_list,
+            },
+            "metadata": {
+                "source_fixture": fixture_id,
+                "oracle_model": data.get("oracle_model", ""),
+                "oracle_prompt_version": data.get("oracle_prompt_version", ""),
+                "meta_prompt_version": data.get("meta_prompt_version", ""),
+                "promoted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+        }
+
+        target_dir = cases_dir / target_suite
+        target_dir.mkdir(parents=True, exist_ok=True)
+        out_path = target_dir / f"{case_id}.yml"
+        if out_path.exists() and not overwrite:
+            raise HTTPException(
+                409,
+                f"case already exists at {out_path} — pass overwrite=true to replace",
+            )
+        out_path.write_text(
+            yaml.safe_dump(promoted, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+        return {
+            "written_path": str(out_path),
+            "case_id": case_id,
+            "target_suite_id": target_suite,
+            "cells_count": len(cells_list),
+        }
+
     @r.delete("/oracle-review/{fixture_id}", dependencies=auth_dep)
     def delete_oracle_fixture(fixture_id: str) -> dict:
         """Delete a fixture and its companion review file."""
