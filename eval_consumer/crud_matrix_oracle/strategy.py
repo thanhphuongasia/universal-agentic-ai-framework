@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from ryuu_eval_oracle import ReviewSchema
+from ryuu_providers_core import CompletionRequest, ILLMProvider, Message
 
 from .normalizer import normalize_op
 
@@ -49,12 +50,24 @@ class CrudMatrixOracleStrategy:
 
     def __init__(
         self,
+        provider: ILLMProvider,
+        *,
         framework: str = "java_spring",
-        model: str = "claude-opus-4-7",
+        model: str | None = None,
     ) -> None:
+        """Build the strategy.
+
+        Args:
+            provider: shared ILLMProvider — created once by the caller (no
+                      lazy import / per-call instantiation).
+            framework: prompt YAML key (e.g. "java_spring").
+            model: optional override; falls back to the value in the prompt
+                   YAML (e.g. "claude-opus-4-7").
+        """
+        self._provider = provider
         self._framework = framework
-        self._model = model
         self._prompt_cfg = _load_prompt(framework)
+        self._model = model or self._prompt_cfg.get("model", "claude-opus-4-7")
 
     def review_schema(self) -> ReviewSchema:
         return ReviewSchema(
@@ -95,22 +108,19 @@ class CrudMatrixOracleStrategy:
         return {"system": cfg["system"], "user": user_text}
 
     async def _call_oracle(self, route_context: dict[str, Any]) -> dict[str, Any]:
-        from ryuu_providers_anthropic import AnthropicProvider  # lazy import
-        from ryuu_providers_core import CompletionRequest, Message
-
         cfg = self._prompt_cfg
         user_text = cfg["user_template"].replace(
             "{{ route_context_json }}",
             json.dumps(route_context, ensure_ascii=False, indent=2),
         )
-        provider = AnthropicProvider(default_model=self._model)
         req = CompletionRequest(
             messages=[Message(role="user", content=user_text)],
+            model=self._model,
             system=cfg["system"],
             temperature=0.0,
             max_tokens=4096,
         )
-        resp = await provider.complete(req)
+        resp = await self._provider.complete(req)
         raw = resp.content.strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)

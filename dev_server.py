@@ -39,6 +39,7 @@ from ryuu_observability_core.logger import StdlibLogger
 
 from eval_suites import TEMPLATES, runner_factory
 from eval_consumer.crud_matrix_oracle.strategy import CrudMatrixOracleStrategy
+from providers import make_providers
 
 # Eval logger — DEBUG level so _strip_code_fence and per-call logs are visible
 _eval_logger = StdlibLogger("eval_suites", level=logging.DEBUG)
@@ -74,13 +75,23 @@ app.add_middleware(
 
 _CODE_ANALYSIS_URL = os.environ.get("CODE_ANALYSIS_URL", "http://localhost:8000/api/eval2")
 
+# Single source of truth for every LLM provider used by this server.
+# Both the oracle strategy and the meta-generate endpoint pull from here —
+# no module instantiates AnthropicProvider/OpenAIProvider on its own.
+PROVIDERS = make_providers()
+print(f"  LLM     : {sorted(PROVIDERS.keys()) or '(none — set ANTHROPIC_API_KEY / OPENAI_API_KEY)'}")
+
 app.include_router(
     build_eval_router(
         runner_factory=_runner_factory,
         template_registry=TEMPLATES,
         serve_ui=True,
         kv_store=_db_store,
-        oracle_strategy_factory=CrudMatrixOracleStrategy,
+        llm_providers=PROVIDERS,
+        oracle_strategy_factory=(
+            (lambda: CrudMatrixOracleStrategy(provider=PROVIDERS["anthropic"]))
+            if "anthropic" in PROVIDERS else None
+        ),
         external_projects=[
             ExternalProject(
                 project_id="code-analysis",
