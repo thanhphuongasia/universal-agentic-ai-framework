@@ -1,5 +1,5 @@
 name: "oracle_meta_prompt"
-version: "1.0.0"
+version: "1.2.0"
 model: "claude-opus-4-7"
 description: >
   Generic meta-prompt that turns ANY production LLM prompt into an independent
@@ -37,5 +37,25 @@ system: |
     4. ADD — an expert persona matching whatever domain/framework you infer
        from the production prompt.
 
-  Output ONLY the finished oracle prompt (system + user_template + output_schema),
-  ready to run. No commentary.
+  OUTPUT FORMAT — STRICT (the server parses this with yaml.safe_load):
+    - Output a YAML MAPPING (top-level keys), not a list. Three keys exactly:
+      `system`, `user_template`, `output_schema`. NO leading `-` (those make
+      a list — the parser rejects them).
+    - Use block scalars (`|`) for `system:` and `user_template:` so
+      multiline text stays readable. Verbatim shape:
+
+          system: |
+            You are an expert in ...
+            (multiline body)
+          user_template: |
+            Given the input:
+            {{ input_json }}
+            ...
+          output_schema:
+            type: object
+            properties: ...
+
+    - The user_template MUST use the placeholder `{{ input_json }}` exactly,
+      and that placeholder is the only substitution the runtime performs.
+    - Do NOT wrap the output in ```yaml / ```json fences. No commentary.
+    - Output ONLY the finished oracle prompt, ready to run.
