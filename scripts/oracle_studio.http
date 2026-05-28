@@ -1,0 +1,63 @@
+### Oracle Ground Truth Studio — manual test recipes
+### Open in VS Code with REST Client extension, or paste into Postman.
+### Base URL assumes `python3 dev_server.py` is running on :8001.
+
+@base = http://localhost:8001/api/eval
+
+### 1. List registered providers
+GET {{base}}/oracle-review/providers
+Accept: application/json
+
+### 2. Meta-generate — turn a production prompt into an oracle prompt
+POST {{base}}/oracle-review/meta-generate
+Content-Type: application/json
+
+{
+  "production_prompt": "You generate Anki flashcards from text. Output JSON: {front, back, tags}. Rule: if input has >20 words, split into 2 cards.",
+  "project_name": "anki_demo",
+  "domain_hint": "Spaced repetition flashcards",
+  "provider": "openai",
+  "model": "gpt-4o-mini"
+}
+
+### 3. Run a handcrafted oracle prompt against an input — CRUD matrix demo
+POST {{base}}/oracle-review/run-with-prompt
+Content-Type: application/json
+
+{
+  "oracle_prompt": "system: |\n  You are a Java Spring expert acting as oracle.\n  For each entity field, decide CRUD op based on the route.\n  Output JSON: {entity: {field: {op, confidence, why}}}\n\nuser_template: |\n  Route context:\n  {{ input_json }}\n\n  Determine CRUD ops. Output JSON only.\n",
+  "input_data": {
+    "route": {"endpoint": "/users/{id}", "http_method": "GET"},
+    "entities": [
+      {
+        "short_name": "User",
+        "fields": [
+          {"name": "id", "annotations": ["@Id", "@GeneratedValue"]},
+          {"name": "email"},
+          {"name": "name"}
+        ]
+      }
+    ]
+  },
+  "provider": "openai",
+  "model": "gpt-4o-mini"
+}
+
+### 4. Error cases — empty production_prompt
+POST {{base}}/oracle-review/meta-generate
+Content-Type: application/json
+
+{ "production_prompt": "" }
+
+### 5. Error cases — malformed YAML oracle_prompt
+POST {{base}}/oracle-review/run-with-prompt
+Content-Type: application/json
+
+{
+  "oracle_prompt": "not: valid: yaml: bad",
+  "input_data": {"x": 1},
+  "provider": "openai"
+}
+
+### 6. Existing oracle endpoints (still work)
+GET {{base}}/oracle-review/?suite_id=crud_matrix_llm
