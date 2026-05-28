@@ -1,61 +1,93 @@
-"""Central LLM provider registry — one place to configure every model used.
+"""Central LLM provider registry — YAML-driven, no hardcoded providers.
 
-Any module that needs to talk to an LLM gets its provider from `make_providers()`
-instead of importing `AnthropicProvider` / `OpenAIProvider` directly and building
-its own instance. This keeps:
+Reads `providers.yaml` next to this file and constructs each registered
+provider class. Adding a new provider = add a YAML entry. No code change.
 
-  - API key wiring in ONE place (env vars read here)
-  - Model defaults in ONE place
-  - Provider singletons shared (circuit breakers / rate limiters stay coherent)
+Skip rules (silently):
+  - entry has `env_required` but that env var is unset
+  - the provider's Python package is not installed
+This way a dev environment with only ANTHROPIC_API_KEY still boots cleanly.
 
 Usage:
 
     from providers import make_providers
-    PROVIDERS = make_providers()
-    build_eval_router(
-        ...,
-        llm_providers=PROVIDERS,
-        oracle_strategy_factory=lambda: CrudMatrixOracleStrategy(
-            provider=PROVIDERS["anthropic"],
-        ),
-    )
+    PROVIDERS = make_providers()        # {"anthropic": ..., "openai": ...}
 """
 
 from __future__ import annotations
 
+import importlib
+import logging
 import os
+from pathlib import Path
 from typing import Any
 
+import yaml
 
-def make_providers() -> dict[str, Any]:
-    """Return {provider_key: ILLMProvider} from env config.
+_CONFIG_PATH = Path(__file__).parent / "providers.yaml"
+_log = logging.getLogger(__name__)
 
-    Each provider is constructed only if its API key is present. Missing keys
-    silently skip the provider so dev environments without every key still boot.
+
+def _resolve_value(spec: Any) -> Any:
+    """Resolve a YAML value — supports literals and {env, fallback} maps."""
+    if isinstance(spec, dict) and "env" in spec:
+        return os.environ.get(spec["env"], spec.get("fallback", ""))
+    return spec
+
+
+def make_providers(config_path: Path | None = None) -> dict[str, Any]:
+    """Return {provider_key: ILLMProvider} parsed from the registry YAML.
+
+    Entries are skipped (not raised) when:
+      - the entry's env_required var is missing, OR
+      - the entry's Python package isn't installed.
+    Misconfigured entries (bad import string, missing key field) DO raise so
+    typos surface at boot time.
     """
+    path = config_path or _CONFIG_PATH
+    if not path.exists():
+        _log.warning("providers.yaml not found at %s — no providers loaded", path)
+        return {}
+
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or []
     providers: dict[str, Any] = {}
 
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        try:
-            from ryuu_providers_anthropic import AnthropicProvider
-            providers["anthropic"] = AnthropicProvider(
-                default_model=os.environ.get(
-                    "ANTHROPIC_DEFAULT_MODEL", "claude-opus-4-7",
-                ),
+    for entry in config:
+        key = entry.get("key")
+        import_spec = entry.get("import")
+        if not key or not import_spec:
+            raise ValueError(
+                f"provider entry missing 'key' or 'import': {entry!r}",
             )
-        except ImportError:
-            pass
 
-    if os.environ.get("OPENAI_API_KEY"):
-        try:
-            from ryuu_providers_openai import OpenAIProvider
-            providers["openai"] = OpenAIProvider(
-                default_model=os.environ.get(
-                    "OPENAI_DEFAULT_MODEL", "gpt-4o",
-                ),
+        env_required = entry.get("env_required")
+        if env_required and not os.environ.get(env_required):
+            _log.debug("skip provider %r — %s not set", key, env_required)
+            continue
+
+        module_path, _, class_name = import_spec.partition(":")
+        if not class_name:
+            raise ValueError(
+                f"'import' must be 'module:ClassName', got {import_spec!r}",
             )
-        except ImportError:
-            pass
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as exc:
+            _log.info("skip provider %r — %s not installed (%s)", key, module_path, exc)
+            continue
+
+        try:
+            cls = getattr(module, class_name)
+        except AttributeError as exc:
+            raise ValueError(
+                f"{module_path!r} has no attribute {class_name!r}",
+            ) from exc
+
+        init_kwargs = {
+            k: _resolve_value(v)
+            for k, v in (entry.get("init_kwargs") or {}).items()
+        }
+        providers[key] = cls(**init_kwargs)
 
     return providers
 

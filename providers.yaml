@@ -1,0 +1,46 @@
+# Central LLM provider registry — declarative.
+#
+# Adding a new provider (Gemini, Mistral, local Ollama, …) = add an entry below.
+# No Python code change in providers.py.
+#
+# Each entry:
+#   key:           lookup key used by build_eval_router(llm_providers=...)
+#                  and surfaced in GET /oracle-review/providers
+#   import:        "module:ClassName" — must implement ILLMProvider
+#   env_required:  if set, provider is skipped when this env var is missing
+#                  (allows dev environments without every API key to boot)
+#   init_kwargs:   keyword args passed to the class constructor.
+#                  Each value is either a plain literal, or
+#                  {env: VAR, fallback: VALUE} to read from env at boot.
+
+- key: anthropic
+  import: "ryuu_providers_anthropic:AnthropicProvider"
+  env_required: ANTHROPIC_API_KEY
+  init_kwargs:
+    default_model:
+      env: ANTHROPIC_DEFAULT_MODEL
+      fallback: claude-opus-4-7
+
+- key: openai
+  import: "ryuu_providers_openai:OpenAIProvider"
+  env_required: OPENAI_API_KEY
+  init_kwargs:
+    default_model:
+      env: OPENAI_DEFAULT_MODEL
+      fallback: gpt-4o
+
+# ── Add new providers below — no Python changes needed ──
+#
+# - key: gemini
+#   import: "ryuu_providers_google:GeminiProvider"
+#   env_required: GOOGLE_API_KEY
+#   init_kwargs:
+#     default_model:
+#       env: GEMINI_DEFAULT_MODEL
+#       fallback: gemini-2.0-flash-exp
+#
+# - key: ollama
+#   import: "ryuu_providers_ollama:OllamaProvider"
+#   init_kwargs:
+#     host: http://localhost:11434
+#     default_model: llama3.3
