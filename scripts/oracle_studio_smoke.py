@@ -9,7 +9,16 @@ Real LLM call — costs a few cents. Defaults to provider=openai + gpt-4o-mini
 to keep cost low; override with --provider / --model.
 
 Usage:
+    # default Anki demo prompt
     python3 scripts/oracle_studio_smoke.py
+
+    # real prod-grade-code-analysis CRUD matrix prompt
+    python3 scripts/oracle_studio_smoke.py \\
+        --prompt-file "../prod-grade-code-analysis/src/prompts/chat/agents/crud_matrix_column.java_springboot.v1.yml" \\
+        --project-name prod-code-analysis \\
+        --domain-hint "Java Spring Boot CRUD matrix"
+
+    # different provider/model
     python3 scripts/oracle_studio_smoke.py --provider anthropic --model claude-opus-4-7
 """
 
@@ -18,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from urllib import error, request
 
 
@@ -41,12 +51,37 @@ def _get(url: str) -> dict:
         return {"_status": exc.code, "_body": exc.read().decode()}
 
 
+_DEFAULT_PROMPT = (
+    "You generate Anki flashcards from text. Output JSON: "
+    "{front, back, tags}. Rule: if input has >20 words, split."
+)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:8001/api/eval")
     ap.add_argument("--provider", default="openai")
     ap.add_argument("--model", default="gpt-4o-mini")
+    ap.add_argument(
+        "--prompt-file",
+        type=Path,
+        default=None,
+        help="path to production prompt file (txt/yml/md). "
+             "Default: built-in Anki demo prompt.",
+    )
+    ap.add_argument("--project-name", default="anki_smoke")
+    ap.add_argument("--domain-hint", default="Spaced repetition flashcards")
     args = ap.parse_args()
+
+    if args.prompt_file:
+        if not args.prompt_file.exists():
+            print(f"! prompt file not found: {args.prompt_file}", file=sys.stderr)
+            return 1
+        production_prompt = args.prompt_file.read_text(encoding="utf-8")
+        print(f"production prompt: {args.prompt_file}  ({len(production_prompt)} chars)")
+    else:
+        production_prompt = _DEFAULT_PROMPT
+        print(f"production prompt: (default Anki demo, {len(production_prompt)} chars)")
 
     print(f"[1/3] GET {args.base}/oracle-review/providers")
     providers = _get(f"{args.base}/oracle-review/providers")
@@ -61,12 +96,9 @@ def main() -> int:
 
     print(f"\n[2/3] POST /meta-generate  (provider={args.provider}, model={args.model})")
     meta = _post(f"{args.base}/oracle-review/meta-generate", {
-        "production_prompt": (
-            "You generate Anki flashcards from text. Output JSON: "
-            "{front, back, tags}. Rule: if input has >20 words, split."
-        ),
-        "project_name": "anki_smoke",
-        "domain_hint": "Spaced repetition flashcards",
+        "production_prompt": production_prompt,
+        "project_name": args.project_name,
+        "domain_hint": args.domain_hint,
         "provider": args.provider,
         "model": args.model,
     })

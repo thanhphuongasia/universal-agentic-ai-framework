@@ -61,3 +61,64 @@ Content-Type: application/json
 
 ### 6. Existing oracle endpoints (still work)
 GET {{base}}/oracle-review/?suite_id=crud_matrix_llm
+
+###
+### ── prod-grade-code-analysis recipes ──────────────────────────────────
+### Real production prompt used by the CRUD-matrix LLM workflow.
+### File is in the prod-grade-code-analysis repo; for the .http snippet
+### we embed a compact stand-in. To run with the full real prompt,
+### use the smoke script:
+###
+###   python3 scripts/oracle_studio_smoke.py \
+###     --prompt-file "../prod-grade-code-analysis/src/prompts/chat/agents/crud_matrix_column.java_springboot.v1.yml" \
+###     --project-name prod-code-analysis \
+###     --domain-hint "Java Spring Boot CRUD matrix"
+###
+
+### 7. Meta-generate — CRUD matrix oracle (compact stand-in prompt)
+POST {{base}}/oracle-review/meta-generate
+Content-Type: application/json
+
+{
+  "production_prompt": "You are a Java Spring Boot CRUD-matrix classifier. For one HTTP route with pre-resolved context (call_chain, entities with JPA annotations, method_access read/write lists), output JSON {entity: {db_column: {op, confidence, reason}}}. Rules: 1) HTTP method gives a strong prior (GET→R, POST→C, PUT/PATCH→U, DELETE→D on id only). 2) @Id+@GeneratedValue → NEVER C/U. 3) @Column(insertable=false) → never C. 4) @Column(updatable=false) → never U. 5) @CreatedDate / @LastModifiedDate → DB-managed, skip unless read. 6) Use db_column when present, else field name. 7) Omit fields not touched by call chain.",
+  "project_name": "prod-code-analysis",
+  "domain_hint": "Java Spring Boot CRUD matrix from Neo4j route context",
+  "provider": "openai",
+  "model": "gpt-4o-mini"
+}
+
+### 8. Run-with-prompt — CRUD matrix on a sample Java Spring route
+POST {{base}}/oracle-review/run-with-prompt
+Content-Type: application/json
+
+{
+  "oracle_prompt": "system: |\n  You are a senior Java Spring Boot and JPA expert acting as an INDEPENDENT\n  ORACLE for evaluation. For each (entity, field) pair visible in the route\n  context, decide the DATABASE-COLUMN-level CRUD operation this HTTP route\n  performs. Reason from your own deep knowledge of JPA / Spring conventions.\n\n  Chain-of-thought (include in why):\n    1. Identify the HTTP method + entry controller method.\n    2. Trace the call_chain to find every entity method invoked.\n    3. For each field: check read / set / ignored.\n    4. Apply JPA annotation semantics.\n    5. Derive op: C / R / U / D, combine when multiple apply.\n    6. Assign confidence: high if clear, medium if inferred, low if ambiguous.\n\n  Output JSON: {entity: {field: {op, confidence, why}}}.\n  Use ONLY entity short names and field names that appear in `entities`.\n\nuser_template: |\n  Route context:\n  {{ input_json }}\n\n  Output JSON only. No commentary.\n",
+  "input_data": {
+    "route": {
+      "endpoint": "/orders",
+      "http_method": "POST",
+      "use_case": "POST /orders"
+    },
+    "call_chain": [
+      {"class": "OrderController", "method": "createOrder"},
+      {"class": "OrderService", "method": "createOrder"},
+      {"class": "OrderRepository", "method": "save"}
+    ],
+    "entities": [
+      {
+        "short_name": "Order",
+        "fields": [
+          {"name": "id", "db_column": "id", "annotations": ["@Id", "@GeneratedValue"]},
+          {"name": "total", "db_column": "total"},
+          {"name": "status", "db_column": "status"},
+          {"name": "createdAt", "db_column": "created_at", "annotations": ["@CreatedDate"]}
+        ]
+      }
+    ],
+    "method_access": {
+      "OrderService.createOrder": {"write": ["status", "total"], "read": []}
+    }
+  },
+  "provider": "openai",
+  "model": "gpt-4o-mini"
+}
