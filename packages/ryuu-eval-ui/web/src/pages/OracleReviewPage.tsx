@@ -708,6 +708,7 @@ function Tab2_OraclePrompt({
 
 interface PreviewRun {
   cells: Record<string, Record<string, { op: string; confidence?: string | number; oracle_why?: string; why?: string }>>;
+  raw_response: string;
   latency_ms: number;
   cost_usd: number;
   input_tokens: number;
@@ -715,6 +716,53 @@ interface PreviewRun {
   model: string;
   provider: string;
   parse_error?: string;
+  // Captured client-side so the trace block can show what we actually sent
+  request_system?: string;
+  request_user?: string;
+}
+
+// Client-side YAML extraction so the trace block shows what was sent.
+// Cheap line-based parser — `system: |` and `user_template: |` block scalars.
+// Matches what yaml.safe_load would do for the common case.
+function extractSystemUser(oraclePrompt: string, inputData: unknown): {
+  system: string; user: string;
+} {
+  try {
+    // Minimal YAML — split block scalars by detecting `key: |` headers.
+    const lines = oraclePrompt.split("\n");
+    const blocks: Record<string, string[]> = {};
+    let cur: string | null = null;
+    let curIndent = 0;
+    for (const line of lines) {
+      const m = line.match(/^([a-z_]+):\s*\|\s*$/);
+      if (m) {
+        cur = m[1];
+        blocks[cur] = [];
+        curIndent = 0;
+        continue;
+      }
+      // Top-level key without `|` — end any current block
+      if (/^[a-z_]+:/.test(line) && !line.startsWith(" ")) {
+        cur = null;
+        continue;
+      }
+      if (cur) {
+        if (curIndent === 0 && line.trim()) {
+          curIndent = line.length - line.trimStart().length;
+        }
+        blocks[cur].push(curIndent > 0 ? line.slice(curIndent) : line);
+      }
+    }
+    const system = (blocks.system ?? []).join("\n").trimEnd();
+    const userTpl = (blocks.user_template ?? []).join("\n").trimEnd();
+    const user = userTpl.replace(
+      "{{ input_json }}",
+      JSON.stringify(inputData, null, 2),
+    );
+    return { system, user };
+  } catch {
+    return { system: "(failed to parse)", user: "(failed to parse)" };
+  }
 }
 
 function Tab3_Execution({
@@ -738,10 +786,10 @@ function Tab3_Execution({
   const runMut = useRunWithPrompt();
 
   async function handleRun() {
-    if (!oraclePrompt.trim()) {
-      alert("No oracle prompt set — go back to step 2 and Generate.");
-      return;
-    }
+    if (!oraclePrompt.trim()) return;  // button is disabled in UI; defensive
+    const { system: reqSystem, user: reqUser } = extractSystemUser(
+      oraclePrompt, fixture.input_data,
+    );
     try {
       const result = await runMut.mutateAsync({
         oracle_prompt: oraclePrompt,
@@ -751,6 +799,7 @@ function Tab3_Execution({
       });
       setPreview({
         cells: result.cells,
+        raw_response: result.raw_response,
         latency_ms: result.latency_ms,
         cost_usd: result.cost_usd,
         input_tokens: result.input_tokens,
@@ -758,6 +807,8 @@ function Tab3_Execution({
         model: result.model,
         provider: result.provider,
         parse_error: result.parse_error,
+        request_system: reqSystem,
+        request_user: reqUser,
       });
     } catch {
       // surface via runMut.error
@@ -838,10 +889,15 @@ function Tab3_Execution({
         </div>
       )}
 
+      {/* Result summary — adapts to parse state */}
       <p className="text-xs text-gray-500 dark:text-gray-400">
         {hasCells
           ? <>{preview ? "Preview" : "Saved expectation"}: <span className="font-semibold">{entities.length}</span> entities · <span className="font-semibold">{totalCells}</span> cells</>
-          : "No expectation yet — click Run."}
+          : preview
+            ? (preview.parse_error
+                ? <span className="text-red-500">Run completed but JSON parsing failed — see Run Trace below.</span>
+                : <span className="text-yellow-600 dark:text-yellow-400">Run completed but returned 0 cells — see Run Trace below.</span>)
+            : "No expectation yet — click Run."}
       </p>
 
       {hasCells && (
@@ -872,6 +928,66 @@ function Tab3_Execution({
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Run Trace — always visible when there's a preview */}
+      {preview && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-gray-500 dark:text-gray-400">
+              Run trace
+            </span>
+            <span className="text-[10px] font-mono text-gray-400">
+              {preview.provider}/{preview.model}
+            </span>
+            <span className="ml-auto">
+              {preview.parse_error
+                ? <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded">⚠ unparseable</span>
+                : hasCells
+                  ? <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-1.5 py-0.5 rounded">✓ parsed</span>
+                  : <span className="text-[10px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 px-1.5 py-0.5 rounded">⚠ empty</span>}
+            </span>
+          </div>
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            <details className="group">
+              <summary className="cursor-pointer select-none px-3 py-2 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300">
+                  llm_input
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">system + rendered user prompt</span>
+                <span className="ml-auto text-[10px] text-gray-400">click to expand</span>
+              </summary>
+              <div className="p-3 space-y-2 bg-purple-50/30 dark:bg-purple-950/10">
+                <CodePane title="system" content={preview.request_system ?? "(not captured)"} maxHeight="200px" />
+                <CodePane title="user (with input_json substituted)" content={preview.request_user ?? "(not captured)"} maxHeight="240px" />
+              </div>
+            </details>
+            <details className="group" open={!hasCells || !!preview.parse_error}>
+              <summary className="cursor-pointer select-none px-3 py-2 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                  llm_output
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  raw response · {preview.output_tokens} tokens
+                </span>
+                <span className="ml-auto text-[10px] text-gray-400">click to expand</span>
+              </summary>
+              <div className="p-3">
+                <CodePane
+                  title="raw_response"
+                  content={preview.raw_response || "(empty response)"}
+                  maxHeight="320px"
+                  badge={preview.parse_error ? "parse failed" : undefined}
+                />
+                {preview.parse_error && (
+                  <div className="mt-2 text-[11px] text-red-500 font-mono">
+                    Parse error: {preview.parse_error}
+                  </div>
+                )}
+              </div>
+            </details>
+          </div>
         </div>
       )}
     </div>
