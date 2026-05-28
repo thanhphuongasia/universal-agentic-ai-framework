@@ -31,6 +31,8 @@ import inspect
 import json
 import os
 import time
+
+import yaml
 from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -1687,6 +1689,141 @@ def build_eval_router(
             "model": result.model,
             "generated_at": _dt.now(_tz.utc).isoformat(),
         }
+
+    @r.post("/oracle-review/run-with-prompt", dependencies=auth_dep)
+    async def run_with_arbitrary_prompt(payload: dict) -> dict:
+        """Run a user-supplied oracle prompt against an input — stateless.
+
+        UI flow: step 2 generates an oracle prompt (YAML), human edits in a
+        textarea, then step 3 POSTs it here with the input from step 1.
+        Nothing is persisted — caller decides whether to Save (step 5).
+
+        Body:
+            oracle_prompt (str, required):  YAML string with `system` and
+                                            `user_template` fields. The
+                                            template is rendered with
+                                            `{{ input_json }}` substitution.
+            input_data    (dict, required): becomes input_json in the template.
+            provider      (str, optional):  registry key from /providers.
+            model         (str, optional):  forwarded to the provider.
+
+        Returns:
+            {cells, raw_response, parse_error?, latency_ms, cost_usd,
+             input_tokens, output_tokens, provider, model}
+
+        Cells parsing: looks for a JSON object in the LLM reply (strips
+        ```json fences). On parse failure returns `cells: {}` plus
+        `parse_error` — the UI still gets `raw_response` for human triage.
+        """
+        if not llm_providers:
+            raise HTTPException(501, "No llm_providers configured")
+        oracle_prompt = str(payload.get("oracle_prompt", "")).strip()
+        if not oracle_prompt:
+            raise HTTPException(400, "oracle_prompt is required")
+        input_data = payload.get("input_data")
+        if not isinstance(input_data, dict):
+            raise HTTPException(400, "input_data must be a JSON object")
+
+        # Parse the YAML oracle prompt → extract system + user_template
+        try:
+            parsed_prompt = yaml.safe_load(oracle_prompt)
+            if not isinstance(parsed_prompt, dict):
+                raise ValueError("oracle_prompt YAML must be a mapping")
+        except yaml.YAMLError as exc:
+            raise HTTPException(400, f"oracle_prompt is not valid YAML: {exc}")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+        system_text = str(parsed_prompt.get("system", "")).strip()
+        user_template = str(parsed_prompt.get("user_template", "")).strip()
+        if not system_text or not user_template:
+            raise HTTPException(
+                400,
+                "oracle_prompt must contain both `system` and `user_template`",
+            )
+
+        # Pick provider (same routing rules as meta-generate)
+        provider_key = str(payload.get("provider", "")).strip()
+        available = sorted(llm_providers.keys())
+        if not provider_key:
+            if len(llm_providers) == 1:
+                provider_key = available[0]
+            else:
+                raise HTTPException(
+                    400,
+                    f"provider is required when multiple registered "
+                    f"(available: {available})",
+                )
+        if provider_key not in llm_providers:
+            raise HTTPException(
+                400,
+                f"unknown provider {provider_key!r} (available: {available})",
+            )
+
+        # Render user template — single Mustache-style substitution
+        user_text = user_template.replace(
+            "{{ input_json }}",
+            json.dumps(input_data, ensure_ascii=False, indent=2),
+        )
+
+        from ryuu_providers_core import (
+            CompletionRequest as _Req,
+            Message as _Msg,
+            calculate_usd as _calc_usd,
+        )
+        import time as _time
+        import re as _re
+
+        provider = llm_providers[provider_key]
+        chosen_model = str(payload.get("model", "")).strip() or getattr(
+            provider, "default_model", "",
+        )
+        req = _Req(
+            messages=[_Msg(role="user", content=user_text)],
+            model=chosen_model,
+            system=system_text,
+            temperature=0.0,
+            max_tokens=4096,
+        )
+        t0 = _time.perf_counter()
+        try:
+            resp = await provider.complete(req)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"provider call failed: {exc}") from exc
+        latency_ms = (_time.perf_counter() - t0) * 1000.0
+
+        raw = (resp.content or "").strip()
+        # Strip ```json fences if present
+        cleaned = _re.sub(r"^```(?:json)?\s*", "", raw)
+        cleaned = _re.sub(r"\s*```$", "", cleaned)
+
+        cells: dict[str, Any] = {}
+        parse_error: str | None = None
+        try:
+            parsed = json.loads(cleaned)
+            # Accept either {entity: {field: cell}} or {cells: {...}} shapes
+            cells = parsed.get("cells", parsed) if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError as exc:
+            parse_error = f"response is not valid JSON: {exc}"
+
+        usage = getattr(resp, "usage", None)
+        in_tok = getattr(usage, "input_tokens", 0) if usage else 0
+        out_tok = getattr(usage, "output_tokens", 0) if usage else 0
+        cost = _calc_usd(resp.model or chosen_model, in_tok, out_tok)
+
+        result = {
+            "cells": cells,
+            "raw_response": raw,
+            "provider": provider_key,
+            "model": resp.model or chosen_model,
+            "latency_ms": latency_ms,
+            "cost_usd": cost,
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+        }
+        if parse_error:
+            result["parse_error"] = parse_error
+        return result
 
     @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
     def get_oracle_fixture(fixture_id: str) -> dict:
