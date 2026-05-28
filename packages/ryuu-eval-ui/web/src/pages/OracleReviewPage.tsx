@@ -239,14 +239,14 @@ function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => v
   );
 }
 
-// ─── Input JSON editor (Tab 1) — edit then regenerate oracle ─────────────────
+// ─── Input JSON editor (Tab 1) — edit & save (cells unchanged) ──────────────
 
-function InputJsonEditor({ fixtureId, suiteId, initialJson }: {
-  fixtureId: string; suiteId: string; initialJson: string;
+function InputJsonEditor({ fixture, suiteId, initialJson }: {
+  fixture: OracleFixtureDetail; suiteId: string; initialJson: string;
 }) {
   const [value, setValue] = useState(initialJson);
   const [error, setError] = useState<string | null>(null);
-  const generate = useGenerateOracle();
+  const save = useSaveStudioFixture();
 
   // Reset when fixture changes
   useEffect(() => { setValue(initialJson); setError(null); }, [initialJson]);
@@ -266,11 +266,24 @@ function InputJsonEditor({ fixtureId, suiteId, initialJson }: {
       setError((e as Error).message);
       return;
     }
-    if (!window.confirm(
-      "Saving will re-run the oracle and overwrite the existing expectation. Continue?",
-    )) return;
     try {
-      await generate.mutateAsync({ case_id: fixtureId, suite_id: suiteId, input_data: parsed });
+      // Save in override mode: only input_data changes; existing cells
+      // are preserved verbatim. User must re-run Tab 3 if they want new
+      // cells for the new input.
+      await save.mutateAsync({
+        case_id: fixture.fixture_id,
+        suite_id: suiteId,
+        input_data: parsed,
+        expected_override: {
+          cells: fixture.expected as Record<string, unknown>,
+          valid_fields: fixture.meta?.valid_fields,
+        },
+        production_prompt: fixture.production_prompt || "",
+        oracle_prompt: fixture.oracle_prompt || "",
+        oracle_prompt_version: fixture.oracle_prompt_version || "",
+        meta_prompt_version: fixture.meta_prompt_version || "",
+        oracle_model: fixture.oracle_model,
+      });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -280,7 +293,8 @@ function InputJsonEditor({ fixtureId, suiteId, initialJson }: {
     <div className="p-3 space-y-2">
       <div className="flex items-center justify-between text-[11px]">
         <p className="text-gray-500 dark:text-gray-400">
-          Edit the route context JSON. Save will re-run the oracle and overwrite the expectation.
+          Edit the input JSON. Save persists it without changing existing
+          cells — re-run step 3 to refresh the expectation against the new input.
         </p>
         {error && <span className="text-red-500">⚠ {error}</span>}
       </div>
@@ -293,15 +307,15 @@ function InputJsonEditor({ fixtureId, suiteId, initialJson }: {
       <div className="flex items-center gap-2">
         <button
           onClick={handleSave}
-          disabled={!isDirty || generate.isPending}
+          disabled={!isDirty || save.isPending}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
         >
-          {generate.isPending ? <><span className="animate-spin">⟳</span> Regenerating…</> : "Save & regenerate"}
+          {save.isPending ? <><span className="animate-spin">⟳</span> Saving…</> : "💾 Save input"}
         </button>
         {isDirty && (
           <button
             onClick={() => { setValue(initialJson); setError(null); }}
-            disabled={generate.isPending}
+            disabled={save.isPending}
             className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
             Reset
@@ -441,7 +455,7 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
 
       {/* Route Context — editable */}
       <CollapseSection title="Route Context JSON" badge={routeBadge}>
-        <InputJsonEditor fixtureId={fixture.fixture_id} suiteId={suiteId} initialJson={inputJson} />
+        <InputJsonEditor fixture={fixture} suiteId={suiteId} initialJson={inputJson} />
       </CollapseSection>
 
       {/* Actual Output (optional) — for offline comparison */}
