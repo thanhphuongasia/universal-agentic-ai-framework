@@ -798,6 +798,13 @@ function Tab3_Execution({
   metaPromptVersion: string;
 }) {
   const runMut = useRunWithPrompt();
+  const [traceOpen, setTraceOpen] = useState(false);
+  useEffect(() => {
+    if (!traceOpen) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setTraceOpen(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [traceOpen]);
 
   async function handleRun() {
     if (!oraclePrompt.trim()) return;  // button is disabled in UI; defensive
@@ -970,12 +977,19 @@ function Tab3_Execution({
             <span className="text-[10px] font-mono text-gray-400">
               {preview.provider}/{preview.model}
             </span>
-            <span className="ml-auto">
+            <span className="ml-auto flex items-center gap-2">
               {preview.parse_error
                 ? <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded">⚠ unparseable</span>
                 : hasCells
                   ? <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-1.5 py-0.5 rounded">✓ parsed</span>
                   : <span className="text-[10px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 px-1.5 py-0.5 rounded">⚠ empty</span>}
+              <button
+                onClick={() => setTraceOpen(true)}
+                className="text-[10px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Open trace in popup"
+              >
+                ⛶ Popup
+              </button>
             </span>
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1016,6 +1030,59 @@ function Tab3_Execution({
                 )}
               </div>
             </details>
+          </div>
+        </div>
+      )}
+
+      {/* Trace popup modal */}
+      {preview && traceOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onClick={() => setTraceOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="relative z-10 w-[min(1200px,95vw)] max-h-[92vh] flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Run trace</h2>
+                <span className="text-[11px] font-mono text-gray-400">{preview.provider}/{preview.model}</span>
+                <span className="text-[10px] text-gray-400">·</span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">{preview.latency_ms.toFixed(0)}ms · ${preview.cost_usd.toFixed(4)} · {preview.input_tokens}/{preview.output_tokens} tokens</span>
+              </div>
+              <button onClick={() => setTraceOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300">llm_input — system</span>
+                </div>
+                <CodePane title="" content={preview.request_system ?? "(not captured)"} maxHeight="280px" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300">llm_input — user (with input_json substituted)</span>
+                </div>
+                <CodePane title="" content={preview.request_user ?? "(not captured)"} maxHeight="360px" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">llm_output — raw response</span>
+                  {preview.parse_error
+                    ? <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded">⚠ unparseable</span>
+                    : <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-1.5 py-0.5 rounded">✓ parsed</span>}
+                </div>
+                <CodePane title="" content={preview.raw_response || "(empty response)"} maxHeight="420px" />
+                {preview.parse_error && (
+                  <div className="mt-2 text-[11px] text-red-500 font-mono">Parse error: {preview.parse_error}</div>
+                )}
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 shrink-0 text-[11px] text-gray-400 text-right">
+              Press Esc or click outside to close
+            </div>
           </div>
         </div>
       )}
