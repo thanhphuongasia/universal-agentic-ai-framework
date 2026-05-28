@@ -810,8 +810,23 @@ function Tab3_Execution({
         request_system: reqSystem,
         request_user: reqUser,
       });
-    } catch {
-      // surface via runMut.error
+    } catch (e) {
+      // API failed — still record the request so the trace block can show
+      // what we sent. The error itself is also surfaced via runMut.error.
+      const err = e as Error;
+      setPreview({
+        cells: {},
+        raw_response: "",
+        latency_ms: 0,
+        cost_usd: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        model: model,
+        provider: provider,
+        parse_error: `API call failed: ${err.message}`,
+        request_system: reqSystem,
+        request_user: reqUser,
+      });
     }
   }
 
@@ -1658,10 +1673,16 @@ export function OracleReviewPage() {
     setMetaPromptVersion("");
   }
 
-  // Hydrate oracle prompt from fixture once loaded (audit fields)
+  // Hydrate oracle prompt when fixture loads. Priority order:
+  //   1. localStorage draft (preserves unsaved edits across reloads)
+  //   2. fixture.oracle_prompt (persisted on backend)
   useEffect(() => {
     if (fixture && fixture.fixture_id === selectedFixtureId) {
-      if (!oraclePrompt && fixture.oracle_prompt) setOraclePrompt(fixture.oracle_prompt);
+      if (!oraclePrompt) {
+        let draft = "";
+        try { draft = localStorage.getItem(`oracle-prompt-draft::${fixture.fixture_id}`) ?? ""; } catch { /* ignore */ }
+        setOraclePrompt(draft || fixture.oracle_prompt || "");
+      }
       if (!oraclePromptVersion && fixture.oracle_prompt_version) {
         setOraclePromptVersion(fixture.oracle_prompt_version);
       }
