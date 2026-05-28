@@ -1,30 +1,17 @@
-"""Execute the meta-prompt against an LLM adapter and return the raw oracle prompt.
+"""Execute the meta-prompt against a ryuu provider and return the oracle prompt.
 
-Provider-agnostic — caller injects an `adapter` that exposes
-`async chat(messages, model=..., **kwargs) -> str` (returns the assistant text).
-
-Keeping the protocol minimal lets the host project plug in whatever adapter
-it already uses (e.g. ryuu-llm, anthropic SDK directly, etc.).
+Uses `ryuu_providers_core.ILLMProvider` — the framework-wide LLM contract — so
+this module does NOT introduce its own adapter type. Any provider (Anthropic,
+OpenAI, custom) registered in ryuu_providers works here without further glue.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
 
-from .builder import META_PROMPT_MODEL, META_PROMPT_VERSION, build_meta_messages
+from ryuu_providers_core import CompletionRequest, ILLMProvider, Message
 
-
-class ChatAdapter(Protocol):
-    """Minimal async chat interface."""
-
-    async def chat(
-        self,
-        messages: list[dict[str, str]],
-        *,
-        model: str,
-        **kwargs: Any,
-    ) -> str: ...
+from .builder import META_PROMPT_MODEL, META_PROMPT_VERSION, render_user_message
 
 
 @dataclass(frozen=True)
@@ -34,37 +21,51 @@ class MetaGenerateResult:
     oracle_prompt: str
     meta_prompt_version: str
     model: str
-    raw_response: str  # same as oracle_prompt unless adapter wraps it
+    provider_id: str  # which provider produced this (e.g. "anthropic")
 
 
 async def generate_oracle_prompt(
-    adapter: ChatAdapter,
+    provider: ILLMProvider,
     *,
     production_prompt_text: str,
     project_name: str = "",
     domain_hint: str = "",
     model: str | None = None,
+    max_tokens: int = 4096,
+    temperature: float = 0.0,
 ) -> MetaGenerateResult:
     """Run the meta-prompt → produce an oracle prompt string.
 
-    The returned `oracle_prompt` is the raw LLM output; downstream UI is
-    expected to render it in an editable textarea so the human can adjust
+    Provider-neutral — pass any `ILLMProvider` (AnthropicProvider, OpenAIProvider,
+    a fallback chain, etc). The returned `oracle_prompt` is the raw LLM output;
+    UI is expected to render it in an editable textarea so a human can adjust
     before the oracle run.
     """
     chosen_model = model or META_PROMPT_MODEL
-    messages = build_meta_messages(
+    user_text = render_user_message(
         production_prompt_text=production_prompt_text,
         project_name=project_name,
         domain_hint=domain_hint,
     )
-    response = await adapter.chat(messages, model=chosen_model)
-    text = (response or "").strip()
-    return MetaGenerateResult(
-        oracle_prompt=text,
-        meta_prompt_version=META_PROMPT_VERSION,
+    request = CompletionRequest(
+        messages=[Message(role="user", content=user_text)],
         model=chosen_model,
-        raw_response=text,
+        system=_SYSTEM_TEXT,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    response = await provider.complete(request)
+    return MetaGenerateResult(
+        oracle_prompt=(response.content or "").strip(),
+        meta_prompt_version=META_PROMPT_VERSION,
+        model=response.model or chosen_model,
+        provider_id=getattr(provider, "provider_id", ""),
     )
 
 
-__all__ = ["ChatAdapter", "MetaGenerateResult", "generate_oracle_prompt"]
+# System text re-exported here to keep the import surface flat; sourced from
+# builder so the YAML stays the single source of truth.
+from .builder import _SYSTEM_TEXT  # noqa: E402  — intentional late import
+
+
+__all__ = ["MetaGenerateResult", "generate_oracle_prompt"]

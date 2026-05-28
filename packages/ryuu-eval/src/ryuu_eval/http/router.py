@@ -94,7 +94,7 @@ def build_eval_router(
     kv_store: Any | None = None,
     oracle_fixtures_dir: Path | None = None,
     oracle_strategy_factory: Callable[[], Any] | None = None,
-    chat_adapter_factory: Callable[[], Any] | None = None,
+    llm_providers: dict[str, Any] | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -1612,6 +1612,82 @@ def build_eval_router(
         normalized["review_items"] = needs_review
         return normalized
 
+    # ── Oracle Ground Truth Studio — meta-prompt → oracle prompt ───────
+    # NOTE: must be registered BEFORE /oracle-review/{fixture_id} so the
+    # wildcard path-param does not swallow these literal sub-paths.
+
+    @r.get("/oracle-review/providers", dependencies=auth_dep)
+    def list_llm_providers() -> dict:
+        """Provider keys registered with build_eval_router (for UI dropdown)."""
+        return {"providers": sorted((llm_providers or {}).keys())}
+
+    @r.post("/oracle-review/meta-generate", dependencies=auth_dep)
+    async def meta_generate_oracle_prompt(payload: dict) -> dict:
+        """Run the generic meta-prompt over a production prompt → oracle prompt.
+
+        Body:
+            production_prompt (str, required): production prompt to wrap
+            provider          (str, optional): key from /providers. Required
+                                               when 2+ providers registered.
+            model             (str, optional): forwarded to the provider
+            project_name      (str, optional): UI hint
+            domain_hint       (str, optional): UI hint
+
+        Returns:
+            {oracle_prompt, meta_prompt_version, provider, model, generated_at}
+        """
+        if not llm_providers:
+            raise HTTPException(
+                501,
+                "No llm_providers configured — pass {key: ILLMProvider} to "
+                "build_eval_router",
+            )
+        production_prompt = str(payload.get("production_prompt", "")).strip()
+        if not production_prompt:
+            raise HTTPException(400, "production_prompt is required")
+
+        provider_key = str(payload.get("provider", "")).strip()
+        available = sorted(llm_providers.keys())
+        if not provider_key:
+            if len(llm_providers) == 1:
+                provider_key = available[0]
+            else:
+                raise HTTPException(
+                    400,
+                    f"provider is required when multiple registered "
+                    f"(available: {available})",
+                )
+        if provider_key not in llm_providers:
+            raise HTTPException(
+                400,
+                f"unknown provider {provider_key!r} (available: {available})",
+            )
+
+        from ryuu_eval_oracle.meta_prompt import (
+            META_PROMPT_VERSION,
+            generate_oracle_prompt,
+        )
+
+        try:
+            result = await generate_oracle_prompt(
+                llm_providers[provider_key],
+                production_prompt_text=production_prompt,
+                project_name=str(payload.get("project_name", "")),
+                domain_hint=str(payload.get("domain_hint", "")),
+                model=(payload.get("model") or None),
+            )
+        except Exception as exc:  # noqa: BLE001 — surface LLM errors to UI
+            raise HTTPException(502, f"meta-prompt failed: {exc}") from exc
+
+        from datetime import datetime as _dt, timezone as _tz
+        return {
+            "oracle_prompt": result.oracle_prompt,
+            "meta_prompt_version": result.meta_prompt_version or META_PROMPT_VERSION,
+            "provider": provider_key,
+            "model": result.model,
+            "generated_at": _dt.now(_tz.utc).isoformat(),
+        }
+
     @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
     def get_oracle_fixture(fixture_id: str) -> dict:
         """Return full fixture JSON including cells + any review items."""
@@ -1731,55 +1807,6 @@ def build_eval_router(
         if review_path.exists():
             review_path.unlink()
         return {"deleted": fixture_id}
-
-    # ── Oracle Ground Truth Studio — meta-prompt → oracle prompt ───────
-
-    @r.post("/oracle-review/meta-generate", dependencies=auth_dep)
-    async def meta_generate_oracle_prompt(payload: dict) -> dict:
-        """Run the generic meta-prompt over a production prompt → oracle prompt.
-
-        Body:
-            production_prompt (str, required): the production prompt to wrap
-            project_name      (str, optional): UI hint, e.g. "prod-code-analysis"
-            domain_hint       (str, optional): UI hint, e.g. "Java Spring Boot"
-            model             (str, optional): override default model
-
-        Returns:
-            {oracle_prompt, meta_prompt_version, model, generated_at}
-        """
-        if chat_adapter_factory is None:
-            raise HTTPException(
-                501,
-                "No chat_adapter_factory configured — pass it to build_eval_router",
-            )
-        production_prompt = str(payload.get("production_prompt", "")).strip()
-        if not production_prompt:
-            raise HTTPException(400, "production_prompt is required")
-
-        from ryuu_eval_oracle.meta_prompt import (
-            META_PROMPT_VERSION,
-            generate_oracle_prompt,
-        )
-
-        adapter = chat_adapter_factory()
-        try:
-            result = await generate_oracle_prompt(
-                adapter,
-                production_prompt_text=production_prompt,
-                project_name=str(payload.get("project_name", "")),
-                domain_hint=str(payload.get("domain_hint", "")),
-                model=(payload.get("model") or None),
-            )
-        except Exception as exc:  # noqa: BLE001 — surface LLM errors to UI
-            raise HTTPException(502, f"meta-prompt failed: {exc}") from exc
-
-        from datetime import datetime as _dt, timezone as _tz
-        return {
-            "oracle_prompt": result.oracle_prompt,
-            "meta_prompt_version": result.meta_prompt_version or META_PROMPT_VERSION,
-            "model": result.model,
-            "generated_at": _dt.now(_tz.utc).isoformat(),
-        }
 
     # ── Static UI (Tier 1) ─────────────────────────────────────────────
 
