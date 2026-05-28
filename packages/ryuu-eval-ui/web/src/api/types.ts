@@ -251,6 +251,11 @@ export interface OracleFixtureDetail {
   expected: Record<string, Record<string, OracleCellData>>;
   meta: { valid_fields?: Record<string, string[]>; [k: string]: unknown };
   review_items: OracleReviewItem[];
+  // Studio audit fields (empty string for fixtures predating the studio flow)
+  production_prompt: string;
+  oracle_prompt: string;
+  oracle_prompt_version: string;
+  meta_prompt_version: string;
 }
 
 export interface ReviewActionPayload {

@@ -338,3 +338,121 @@ export function useDeleteOracleFixture() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["oracle-fixtures"] }),
   });
 }
+
+// ── Oracle Ground Truth Studio hooks ─────────────────────────────────────────
+
+export interface ProvidersResponse {
+  providers: string[];
+}
+
+export function useLLMProviders() {
+  return useQuery<ProvidersResponse>({
+    queryKey: ["oracle-providers"],
+    queryFn: () => apiFetch("/oracle-review/providers"),
+    staleTime: Infinity,
+  });
+}
+
+export interface MetaGenerateRequest {
+  production_prompt: string;
+  provider?: string;
+  model?: string;
+  project_name?: string;
+  domain_hint?: string;
+}
+export interface MetaGenerateResponse {
+  oracle_prompt: string;
+  meta_prompt_version: string;
+  provider: string;
+  model: string;
+  generated_at: string;
+}
+
+export function useMetaGenerateOraclePrompt() {
+  return useMutation<MetaGenerateResponse, Error, MetaGenerateRequest>({
+    mutationFn: (payload) =>
+      apiFetch("/oracle-review/meta-generate", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  });
+}
+
+export interface RunWithPromptRequest {
+  oracle_prompt: string;
+  input_data: Record<string, unknown>;
+  provider?: string;
+  model?: string;
+}
+export interface RunWithPromptResponse {
+  cells: Record<string, Record<string, { op: string; confidence?: string | number; oracle_why?: string; why?: string }>>;
+  raw_response: string;
+  provider: string;
+  model: string;
+  latency_ms: number;
+  cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  parse_error?: string;
+}
+
+export function useRunWithPrompt() {
+  return useMutation<RunWithPromptResponse, Error, RunWithPromptRequest>({
+    mutationFn: (payload) =>
+      apiFetch("/oracle-review/run-with-prompt", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  });
+}
+
+export interface SaveStudioFixtureRequest {
+  case_id: string;
+  suite_id?: string;
+  input_data: Record<string, unknown>;
+  expected_override: { cells: Record<string, unknown>; valid_fields?: Record<string, string[]> };
+  production_prompt?: string;
+  oracle_prompt?: string;
+  oracle_prompt_version?: string;
+  meta_prompt_version?: string;
+  oracle_model?: string;
+}
+
+export function useSaveStudioFixture() {
+  const qc = useQueryClient();
+  return useMutation<OracleFixtureDetail, Error, SaveStudioFixtureRequest>({
+    mutationFn: (payload) =>
+      apiFetch("/oracle-review/generate", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["oracle-fixtures"] });
+      qc.invalidateQueries({ queryKey: ["oracle-fixture", vars.case_id] });
+      if (vars.suite_id) qc.invalidateQueries({ queryKey: ["oracle-fixtures", vars.suite_id] });
+    },
+  });
+}
+
+export interface PromoteRequest {
+  fixture_id: string;
+  target_suite_id: string;
+  case_id?: string;
+  overwrite?: boolean;
+}
+export interface PromoteResponse {
+  written_path: string;
+  case_id: string;
+  target_suite_id: string;
+  cells_count: number;
+}
+
+export function usePromoteToSuite() {
+  return useMutation<PromoteResponse, Error, PromoteRequest>({
+    mutationFn: ({ fixture_id, ...body }) =>
+      apiFetch(`/oracle-review/${fixture_id}/promote-to-suite`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  });
+}

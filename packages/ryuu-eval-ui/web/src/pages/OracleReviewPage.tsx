@@ -3,14 +3,16 @@ import { useParams, Link } from "react-router-dom";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
   useOracleFixtures, useOracleFixture,
-  useUpdateOracleReview, useOraclePrompt, useRunOracle,
+  useUpdateOracleReview,
   useGenerateOracle, useDeleteOracleFixture,
   useCreateSuite, useUpdateSuite, useDeleteSuite,
+  useLLMProviders, useMetaGenerateOraclePrompt,
+  useRunWithPrompt, useSaveStudioFixture, usePromoteToSuite,
 } from "@/api/hooks";
 import type {
   Suite,
   OracleFixtureDetail, OracleReviewItem,
-  ReviewActionPayload, OracleRunPreview,
+  ReviewActionPayload,
 } from "@/api/types";
 
 // ─── Pipeline Header ──────────────────────────────────────────────────────────
@@ -473,120 +475,279 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
   );
 }
 
-// ─── Manual prompt override (Tab 2) — local persist ──────────────────────────
+// ─── Provider + model selector (shared by Tab 2 + Tab 3) ─────────────────────
 
-function ManualPromptOverride({ fixtureId }: { fixtureId: string }) {
-  const storageKey = `oracle-prompt-override::${fixtureId}`;
-  const [value, setValue] = useState<string>(() => {
-    try { return sessionStorage.getItem(storageKey) ?? ""; } catch { return ""; }
-  });
-  const [saved, setSaved] = useState(false);
-
-  function save() {
-    try { sessionStorage.setItem(storageKey, value); } catch { /* ignore */ }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
-  }
-
-  return (
-    <div className="p-3 space-y-2">
-      <p className="text-[11px] text-gray-500 dark:text-gray-400">
-        Paste a custom prompt here to override the auto-generated one when running the oracle in step 3.
-      </p>
-      <textarea
-        className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-none"
-        rows={6}
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        placeholder="Type or paste a custom eval prompt…"
-        spellCheck={false}
-      />
-      <div className="flex items-center gap-2">
-        <button
-          onClick={save}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
-        >Save locally</button>
-        {saved && <span className="text-[11px] text-green-600 dark:text-green-400">✓ saved</span>}
-        {value && (
-          <button
-            onClick={() => { setValue(""); try { sessionStorage.removeItem(storageKey); } catch {} }}
-            className="ml-auto text-[11px] text-gray-400 hover:text-red-500 transition-colors"
-          >Clear</button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Tab 2: Oracle Prompt ─────────────────────────────────────────────────────
-
-function Tab2_OraclePrompt({ fixtureId }: { fixtureId: string }) {
-  const [promptEnabled, setPromptEnabled] = useState(false);
-  const { data: prompt, isLoading, isError } = useOraclePrompt(fixtureId, promptEnabled);
-  function enable() { setPromptEnabled(true); }
-
-  function Content({ text }: { text: string }) {
-    return <div className="p-3"><CodePane title="" content={text} maxHeight="320px" /></div>;
-  }
-  function Status() {
-    if (isLoading) return <div className="px-4 py-3 text-xs text-gray-400 animate-pulse">Loading…</div>;
-    if (isError || !prompt) return <div className="px-4 py-3 text-xs text-red-500">Failed — check that oracle_strategy_factory implements render_prompt().</div>;
-    return null;
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        Rendered by <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">render_prompt(input_data)</code> on the oracle strategy.
-        Expand a section to fetch, or paste manually below.
-      </p>
-      <CollapseSection title="System Prompt" onOpen={enable}>
-        {!promptEnabled ? <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
-          : !prompt ? <Status /> : <Content text={prompt.system} />}
-      </CollapseSection>
-      <CollapseSection title="User Prompt" onOpen={enable}>
-        {!promptEnabled ? <div className="px-4 py-3 text-xs text-gray-400">Expanding will fetch from server…</div>
-          : !prompt ? <Status /> : <Content text={prompt.user} />}
-      </CollapseSection>
-      <CollapseSection title="Manual Override (optional)" badge="local only">
-        <ManualPromptOverride fixtureId={fixtureId} />
-      </CollapseSection>
-    </div>
-  );
-}
-
-// ─── Tab 3: Expectation ───────────────────────────────────────────────────────
-
-function Tab3_Expectation({ fixture, onRun, isRunning, preview }: {
-  fixture: OracleFixtureDetail; onRun: () => void; isRunning: boolean; preview: OracleRunPreview | null;
+function ProviderSelector({
+  providers, provider, model, onChange, disabled,
+}: {
+  providers: string[];
+  provider: string;
+  model: string;
+  onChange: (p: string, m: string) => void;
+  disabled?: boolean;
 }) {
-  const source = preview ? preview.cells : fixture.expected;
-  const entities = Object.keys(source);
-  const hasCells = entities.length > 0;
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <select
+        value={provider}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value, model)}
+        className="text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
+      >
+        {providers.length === 0 && <option value="">(no providers)</option>}
+        {providers.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+      <input
+        type="text"
+        value={model}
+        disabled={disabled}
+        onChange={e => onChange(provider, e.target.value)}
+        placeholder="model id (e.g. gpt-4o-mini)"
+        className="text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-mono w-44 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
+      />
+    </div>
+  );
+}
+
+// ─── Tab 2: Oracle Prompt (meta-generate) ─────────────────────────────────────
+
+function Tab2_OraclePrompt({
+  fixture, productionPrompt, oraclePrompt, onOraclePromptChange, providers,
+  provider, model, onProviderModelChange, onGenerated,
+}: {
+  fixture: OracleFixtureDetail;
+  productionPrompt: string;
+  oraclePrompt: string;
+  onOraclePromptChange: (v: string) => void;
+  providers: string[];
+  provider: string;
+  model: string;
+  onProviderModelChange: (p: string, m: string) => void;
+  onGenerated: (result: { version: string; metaVersion: string }) => void;
+}) {
+  const metaGen = useMetaGenerateOraclePrompt();
+
+  async function handleGenerate() {
+    if (!productionPrompt.trim()) {
+      alert("No production prompt set in step 1 — add one before generating.");
+      return;
+    }
+    try {
+      const result = await metaGen.mutateAsync({
+        production_prompt: productionPrompt,
+        provider: provider || undefined,
+        model: model || undefined,
+        project_name: fixture.fixture_id,
+      });
+      onOraclePromptChange(result.oracle_prompt);
+      onGenerated({
+        version: `auto-${result.generated_at}`,
+        metaVersion: result.meta_prompt_version,
+      });
+    } catch (e) {
+      // Error surfaced below via metaGen.error
+    }
+  }
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Run oracle agent</div>
+      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+              Generate oracle prompt from production prompt
+            </div>
             <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-              Executes the eval prompt (from step 2) against the input (from step 1).
-              {preview && <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-medium">Preview shown — not yet saved.</span>}
+              Runs the generic meta-prompt (server-side, version{" "}
+              <span className="font-mono">
+                {fixture.meta_prompt_version || "unset"}
+              </span>
+              ) over the production prompt from step 1. Edit the result below
+              before running it in step 3.
             </p>
           </div>
           <button
-            onClick={onRun} disabled={isRunning}
+            onClick={handleGenerate}
+            disabled={metaGen.isPending || !productionPrompt.trim()}
             className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
           >
-            {isRunning ? <><span className="animate-spin inline-block">⟳</span> Running…</> : <>▶ Run Oracle</>}
+            {metaGen.isPending ? <><span className="animate-spin inline-block">⟳</span> Generating…</> : <>▶ Generate</>}
           </button>
         </div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-gray-500 dark:text-gray-400 w-16">Provider</span>
+          <ProviderSelector
+            providers={providers}
+            provider={provider}
+            model={model}
+            onChange={onProviderModelChange}
+            disabled={metaGen.isPending}
+          />
+        </div>
+        {metaGen.error && (
+          <div className="text-[11px] text-red-500">⚠ {metaGen.error.message}</div>
+        )}
       </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            Oracle prompt (editable — YAML)
+          </label>
+          <span className="text-[10px] text-gray-400">
+            {oraclePrompt.length.toLocaleString()} chars
+          </span>
+        </div>
+        <textarea
+          value={oraclePrompt}
+          onChange={e => onOraclePromptChange(e.target.value)}
+          placeholder="Click Generate above, or paste/edit a YAML oracle prompt here. Must contain `system:` and `user_template:` keys; user_template uses {{ input_json }}."
+          spellCheck={false}
+          className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-y min-h-[280px]"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 3: Execution (run-with-prompt) ──────────────────────────────────────
+
+interface PreviewRun {
+  cells: Record<string, Record<string, { op: string; confidence?: string | number; oracle_why?: string; why?: string }>>;
+  latency_ms: number;
+  cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  model: string;
+  provider: string;
+  parse_error?: string;
+}
+
+function Tab3_Execution({
+  fixture, oraclePrompt, providers, provider, model, onProviderModelChange,
+  preview, setPreview, onSavePreview, isSaving,
+  oraclePromptVersion, metaPromptVersion,
+}: {
+  fixture: OracleFixtureDetail;
+  oraclePrompt: string;
+  providers: string[];
+  provider: string;
+  model: string;
+  onProviderModelChange: (p: string, m: string) => void;
+  preview: PreviewRun | null;
+  setPreview: (p: PreviewRun | null) => void;
+  onSavePreview: () => Promise<void>;
+  isSaving: boolean;
+  oraclePromptVersion: string;
+  metaPromptVersion: string;
+}) {
+  const runMut = useRunWithPrompt();
+
+  async function handleRun() {
+    if (!oraclePrompt.trim()) {
+      alert("No oracle prompt set — go back to step 2 and Generate.");
+      return;
+    }
+    try {
+      const result = await runMut.mutateAsync({
+        oracle_prompt: oraclePrompt,
+        input_data: fixture.input_data,
+        provider: provider || undefined,
+        model: model || undefined,
+      });
+      setPreview({
+        cells: result.cells,
+        latency_ms: result.latency_ms,
+        cost_usd: result.cost_usd,
+        input_tokens: result.input_tokens,
+        output_tokens: result.output_tokens,
+        model: result.model,
+        provider: result.provider,
+        parse_error: result.parse_error,
+      });
+    } catch {
+      // surface via runMut.error
+    }
+  }
+
+  const source = preview ? preview.cells : fixture.expected;
+  const entities = Object.keys(source);
+  const hasCells = entities.length > 0;
+  const totalCells = entities.reduce((n, e) => n + Object.keys(source[e]).length, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Run oracle prompt</div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              Sends the oracle prompt from step 2 + input from step 1 to the
+              chosen provider. Result is a <em>preview</em>; click Save to
+              persist it as the fixture expectation.
+              {preview && (
+                <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-medium">
+                  Preview shown — not saved yet.
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            onClick={handleRun}
+            disabled={runMut.isPending || !oraclePrompt.trim()}
+            className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+          >
+            {runMut.isPending ? <><span className="animate-spin inline-block">⟳</span> Running…</> : <>▶ Run</>}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-gray-500 dark:text-gray-400 w-16">Provider</span>
+          <ProviderSelector
+            providers={providers}
+            provider={provider}
+            model={model}
+            onChange={onProviderModelChange}
+            disabled={runMut.isPending}
+          />
+        </div>
+        {runMut.error && (
+          <div className="text-[11px] text-red-500">⚠ {runMut.error.message}</div>
+        )}
+        {preview?.parse_error && (
+          <div className="text-[11px] text-yellow-600 dark:text-yellow-400">
+            ⚠ LLM returned unparseable JSON: {preview.parse_error}. Check raw response below.
+          </div>
+        )}
+      </div>
+
+      {preview && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2">
+          <div className="flex items-center gap-4 flex-wrap text-[11px] text-gray-600 dark:text-gray-300">
+            <span><span className="text-gray-400">Latency</span> <span className="font-mono">{preview.latency_ms.toFixed(0)}ms</span></span>
+            <span><span className="text-gray-400">Cost</span> <span className="font-mono">${preview.cost_usd.toFixed(4)}</span></span>
+            <span><span className="text-gray-400">Tokens</span> <span className="font-mono">{preview.input_tokens}/{preview.output_tokens}</span></span>
+            <span><span className="text-gray-400">Model</span> <span className="font-mono">{preview.model}</span></span>
+            <button
+              onClick={onSavePreview}
+              disabled={isSaving || !hasCells || !!preview.parse_error}
+              className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold disabled:opacity-40 transition-colors"
+              title={oraclePromptVersion ? `Saving with version ${oraclePromptVersion}` : "Will save with generated_at version"}
+            >
+              {isSaving ? "Saving…" : "💾 Save preview as expectation"}
+            </button>
+          </div>
+          {(oraclePromptVersion || metaPromptVersion) && (
+            <div className="text-[10px] text-gray-400 font-mono">
+              Will tag fixture with: oracle_prompt_version={oraclePromptVersion || "(blank)"}, meta_prompt_version={metaPromptVersion || "(blank)"}
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="text-xs text-gray-500 dark:text-gray-400">
         {hasCells
-          ? <>Last result: <span className="font-semibold">{entities.length}</span> entities · <span className="font-semibold">{entities.reduce((n, e) => n + Object.keys(source[e]).length, 0)}</span> cells</>
-          : "No expectation yet — run the oracle to generate."}
+          ? <>{preview ? "Preview" : "Saved expectation"}: <span className="font-semibold">{entities.length}</span> entities · <span className="font-semibold">{totalCells}</span> cells</>
+          : "No expectation yet — click Run."}
       </p>
 
       {hasCells && (
@@ -601,15 +762,19 @@ function Tab3_Expectation({ fixture, onRun, isRunning, preview }: {
             </thead>
             <tbody>
               {entities.flatMap(entity =>
-                Object.entries(source[entity]).map(([field, cell]) => (
-                  <tr key={`${entity}::${field}`} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                    <td className="px-3 py-2 font-mono font-medium text-gray-700 dark:text-gray-300">{entity}</td>
-                    <td className="px-3 py-2 font-mono text-gray-500 dark:text-gray-400">{field}</td>
-                    <td className="px-3 py-2"><OpBadge op={cell.op} /></td>
-                    <td className="px-3 py-2"><ConfBadge confidence={cell.confidence} /></td>
-                    <td className="px-3 py-2 text-gray-500 dark:text-gray-400 max-w-[240px] truncate" title={cell.oracle_why}>{cell.oracle_why}</td>
-                  </tr>
-                ))
+                Object.entries(source[entity]).map(([field, cell]) => {
+                  const why = (cell as { oracle_why?: string; why?: string }).oracle_why
+                    ?? (cell as { why?: string }).why ?? "";
+                  return (
+                    <tr key={`${entity}::${field}`} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <td className="px-3 py-2 font-mono font-medium text-gray-700 dark:text-gray-300">{entity}</td>
+                      <td className="px-3 py-2 font-mono text-gray-500 dark:text-gray-400">{field}</td>
+                      <td className="px-3 py-2"><OpBadge op={String(cell.op ?? "")} /></td>
+                      <td className="px-3 py-2"><ConfBadge confidence={String(cell.confidence ?? "")} /></td>
+                      <td className="px-3 py-2 text-gray-500 dark:text-gray-400 max-w-[240px] truncate" title={why}>{why}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -678,10 +843,15 @@ function ReviewCell({ item, pending, onAction }: {
   );
 }
 
-function Tab4_Review({ fixture, pendingActions, onAction, onSave, isSaving, reviewerName, onReviewerChange }: {
+function Tab4_Review({
+  fixture, pendingActions, onAction, onSave, isSaving,
+  reviewerName, onReviewerChange,
+  onPromote, isPromoting,
+}: {
   fixture: OracleFixtureDetail; pendingActions: ReviewActionPayload[];
   onAction: (a: ReviewActionPayload) => void; onSave: () => void;
   isSaving: boolean; reviewerName: string; onReviewerChange: (s: string) => void;
+  onPromote: () => void; isPromoting: boolean;
 }) {
   const pendingMap = new Map(pendingActions.map(a => [`${a.entity}::${a.field}`, a]));
   const pendingCount = fixture.review_items.filter(r => r.action == null).length;
@@ -752,9 +922,21 @@ function Tab4_Review({ fixture, pendingActions, onAction, onSave, isSaving, revi
           <button
             onClick={onSave}
             disabled={isSaving || pendingActions.length === 0}
-            className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40 transition-colors"
+            className="text-sm px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40 transition-colors"
           >
-            {isSaving ? "Saving…" : `Save & lock to suite (${pendingActions.length})`}
+            {isSaving ? "Saving…" : `Save review (${pendingActions.length})`}
+          </button>
+          <button
+            onClick={onPromote}
+            disabled={isPromoting || pendingCount > 0}
+            title={
+              pendingCount > 0
+                ? "Resolve pending reviews before promoting to suite"
+                : "Copy this fixture into the target suite's cases dir as a YAML regression case"
+            }
+            className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold disabled:opacity-40 transition-colors"
+          >
+            {isPromoting ? "Promoting…" : "🚀 Promote to suite"}
           </button>
         </div>
       </div>
@@ -1202,14 +1384,32 @@ export function OracleReviewPage() {
   const [fixtureModal, setFixtureModal]             = useState<null | { suiteId: string; fixture?: OracleFixtureDetail }>(null);
   const [pendingActions, setPendingActions]         = useState<ReviewActionPayload[]>([]);
   const [reviewerName, setReviewerName]             = useState("");
-  const [preview, setPreview]                       = useState<OracleRunPreview | null>(null);
+  const [preview, setPreview]                       = useState<PreviewRun | null>(null);
+  // Studio state — survives across tabs while the fixture is open
+  const [oraclePrompt, setOraclePrompt]             = useState("");
+  const [oraclePromptVersion, setOraclePromptVersion] = useState("");
+  const [metaPromptVersion, setMetaPromptVersion]   = useState("");
+  const [provider, setProvider]                     = useState("");
+  const [model, setModel]                           = useState("");
 
   const { data: fixture, isLoading: loadingFixture } = useOracleFixture(selectedFixtureId);
+  const { data: providersResp }                      = useLLMProviders();
   const updateMutation   = useUpdateOracleReview(selectedFixtureId);
-  const runMutation      = useRunOracle();
   const generateMutation = useGenerateOracle();
   const deleteMutation   = useDeleteOracleFixture();
   const deleteSuite      = useDeleteSuite();
+  const saveStudio       = useSaveStudioFixture();
+  const promoteMut       = usePromoteToSuite();
+
+  const providers = providersResp?.providers ?? [];
+
+  // Initialize provider/model when the registry loads
+  useEffect(() => {
+    if (!provider && providers.length > 0) {
+      setProvider(providers[0]);
+      if (!model) setModel(providers[0] === "openai" ? "gpt-4o-mini" : "claude-opus-4-7");
+    }
+  }, [providers, provider, model]);
 
   // Reset pending state when fixture changes
   const [lastFixtureId, setLastFixtureId] = useState(selectedFixtureId);
@@ -1218,7 +1418,24 @@ export function OracleReviewPage() {
     setPendingActions([]);
     setPreview(null);
     setActiveTab("input");
+    setOraclePrompt("");
+    setOraclePromptVersion("");
+    setMetaPromptVersion("");
   }
+
+  // Hydrate oracle prompt from fixture once loaded (audit fields)
+  useEffect(() => {
+    if (fixture && fixture.fixture_id === selectedFixtureId) {
+      if (!oraclePrompt && fixture.oracle_prompt) setOraclePrompt(fixture.oracle_prompt);
+      if (!oraclePromptVersion && fixture.oracle_prompt_version) {
+        setOraclePromptVersion(fixture.oracle_prompt_version);
+      }
+      if (!metaPromptVersion && fixture.meta_prompt_version) {
+        setMetaPromptVersion(fixture.meta_prompt_version);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixture?.fixture_id]);
 
   function handleSelectFixture(suiteId: string, fixtureId: string) {
     setExpandedSuiteId(suiteId);
@@ -1226,6 +1443,9 @@ export function OracleReviewPage() {
     setPendingActions([]);
     setPreview(null);
     setActiveTab("input");
+    setOraclePrompt("");
+    setOraclePromptVersion("");
+    setMetaPromptVersion("");
   }
 
   function handleToggleSuite(suiteId: string) {
@@ -1249,10 +1469,60 @@ export function OracleReviewPage() {
     setPendingActions([]);
   }
 
-  async function handleRun() {
-    setPreview(null);
-    const result = await runMutation.mutateAsync(selectedFixtureId);
-    setPreview(result);
+  // Studio: save preview cells from Tab 3 back into the fixture as expectation
+  async function handleSavePreview() {
+    if (!preview || !fixture) return;
+    const version = oraclePromptVersion || `auto-${new Date().toISOString()}`;
+    await saveStudio.mutateAsync({
+      case_id: fixture.fixture_id,
+      suite_id: expandedSuiteId,
+      input_data: fixture.input_data,
+      expected_override: { cells: preview.cells },
+      production_prompt: fixture.production_prompt || "",
+      oracle_prompt: oraclePrompt,
+      oracle_prompt_version: version,
+      meta_prompt_version: metaPromptVersion || "",
+      oracle_model: preview.model,
+    });
+    setOraclePromptVersion(version);
+    setPreview(null);  // saved → no longer a preview
+  }
+
+  // Studio: promote saved fixture to target suite as a YAML case
+  async function handlePromote() {
+    if (!fixture) return;
+    const targetSuite = window.prompt(
+      `Promote ${fixture.fixture_id} to which suite? (cases will land at cases_dir/<suite_id>/)`,
+      expandedSuiteId,
+    );
+    if (!targetSuite) return;
+    try {
+      const result = await promoteMut.mutateAsync({
+        fixture_id: fixture.fixture_id,
+        target_suite_id: targetSuite,
+        overwrite: false,
+      });
+      window.alert(`Promoted to ${result.written_path}\n${result.cells_count} cells.`);
+    } catch (e) {
+      const err = e as Error;
+      if (/409/.test(err.message)) {
+        if (window.confirm("Case file already exists. Overwrite?")) {
+          const result = await promoteMut.mutateAsync({
+            fixture_id: fixture.fixture_id,
+            target_suite_id: targetSuite,
+            overwrite: true,
+          });
+          window.alert(`Promoted to ${result.written_path}\n${result.cells_count} cells.`);
+        }
+      } else {
+        window.alert(`Promote failed: ${err.message}`);
+      }
+    }
+  }
+
+  function handleProviderModelChange(p: string, m: string) {
+    setProvider(p);
+    setModel(m);
   }
 
   async function handleGenerate(caseId: string, inputData: Record<string, unknown>) {
@@ -1354,14 +1624,39 @@ export function OracleReviewPage() {
                     <Tab1_Input fixture={fixture} suiteId={expandedSuiteId} />
                   )}
                   {activeTab === "oracle-prompt" && (
-                    <Tab2_OraclePrompt fixtureId={selectedFixtureId} />
+                    <Tab2_OraclePrompt
+                      fixture={fixture}
+                      productionPrompt={
+                        suites.find(s => s.suite_id === expandedSuiteId)?.default_system_prompt
+                          ?? fixture.production_prompt
+                          ?? ""
+                      }
+                      oraclePrompt={oraclePrompt}
+                      onOraclePromptChange={setOraclePrompt}
+                      providers={providers}
+                      provider={provider}
+                      model={model}
+                      onProviderModelChange={handleProviderModelChange}
+                      onGenerated={({ version, metaVersion }) => {
+                        setOraclePromptVersion(version);
+                        setMetaPromptVersion(metaVersion);
+                      }}
+                    />
                   )}
                   {activeTab === "expectation" && (
-                    <Tab3_Expectation
+                    <Tab3_Execution
                       fixture={fixture}
-                      onRun={handleRun}
-                      isRunning={runMutation.isPending}
+                      oraclePrompt={oraclePrompt}
+                      providers={providers}
+                      provider={provider}
+                      model={model}
+                      onProviderModelChange={handleProviderModelChange}
                       preview={preview}
+                      setPreview={setPreview}
+                      onSavePreview={handleSavePreview}
+                      isSaving={saveStudio.isPending}
+                      oraclePromptVersion={oraclePromptVersion}
+                      metaPromptVersion={metaPromptVersion}
                     />
                   )}
                   {activeTab === "review" && (
@@ -1373,6 +1668,8 @@ export function OracleReviewPage() {
                       isSaving={updateMutation.isPending}
                       reviewerName={reviewerName}
                       onReviewerChange={setReviewerName}
+                      onPromote={handlePromote}
+                      isPromoting={promoteMut.isPending}
                     />
                   )}
                 </div>
