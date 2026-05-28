@@ -1508,6 +1508,9 @@ def build_eval_router(
                 "reviewed_by": data.get("reviewed_by", ""),
                 "reviewed_at": data.get("reviewed_at", ""),
                 "pending_review": pending,
+                # Studio fields (empty for pre-studio fixtures)
+                "oracle_prompt_version": data.get("oracle_prompt_version", ""),
+                "meta_prompt_version": data.get("meta_prompt_version", ""),
             })
         return result
 
@@ -1523,6 +1526,10 @@ def build_eval_router(
         Old format: route_context + expected = {entity: {field: cell}}
         New format: input_data  + expected = {cells: {…}, valid_fields: {…}, framework: …}
         Both become: input_data + expected = {entity: {field: cell}} + meta
+
+        Studio fields (oracle_prompt, oracle_prompt_version, meta_prompt_version,
+        production_prompt) are surfaced with empty-string defaults so existing
+        fixtures stay readable without re-saving.
         """
         if "input_data" not in data and "route_context" in data:
             data["input_data"] = data.pop("route_context")
@@ -1535,6 +1542,15 @@ def build_eval_router(
             data["expected"] = expected["cells"]
         elif "meta" not in data:
             data["meta"] = {}
+
+        # Studio audit fields — empty string when fixture predates the studio flow
+        for fld in (
+            "oracle_prompt",
+            "oracle_prompt_version",
+            "meta_prompt_version",
+            "production_prompt",
+        ):
+            data.setdefault(fld, "")
         return data
 
     @r.get("/oracle-review/", dependencies=auth_dep)
@@ -1551,9 +1567,24 @@ def build_eval_router(
 
     @r.post("/oracle-review/generate", dependencies=auth_dep)
     async def generate_oracle_fixture(payload: dict) -> dict:
-        """Create or regenerate an oracle fixture by running the oracle strategy on input_data."""
-        if oracle_strategy_factory is None:
-            raise HTTPException(501, "No oracle_strategy_factory configured")
+        """Create or regenerate an oracle fixture.
+
+        Two modes:
+          A) Strategy mode (legacy): omit `expected_override` — endpoint runs
+             oracle_strategy_factory() on input_data to compute cells.
+             Requires `oracle_strategy_factory` to be configured.
+
+          B) Override mode (studio): pass `expected_override.cells` (and
+             optionally `valid_fields`) — endpoint skips the strategy and
+             persists the supplied cells directly. This is what Tab 3 of the
+             Studio flow uses after /run-with-prompt produces a preview.
+
+        Studio audit fields (all optional, default ""):
+          - production_prompt    — input given to /meta-generate
+          - oracle_prompt        — prompt produced by /meta-generate, edited
+          - oracle_prompt_version — timestamp/hash for audit
+          - meta_prompt_version   — version of the system meta-prompt used
+        """
         case_id = payload.get("case_id", "").strip()
         if not case_id:
             raise HTTPException(400, "case_id is required")
@@ -1564,22 +1595,48 @@ def build_eval_router(
         if not isinstance(input_data, dict):
             raise HTTPException(400, "input_data must be a JSON object")
 
-        strategy = oracle_strategy_factory()
-        candidate = await strategy.generate_candidate(input_data)
-        cells = candidate.get("cells", candidate)
-        valid_fields = candidate.get("valid_fields", {})
+        # Mode B (override) — caller supplies cells, no strategy invocation
+        override = payload.get("expected_override")
+        if override is not None:
+            if not isinstance(override, dict):
+                raise HTTPException(
+                    400, "expected_override must be {cells: {...}, valid_fields?: {...}}",
+                )
+            cells = override.get("cells", override)
+            valid_fields = override.get("valid_fields", {})
+            prompt_version_val = str(payload.get("prompt_version", ""))
+            oracle_model_val = str(payload.get("oracle_model", ""))
+        else:
+            # Mode A (strategy) — original behavior
+            if oracle_strategy_factory is None:
+                raise HTTPException(
+                    501,
+                    "No oracle_strategy_factory configured — pass expected_override "
+                    "to skip strategy, or wire the factory at startup",
+                )
+            strategy = oracle_strategy_factory()
+            candidate = await strategy.generate_candidate(input_data)
+            cells = candidate.get("cells", candidate)
+            valid_fields = candidate.get("valid_fields", {})
+            prompt_version_val = getattr(strategy, "prompt_version", "unknown")
+            oracle_model_val = getattr(strategy, "_model", "")
 
         fixture: dict = {
             "fixture_id": case_id,
             "suite_id": suite_id_val,
-            "prompt_version": getattr(strategy, "prompt_version", "unknown"),
-            "oracle_model": getattr(strategy, "_model", ""),
+            "prompt_version": prompt_version_val,
+            "oracle_model": oracle_model_val,
             "reviewed_by": "",
             "reviewed_at": "",
             "review_note": "",
             "input_data": input_data,
             "expected": {"cells": cells, "valid_fields": valid_fields},
             "meta": {"valid_fields": valid_fields},
+            # Studio audit fields
+            "production_prompt": str(payload.get("production_prompt", "")),
+            "oracle_prompt": str(payload.get("oracle_prompt", "")),
+            "oracle_prompt_version": str(payload.get("oracle_prompt_version", "")),
+            "meta_prompt_version": str(payload.get("meta_prompt_version", "")),
         }
         _oracle_dir.mkdir(parents=True, exist_ok=True)
         path = _oracle_dir / f"{case_id}.json"
