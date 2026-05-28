@@ -544,6 +544,21 @@ function Tab2_OraclePrompt({
     fixture.oracle_prompt ? "auto" : (oraclePrompt ? "manual" : "auto"),
   );
 
+  // Expected output shape — per-fixture, persisted locally. Passed to the
+  // meta-prompt so the LLM preserves the project's output schema verbatim
+  // (different per project: CRUD matrix vs Anki vs todo classify, etc).
+  const schemaKey = `oracle-schema-hint::${fixture.fixture_id}`;
+  const [schemaHint, setSchemaHint] = useState<string>(() => {
+    try { return localStorage.getItem(schemaKey) ?? ""; } catch { return ""; }
+  });
+  useEffect(() => {
+    try { setSchemaHint(localStorage.getItem(schemaKey) ?? ""); } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixture.fixture_id]);
+  useEffect(() => {
+    try { localStorage.setItem(schemaKey, schemaHint); } catch { /* ignore */ }
+  }, [schemaHint, schemaKey]);
+
   // localStorage persist — defense against accidental refresh
   const draftKey = `oracle-prompt-draft::${fixture.fixture_id}`;
   useEffect(() => {
@@ -574,6 +589,7 @@ function Tab2_OraclePrompt({
         provider: provider || undefined,
         model: model || undefined,
         project_name: fixture.fixture_id,
+        output_schema_hint: schemaHint || undefined,
       });
       onOraclePromptChange(result.oracle_prompt);
       onGenerated({
@@ -657,6 +673,27 @@ function Tab2_OraclePrompt({
               model={model}
               onChange={onProviderModelChange}
               disabled={metaGen.isPending}
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between text-[11px] mb-1">
+              <span className="text-gray-500 dark:text-gray-400">
+                Expected output shape <span className="text-gray-400">(optional — paste a sample of production output JSON so the oracle preserves the EXACT key names + nesting)</span>
+              </span>
+              {schemaHint && (
+                <button
+                  onClick={() => setSchemaHint("")}
+                  className="text-[10px] text-gray-400 hover:text-red-500"
+                >Clear</button>
+              )}
+            </div>
+            <textarea
+              value={schemaHint}
+              onChange={e => setSchemaHint(e.target.value)}
+              placeholder={`Example:\n{\n  "User": {\n    "id": { "op": "R", "confidence": "high", "why": "..." },\n    "email": { "op": "R", ... }\n  }\n}`}
+              disabled={metaGen.isPending}
+              spellCheck={false}
+              className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-y min-h-[80px]"
             />
           </div>
           {metaGen.error && (

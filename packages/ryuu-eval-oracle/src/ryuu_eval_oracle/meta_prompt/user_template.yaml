@@ -9,5 +9,9 @@ user_template: |
   PROJECT: {{ project_name }}
   DOMAIN/FRAMEWORK (if known): {{ domain_hint }}
 
+  EXPECTED OUTPUT SHAPE (preserve verbatim — same nesting, same key names,
+  same enum values; only ADD a per-cell `confidence` and `why` if missing):
+  {{ output_schema_hint }}
+
   PRODUCTION PROMPT:
   {{ production_prompt_text }}

@@ -38,16 +38,20 @@ def render_user_message(
     production_prompt_text: str,
     project_name: str = "",
     domain_hint: str = "",
+    output_schema_hint: str = "",
 ) -> str:
     """Render the user message by substituting template fields.
 
     Uses simple Mustache-style `{{ var }}` replacement — no Jinja, since
     the fields are flat strings and any wider templating engine is overkill.
     """
+    schema_block = (output_schema_hint.strip()
+                    or "(not provided — infer from PRODUCTION PROMPT below)")
     return (
         _USER_TEMPLATE
         .replace("{{ project_name }}", project_name or "(unspecified)")
         .replace("{{ domain_hint }}", domain_hint or "(unspecified)")
+        .replace("{{ output_schema_hint }}", schema_block)
         .replace("{{ production_prompt_text }}", production_prompt_text or "")
     )
 
@@ -57,6 +61,7 @@ def build_meta_messages(
     production_prompt_text: str,
     project_name: str = "",
     domain_hint: str = "",
+    output_schema_hint: str = "",
 ) -> list[dict[str, str]]:
     """Return a `[{role, content}]` list ready for any LLM adapter.
 
@@ -73,6 +78,7 @@ def build_meta_messages(
                 production_prompt_text=production_prompt_text,
                 project_name=project_name,
                 domain_hint=domain_hint,
+                output_schema_hint=output_schema_hint,
             ),
         },
     ]

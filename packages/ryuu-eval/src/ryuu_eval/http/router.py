@@ -1819,6 +1819,7 @@ def build_eval_router(
                 production_prompt_text=production_prompt,
                 project_name=str(payload.get("project_name", "")),
                 domain_hint=str(payload.get("domain_hint", "")),
+                output_schema_hint=str(payload.get("output_schema_hint", "")),
                 model=(payload.get("model") or None),
             )
         except Exception as exc:  # noqa: BLE001 — surface LLM errors to UI

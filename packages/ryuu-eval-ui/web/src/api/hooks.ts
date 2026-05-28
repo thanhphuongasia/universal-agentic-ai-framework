@@ -359,6 +359,7 @@ export interface MetaGenerateRequest {
   model?: string;
   project_name?: string;
   domain_hint?: string;
+  output_schema_hint?: string;
 }
 export interface MetaGenerateResponse {
   oracle_prompt: string;

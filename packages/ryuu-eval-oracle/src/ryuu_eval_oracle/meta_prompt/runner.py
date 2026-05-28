@@ -30,6 +30,7 @@ async def generate_oracle_prompt(
     production_prompt_text: str,
     project_name: str = "",
     domain_hint: str = "",
+    output_schema_hint: str = "",
     model: str | None = None,
     max_tokens: int = 4096,
     temperature: float = 0.0,
@@ -46,6 +47,7 @@ async def generate_oracle_prompt(
         production_prompt_text=production_prompt_text,
         project_name=project_name,
         domain_hint=domain_hint,
+        output_schema_hint=output_schema_hint,
     )
     request = CompletionRequest(
         messages=[Message(role="user", content=user_text)],
