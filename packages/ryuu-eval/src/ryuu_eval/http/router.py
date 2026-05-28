@@ -1523,16 +1523,24 @@ def build_eval_router(
     def _normalize_fixture_for_ui(data: dict) -> dict:
         """Normalize on-disk fixture to a stable shape for the frontend.
 
-        Old format: route_context + expected = {entity: {field: cell}}
-        New format: input_data  + expected = {cells: {…}, valid_fields: {…}, framework: …}
-        Both become: input_data + expected = {entity: {field: cell}} + meta
+        Shape evolution:
+          v0  route_context + expected = {entity: {field: cell}}
+          v1  input_data    + expected = {cells: {…}, valid_fields: …}
+          v2  inputs: [{name, data, expected}, …]   ← studio multi-input
 
-        Studio fields (oracle_prompt, oracle_prompt_version, meta_prompt_version,
-        production_prompt) are surfaced with empty-string defaults so existing
-        fixtures stay readable without re-saving.
+        Response shape always exposes BOTH:
+          - top-level input_data + expected      (legacy consumers, inputs[0])
+          - inputs: [{name, data, expected}]     (multi-input UI)
+
+        Studio audit fields (oracle_prompt, oracle_prompt_version,
+        meta_prompt_version, production_prompt) are surfaced with empty-string
+        defaults so existing fixtures stay readable without re-saving.
         """
+        # v0 → v1 migration: route_context → input_data
         if "input_data" not in data and "route_context" in data:
             data["input_data"] = data.pop("route_context")
+
+        # v1 expected shape: {cells, valid_fields, framework} → flatten to {entity:{field:cell}}
         expected = data.get("expected", {})
         if "cells" in expected and isinstance(expected["cells"], dict):
             if "meta" not in data:
@@ -1542,6 +1550,40 @@ def build_eval_router(
             data["expected"] = expected["cells"]
         elif "meta" not in data:
             data["meta"] = {}
+
+        # v2 — inputs[] array. Three cases:
+        #   a) `inputs` already present on disk (v2 fixture) — surface as-is,
+        #      also populate top-level input_data/expected from inputs[0] so
+        #      legacy code paths still work.
+        #   b) Only legacy top-level input_data + expected — synthesize
+        #      inputs=[{name: "default", data: input_data, expected}].
+        #   c) Both missing — empty inputs[].
+        inputs = data.get("inputs")
+        if isinstance(inputs, list) and inputs:
+            # Normalize each inputs[i].expected to flat shape too
+            normalized: list[dict] = []
+            for entry in inputs:
+                if not isinstance(entry, dict):
+                    continue
+                exp = entry.get("expected", {})
+                if isinstance(exp, dict) and "cells" in exp and isinstance(exp["cells"], dict):
+                    exp = exp["cells"]
+                normalized.append({
+                    "name": str(entry.get("name", "")) or "input",
+                    "data": entry.get("data", {}),
+                    "expected": exp if isinstance(exp, dict) else {},
+                })
+            data["inputs"] = normalized
+            # Mirror inputs[0] into top-level for legacy consumers
+            if normalized:
+                data.setdefault("input_data", normalized[0]["data"])
+                data.setdefault("expected", normalized[0]["expected"])
+        else:
+            data["inputs"] = [{
+                "name": "default",
+                "data": data.get("input_data", {}),
+                "expected": data.get("expected", {}),
+            }]
 
         # Studio audit fields — empty string when fixture predates the studio flow
         for fld in (
@@ -1590,36 +1632,65 @@ def build_eval_router(
             raise HTTPException(400, "case_id is required")
         if not all(c.isalnum() or c in "_-" for c in case_id):
             raise HTTPException(400, "case_id may only contain letters, numbers, _ and -")
-        input_data = payload.get("input_data")
         suite_id_val = str(payload.get("suite_id", "")).strip()
-        if not isinstance(input_data, dict):
-            raise HTTPException(400, "input_data must be a JSON object")
 
-        # Mode B (override) — caller supplies cells, no strategy invocation
-        override = payload.get("expected_override")
-        if override is not None:
-            if not isinstance(override, dict):
-                raise HTTPException(
-                    400, "expected_override must be {cells: {...}, valid_fields?: {...}}",
-                )
-            cells = override.get("cells", override)
-            valid_fields = override.get("valid_fields", {})
+        # v2: caller passes inputs[] array directly — preferred for multi-input
+        # fixtures. Each entry: {name, data, expected, valid_fields?}
+        inputs_payload = payload.get("inputs")
+        is_multi_input = isinstance(inputs_payload, list) and inputs_payload
+
+        if is_multi_input:
+            normalized_inputs: list[dict] = []
+            for i, entry in enumerate(inputs_payload):
+                if not isinstance(entry, dict):
+                    raise HTTPException(400, f"inputs[{i}] must be a JSON object")
+                name = str(entry.get("name", "")).strip() or f"input_{i+1}"
+                data_ = entry.get("data", {})
+                if not isinstance(data_, dict):
+                    raise HTTPException(400, f"inputs[{i}].data must be a JSON object")
+                expected_ = entry.get("expected", {})
+                if not isinstance(expected_, dict):
+                    expected_ = {}
+                normalized_inputs.append({
+                    "name": name, "data": data_, "expected": expected_,
+                })
+            # Mirror inputs[0] into legacy top-level fields
+            input_data = normalized_inputs[0]["data"]
+            cells = normalized_inputs[0]["expected"]
+            valid_fields = {}
             prompt_version_val = str(payload.get("prompt_version", ""))
             oracle_model_val = str(payload.get("oracle_model", ""))
         else:
-            # Mode A (strategy) — original behavior
-            if oracle_strategy_factory is None:
-                raise HTTPException(
-                    501,
-                    "No oracle_strategy_factory configured — pass expected_override "
-                    "to skip strategy, or wire the factory at startup",
-                )
-            strategy = oracle_strategy_factory()
-            candidate = await strategy.generate_candidate(input_data)
-            cells = candidate.get("cells", candidate)
-            valid_fields = candidate.get("valid_fields", {})
-            prompt_version_val = getattr(strategy, "prompt_version", "unknown")
-            oracle_model_val = getattr(strategy, "_model", "")
+            normalized_inputs = []
+            input_data = payload.get("input_data")
+            if not isinstance(input_data, dict):
+                raise HTTPException(400, "input_data must be a JSON object (or pass inputs[])")
+
+            # Mode B (override) — caller supplies cells, no strategy invocation
+            override = payload.get("expected_override")
+            if override is not None:
+                if not isinstance(override, dict):
+                    raise HTTPException(
+                        400, "expected_override must be {cells: {...}, valid_fields?: {...}}",
+                    )
+                cells = override.get("cells", override)
+                valid_fields = override.get("valid_fields", {})
+                prompt_version_val = str(payload.get("prompt_version", ""))
+                oracle_model_val = str(payload.get("oracle_model", ""))
+            else:
+                # Mode A (strategy) — original behavior
+                if oracle_strategy_factory is None:
+                    raise HTTPException(
+                        501,
+                        "No oracle_strategy_factory configured — pass expected_override "
+                        "or inputs[] to skip strategy, or wire the factory at startup",
+                    )
+                strategy = oracle_strategy_factory()
+                candidate = await strategy.generate_candidate(input_data)
+                cells = candidate.get("cells", candidate)
+                valid_fields = candidate.get("valid_fields", {})
+                prompt_version_val = getattr(strategy, "prompt_version", "unknown")
+                oracle_model_val = getattr(strategy, "_model", "")
 
         fixture: dict = {
             "fixture_id": case_id,
@@ -1638,12 +1709,24 @@ def build_eval_router(
             "oracle_prompt_version": str(payload.get("oracle_prompt_version", "")),
             "meta_prompt_version": str(payload.get("meta_prompt_version", "")),
         }
+        # v2 — persist inputs[] when caller supplied multi-input shape
+        if is_multi_input:
+            fixture["inputs"] = normalized_inputs
         _oracle_dir.mkdir(parents=True, exist_ok=True)
         path = _oracle_dir / f"{case_id}.json"
         path.write_text(json.dumps(fixture, ensure_ascii=False, indent=2), encoding="utf-8")
 
+        # Aggregate review items across all inputs (multi-input case) or
+        # just the single inputs[0] / legacy cells.
+        review_sources: list[tuple[str, dict]] = []
+        if is_multi_input:
+            for entry in normalized_inputs:
+                review_sources.append((entry["name"], entry["expected"]))
+        else:
+            review_sources.append(("default", cells))
         needs_review = [
             {
+                "input_name": iname,
                 "entity": entity,
                 "field": field_name,
                 "op": cell.get("op", ""),
@@ -1652,8 +1735,11 @@ def build_eval_router(
                 "action": None,
                 "corrected_op": None,
             }
-            for entity, fields in cells.items()
+            for iname, icells in review_sources
+            for entity, fields in icells.items()
+            if isinstance(fields, dict)
             for field_name, cell in fields.items()
+            if isinstance(cell, dict)
             if cell.get("confidence") in ("low", "medium")
         ]
         review_path = _oracle_dir / f"{case_id}.review.json"
