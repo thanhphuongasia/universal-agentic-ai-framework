@@ -365,7 +365,6 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const input = fixture.input_data as any;
   const route    = input?.route;
-  const entities = input?.entities ?? [];
   const routeBadge = route ? `${route.http_method ?? ""} ${route.endpoint ?? ""}`.trim() : undefined;
   const inputJson  = JSON.stringify(fixture.input_data, null, 2);
 
@@ -449,33 +448,24 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
       <CollapseSection title="Actual Output (optional)" badge="paste model output">
         <ActualOutputEditor fixtureId={fixture.fixture_id} />
       </CollapseSection>
-
-      {/* Entities */}
-      {entities.length > 0 && (
-        <CollapseSection title="Entities" badge={`${entities.length}`}>
-          <div className="p-3 space-y-2">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {entities.map((e: any) => (
-              <div key={e.short_name ?? e.name} className="border border-gray-100 dark:border-gray-800 rounded-lg p-3 bg-gray-50 dark:bg-gray-800">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">{e.short_name ?? e.name}</div>
-                <div className="flex flex-wrap gap-1">
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {(e.fields ?? []).map((f: any) => (
-                    <span key={f.name} className="text-[10px] font-mono bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-400">
-                      {f.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CollapseSection>
-      )}
     </div>
   );
 }
 
 // ─── Provider + model selector (shared by Tab 2 + Tab 3) ─────────────────────
+
+// Hardcoded model catalog per provider. Adding a new model = add a line here.
+// (Eventually this should come from a backend endpoint exposing each provider's
+// supported_models() — track as a separate task.)
+const MODELS_BY_PROVIDER: Record<string, string[]> = {
+  anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  openai:    ["gpt-4o-mini", "gpt-4o", "gpt-5", "o1", "o3-mini"],
+  gemini:    ["gemini-2.0-flash-exp", "gemini-1.5-pro"],
+};
+
+function defaultModelFor(provider: string): string {
+  return MODELS_BY_PROVIDER[provider]?.[0] ?? "";
+}
 
 function ProviderSelector({
   providers, provider, model, onChange, disabled,
@@ -486,34 +476,42 @@ function ProviderSelector({
   onChange: (p: string, m: string) => void;
   disabled?: boolean;
 }) {
+  const knownModels = MODELS_BY_PROVIDER[provider] ?? [];
+  const modelOptions = knownModels.includes(model)
+    ? knownModels
+    : (model ? [model, ...knownModels] : knownModels);
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <select
         value={provider}
         disabled={disabled}
-        onChange={e => onChange(e.target.value, model)}
+        onChange={e => onChange(e.target.value, defaultModelFor(e.target.value))}
         className="text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
       >
         {providers.length === 0 && <option value="">(no providers)</option>}
         {providers.map(p => <option key={p} value={p}>{p}</option>)}
       </select>
-      <input
-        type="text"
+      <select
         value={model}
-        disabled={disabled}
+        disabled={disabled || modelOptions.length === 0}
         onChange={e => onChange(provider, e.target.value)}
-        placeholder="model id (e.g. gpt-4o-mini)"
-        className="text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-mono w-44 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
-      />
+        className="text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-mono focus:outline-none focus:border-indigo-400 disabled:opacity-50 min-w-[180px]"
+      >
+        {modelOptions.length === 0 && <option value="">(no models)</option>}
+        {modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
     </div>
   );
 }
 
-// ─── Tab 2: Oracle Prompt (meta-generate) ─────────────────────────────────────
+// ─── Tab 2: Oracle Prompt (meta-generate + manual + save) ────────────────────
+
+type PromptMode = "auto" | "manual";
 
 function Tab2_OraclePrompt({
   fixture, productionPrompt, oraclePrompt, onOraclePromptChange, providers,
-  provider, model, onProviderModelChange, onGenerated,
+  provider, model, onProviderModelChange, onGenerated, onSavePrompt, isSaving,
 }: {
   fixture: OracleFixtureDetail;
   productionPrompt: string;
@@ -524,13 +522,40 @@ function Tab2_OraclePrompt({
   model: string;
   onProviderModelChange: (p: string, m: string) => void;
   onGenerated: (result: { version: string; metaVersion: string }) => void;
+  onSavePrompt: () => Promise<void>;
+  isSaving: boolean;
 }) {
   const metaGen = useMetaGenerateOraclePrompt();
+  const [mode, setMode] = useState<PromptMode>(
+    fixture.oracle_prompt ? "auto" : (oraclePrompt ? "manual" : "auto"),
+  );
+
+  // localStorage persist — defense against accidental refresh
+  const draftKey = `oracle-prompt-draft::${fixture.fixture_id}`;
+  useEffect(() => {
+    if (!oraclePrompt) {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved) onOraclePromptChange(saved);
+      } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixture.fixture_id]);
+
+  useEffect(() => {
+    try { localStorage.setItem(draftKey, oraclePrompt); } catch { /* ignore */ }
+  }, [oraclePrompt, draftKey]);
+
+  // Dirty = current text differs from what's persisted on the fixture
+  const dirty = oraclePrompt !== (fixture.oracle_prompt || "");
 
   async function handleGenerate() {
     if (!productionPrompt.trim()) {
-      alert("No production prompt set in step 1 — add one before generating.");
+      alert("No production prompt set in step 1 — add one to the suite's default prompt first.");
       return;
+    }
+    if (dirty && oraclePrompt.trim()) {
+      if (!window.confirm("This will overwrite your unsaved edits. Continue?")) return;
     }
     try {
       const result = await metaGen.mutateAsync({
@@ -544,55 +569,104 @@ function Tab2_OraclePrompt({
         version: `auto-${result.generated_at}`,
         metaVersion: result.meta_prompt_version,
       });
-    } catch (e) {
-      // Error surfaced below via metaGen.error
+      setMode("auto");
+    } catch {
+      // surface via metaGen.error
     }
+  }
+
+  function handleClear() {
+    if (oraclePrompt && !window.confirm("Clear the oracle prompt?")) return;
+    onOraclePromptChange("");
   }
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-              Generate oracle prompt from production prompt
-            </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-              Runs the generic meta-prompt (server-side, version{" "}
-              <span className="font-mono">
-                {fixture.meta_prompt_version || "unset"}
-              </span>
-              ) over the production prompt from step 1. Edit the result below
-              before running it in step 3.
-            </p>
-          </div>
+      {/* Mode toggle */}
+      <div className="flex items-center gap-1 text-xs">
+        <span className="text-gray-500 dark:text-gray-400 mr-2">Mode:</span>
+        {(["auto", "manual"] as const).map(m => (
           <button
-            onClick={handleGenerate}
-            disabled={metaGen.isPending || !productionPrompt.trim()}
-            className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+            key={m}
+            onClick={() => setMode(m)}
+            className={`px-3 py-1 rounded-lg border transition-colors ${
+              mode === m
+                ? "bg-indigo-600 border-indigo-600 text-white font-semibold"
+                : "border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
+            }`}
           >
-            {metaGen.isPending ? <><span className="animate-spin inline-block">⟳</span> Generating…</> : <>▶ Generate</>}
+            {m === "auto" ? "🤖 Auto-generate" : "✍ Manual"}
           </button>
-        </div>
-        <div className="flex items-center gap-2 text-[11px]">
-          <span className="text-gray-500 dark:text-gray-400 w-16">Provider</span>
-          <ProviderSelector
-            providers={providers}
-            provider={provider}
-            model={model}
-            onChange={onProviderModelChange}
-            disabled={metaGen.isPending}
-          />
-        </div>
-        {metaGen.error && (
-          <div className="text-[11px] text-red-500">⚠ {metaGen.error.message}</div>
-        )}
+        ))}
+        <span className="ml-auto text-[11px] text-gray-400">
+          {dirty
+            ? <span className="text-yellow-600 dark:text-yellow-400">● unsaved edits</span>
+            : oraclePrompt
+              ? <span className="text-green-600 dark:text-green-400">✓ saved</span>
+              : <span>empty</span>}
+        </span>
       </div>
 
+      {/* Auto-generate panel — only in auto mode */}
+      {mode === "auto" && (
+        <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                Generate oracle prompt from production prompt
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                Runs the generic meta-prompt over the production prompt from step 1.
+                Result fills the textarea below; you can still edit before step 3.
+              </p>
+              {!productionPrompt.trim() && (
+                <p className="text-[11px] text-yellow-600 dark:text-yellow-400 mt-1">
+                  ⚠ No production prompt yet — set the suite's default prompt in step 1.
+                </p>
+              )}
+            </div>
+            <button
+              onClick={handleGenerate}
+              disabled={metaGen.isPending}
+              className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+            >
+              {metaGen.isPending
+                ? <><span className="animate-spin inline-block">⟳</span> Generating…</>
+                : oraclePrompt
+                  ? <>↻ Regenerate</>
+                  : <>▶ Generate</>}
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-gray-500 dark:text-gray-400 w-16">Provider</span>
+            <ProviderSelector
+              providers={providers}
+              provider={provider}
+              model={model}
+              onChange={onProviderModelChange}
+              disabled={metaGen.isPending}
+            />
+          </div>
+          {metaGen.error && (
+            <div className="text-[11px] text-red-500">⚠ {metaGen.error.message}</div>
+          )}
+        </div>
+      )}
+
+      {/* Manual mode hint */}
+      {mode === "manual" && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 text-[11px] text-gray-600 dark:text-gray-400">
+          ✍ Manual mode — paste or write your own YAML oracle prompt below.
+          Must contain <code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">system:</code> and{" "}
+          <code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">user_template:</code> keys.
+        </div>
+      )}
+
+      {/* Editable textarea — always visible */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            Oracle prompt (editable — YAML)
+            Oracle prompt (YAML)
           </label>
           <span className="text-[10px] text-gray-400">
             {oraclePrompt.length.toLocaleString()} chars
@@ -601,10 +675,32 @@ function Tab2_OraclePrompt({
         <textarea
           value={oraclePrompt}
           onChange={e => onOraclePromptChange(e.target.value)}
-          placeholder="Click Generate above, or paste/edit a YAML oracle prompt here. Must contain `system:` and `user_template:` keys; user_template uses {{ input_json }}."
+          placeholder={mode === "auto"
+            ? "Click Generate above — the result lands here, then you can edit."
+            : "Paste a YAML oracle prompt with `system:` and `user_template:` keys. Use {{ input_json }} in user_template."}
           spellCheck={false}
           className="w-full text-xs font-mono bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:border-indigo-400 resize-y min-h-[280px]"
         />
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            onClick={onSavePrompt}
+            disabled={isSaving || !dirty || !oraclePrompt.trim()}
+            className="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold disabled:opacity-40 transition-colors"
+          >
+            {isSaving ? "Saving…" : "💾 Save prompt"}
+          </button>
+          {oraclePrompt && (
+            <button
+              onClick={handleClear}
+              className="text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Clear
+            </button>
+          )}
+          <span className="ml-auto text-[10px] text-gray-400">
+            Drafts auto-persist locally per fixture (survives refresh).
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -1406,8 +1502,9 @@ export function OracleReviewPage() {
   // Initialize provider/model when the registry loads
   useEffect(() => {
     if (!provider && providers.length > 0) {
-      setProvider(providers[0]);
-      if (!model) setModel(providers[0] === "openai" ? "gpt-4o-mini" : "claude-opus-4-7");
+      const firstProvider = providers[0];
+      setProvider(firstProvider);
+      if (!model) setModel(defaultModelFor(firstProvider));
     }
   }, [providers, provider, model]);
 
@@ -1467,6 +1564,30 @@ export function OracleReviewPage() {
   async function handleSave() {
     await updateMutation.mutateAsync({ actions: pendingActions, reviewed_by: reviewerName || undefined });
     setPendingActions([]);
+  }
+
+  // Studio: save oracle prompt only (Tab 2 — preserves existing cells)
+  async function handleSaveOraclePromptOnly() {
+    if (!fixture) return;
+    const version = oraclePromptVersion || `manual-${new Date().toISOString()}`;
+    await saveStudio.mutateAsync({
+      case_id: fixture.fixture_id,
+      suite_id: expandedSuiteId,
+      input_data: fixture.input_data,
+      // Preserve existing cells — pass current fixture.expected so /generate
+      // (override mode) doesn't run the strategy and doesn't change cells.
+      expected_override: {
+        cells: fixture.expected as Record<string, unknown>,
+        valid_fields: fixture.meta?.valid_fields,
+      },
+      production_prompt: fixture.production_prompt || "",
+      oracle_prompt: oraclePrompt,
+      oracle_prompt_version: version,
+      meta_prompt_version: metaPromptVersion || fixture.meta_prompt_version || "",
+      oracle_model: fixture.oracle_model,
+    });
+    setOraclePromptVersion(version);
+    try { localStorage.removeItem(`oracle-prompt-draft::${fixture.fixture_id}`); } catch {}
   }
 
   // Studio: save preview cells from Tab 3 back into the fixture as expectation
@@ -1641,6 +1762,8 @@ export function OracleReviewPage() {
                         setOraclePromptVersion(version);
                         setMetaPromptVersion(metaVersion);
                       }}
+                      onSavePrompt={handleSaveOraclePromptOnly}
+                      isSaving={saveStudio.isPending}
                     />
                   )}
                   {activeTab === "expectation" && (
