@@ -550,10 +550,7 @@ function Tab2_OraclePrompt({
   const dirty = oraclePrompt !== (fixture.oracle_prompt || "");
 
   async function handleGenerate() {
-    if (!productionPrompt.trim()) {
-      alert("No production prompt set in step 1 — add one to the suite's default prompt first.");
-      return;
-    }
+    if (!productionPrompt.trim()) return;  // disabled in UI; defensive guard
     if (dirty && oraclePrompt.trim()) {
       if (!window.confirm("This will overwrite your unsaved edits. Continue?")) return;
     }
@@ -627,8 +624,9 @@ function Tab2_OraclePrompt({
             </div>
             <button
               onClick={handleGenerate}
-              disabled={metaGen.isPending}
-              className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+              disabled={metaGen.isPending || !productionPrompt.trim()}
+              title={!productionPrompt.trim() ? "Set the suite's default production prompt in step 1 first" : undefined}
+              className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
             >
               {metaGen.isPending
                 ? <><span className="animate-spin inline-block">⟳</span> Generating…</>
@@ -970,11 +968,35 @@ function Tab4_Review({
     }
   }
 
+  // No-review-items case: still need to surface Promote so user can ship a
+  // fixture where every cell is high-confidence (nothing to review by hand).
   if (totalCount === 0) {
+    const hasExpectation = Object.keys(fixture.expected || {}).length > 0;
     return (
-      <p className="text-sm text-center py-8 text-gray-400 dark:text-gray-500">
-        No review items — run the oracle in step 3 to generate the expectation first.
-      </p>
+      <div className="space-y-3">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30 p-4 text-center">
+          {hasExpectation ? (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              ✓ No cells require manual review — all are high-confidence.
+            </p>
+          ) : (
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              No expectation yet — run the oracle in step 3 first.
+            </p>
+          )}
+        </div>
+        {hasExpectation && (
+          <div className="flex justify-end">
+            <button
+              onClick={onPromote}
+              disabled={isPromoting}
+              className="text-sm px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold disabled:opacity-40 transition-colors"
+            >
+              {isPromoting ? "Promoting…" : "🚀 Promote to suite"}
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
