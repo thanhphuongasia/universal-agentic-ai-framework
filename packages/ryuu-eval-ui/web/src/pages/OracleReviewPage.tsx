@@ -539,6 +539,17 @@ function Tab2_OraclePrompt({
   const [mode, setMode] = useState<PromptMode>(
     fixture.oracle_prompt ? "auto" : (oraclePrompt ? "manual" : "auto"),
   );
+  const [lastTrace, setLastTrace] = useState<{
+    system: string; user: string; rawResponse: string;
+    provider: string; model: string; generatedAt: string;
+  } | null>(null);
+  const [traceOpen, setTraceOpen] = useState(false);
+  useEffect(() => {
+    if (!traceOpen) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setTraceOpen(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [traceOpen]);
 
   // Expected output shape — per-fixture, persisted locally. Passed to the
   // meta-prompt so the LLM preserves the project's output schema verbatim
@@ -591,6 +602,14 @@ function Tab2_OraclePrompt({
       onGenerated({
         version: `auto-${result.generated_at}`,
         metaVersion: result.meta_prompt_version,
+      });
+      setLastTrace({
+        system: result.request_system ?? "",
+        user: result.request_user ?? "",
+        rawResponse: result.raw_response ?? result.oracle_prompt,
+        provider: result.provider,
+        model: result.model,
+        generatedAt: result.generated_at,
       });
       setMode("auto");
     } catch {
@@ -695,6 +714,84 @@ function Tab2_OraclePrompt({
           {metaGen.error && (
             <div className="text-[11px] text-red-500">⚠ {metaGen.error.message}</div>
           )}
+        </div>
+      )}
+
+      {/* Meta-generate trace — shown after a successful generate */}
+      {lastTrace && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-gray-500 dark:text-gray-400">
+              Meta-prompt trace
+            </span>
+            <span className="text-[10px] font-mono text-gray-400">
+              {lastTrace.provider}/{lastTrace.model}
+            </span>
+            <button
+              onClick={() => setTraceOpen(true)}
+              className="ml-auto text-[10px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="Open trace in popup"
+            >⛶ Popup</button>
+          </div>
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            <details className="group">
+              <summary className="cursor-pointer select-none px-3 py-2 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300">
+                  meta_input
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">system (meta-prompt) + user (production_prompt + hints)</span>
+                <span className="ml-auto text-[10px] text-gray-400">click to expand</span>
+              </summary>
+              <div className="p-3 space-y-2 bg-purple-50/30 dark:bg-purple-950/10">
+                <CodePane title="meta-prompt system" content={lastTrace.system} maxHeight="220px" />
+                <CodePane title="user message (production_prompt + schema_hint + domain_hint)" content={lastTrace.user} maxHeight="280px" />
+              </div>
+            </details>
+            <details className="group">
+              <summary className="cursor-pointer select-none px-3 py-2 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                  meta_output
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">raw oracle prompt produced</span>
+                <span className="ml-auto text-[10px] text-gray-400">click to expand</span>
+              </summary>
+              <div className="p-3">
+                <CodePane title="oracle_prompt (raw)" content={lastTrace.rawResponse} maxHeight="320px" />
+              </div>
+            </details>
+          </div>
+        </div>
+      )}
+
+      {/* Meta trace popup */}
+      {lastTrace && traceOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setTraceOpen(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative z-10 w-[min(1200px,95vw)] max-h-[92vh] flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Meta-prompt trace</h2>
+                <span className="text-[11px] font-mono text-gray-400">{lastTrace.provider}/{lastTrace.model}</span>
+                <span className="text-[10px] text-gray-400">· {lastTrace.generatedAt}</span>
+              </div>
+              <button onClick={() => setTraceOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div>
+                <div className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 inline-block mb-2">meta_input — system</div>
+                <CodePane title="" content={lastTrace.system} maxHeight="320px" />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 inline-block mb-2">meta_input — user</div>
+                <CodePane title="" content={lastTrace.user} maxHeight="400px" />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 inline-block mb-2">meta_output — raw oracle prompt</div>
+                <CodePane title="" content={lastTrace.rawResponse} maxHeight="420px" />
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 shrink-0 text-[11px] text-gray-400 text-right">Press Esc or click outside to close</div>
+          </div>
         </div>
       )}
 

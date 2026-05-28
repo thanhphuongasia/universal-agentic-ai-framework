@@ -1829,16 +1829,30 @@ def build_eval_router(
 
         from ryuu_eval_oracle.meta_prompt import (
             META_PROMPT_VERSION,
+            build_meta_messages,
             generate_oracle_prompt,
         )
+
+        # Capture the rendered request so the UI can show a trace block
+        project_name = str(payload.get("project_name", ""))
+        domain_hint = str(payload.get("domain_hint", ""))
+        output_schema_hint = str(payload.get("output_schema_hint", ""))
+        rendered = build_meta_messages(
+            production_prompt_text=production_prompt,
+            project_name=project_name,
+            domain_hint=domain_hint,
+            output_schema_hint=output_schema_hint,
+        )
+        request_system = rendered[0]["content"]
+        request_user = rendered[1]["content"]
 
         try:
             result = await generate_oracle_prompt(
                 llm_providers[provider_key],
                 production_prompt_text=production_prompt,
-                project_name=str(payload.get("project_name", "")),
-                domain_hint=str(payload.get("domain_hint", "")),
-                output_schema_hint=str(payload.get("output_schema_hint", "")),
+                project_name=project_name,
+                domain_hint=domain_hint,
+                output_schema_hint=output_schema_hint,
                 model=(payload.get("model") or None),
             )
         except Exception as exc:  # noqa: BLE001 — surface LLM errors to UI
@@ -1851,6 +1865,9 @@ def build_eval_router(
             "provider": provider_key,
             "model": result.model,
             "generated_at": _dt.now(_tz.utc).isoformat(),
+            "request_system": request_system,
+            "request_user": request_user,
+            "raw_response": result.oracle_prompt,
         }
 
     @r.post("/oracle-review/run-with-prompt", dependencies=auth_dep)

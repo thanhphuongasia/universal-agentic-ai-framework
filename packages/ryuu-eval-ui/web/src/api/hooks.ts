@@ -372,6 +372,9 @@ export interface MetaGenerateResponse {
   provider: string;
   model: string;
   generated_at: string;
+  request_system?: string;
+  request_user?: string;
+  raw_response?: string;
 }
 
 export function useMetaGenerateOraclePrompt() {
