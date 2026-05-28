@@ -35,6 +35,42 @@ def _resolve_value(spec: Any) -> Any:
     return spec
 
 
+def load_provider_config(config_path: Path | None = None) -> list[dict[str, Any]]:
+    """Return raw YAML config so callers can introspect models per provider."""
+    path = config_path or _CONFIG_PATH
+    if not path.exists():
+        return []
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or []
+
+
+def model_catalog(config_path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """Return {provider_key: {models: [...], default_model: str}}.
+
+    Used by the HTTP layer to surface model dropdowns to the UI without
+    each frontend hardcoding the list.
+    """
+    catalog: dict[str, dict[str, Any]] = {}
+    for entry in load_provider_config(config_path):
+        key = entry.get("key")
+        if not key:
+            continue
+        models = entry.get("models") or []
+        default_model = (
+            entry.get("init_kwargs", {}).get("default_model")
+            if isinstance(entry.get("init_kwargs"), dict) else None
+        )
+        if isinstance(default_model, dict):
+            default_model = (
+                os.environ.get(default_model.get("env", ""))
+                or default_model.get("fallback", "")
+            )
+        catalog[key] = {
+            "models": list(models),
+            "default_model": str(default_model or (models[0] if models else "")),
+        }
+    return catalog
+
+
 def make_providers(config_path: Path | None = None) -> dict[str, Any]:
     """Return {provider_key: ILLMProvider} parsed from the registry YAML.
 
@@ -92,4 +128,4 @@ def make_providers(config_path: Path | None = None) -> dict[str, Any]:
     return providers
 
 
-__all__ = ["make_providers"]
+__all__ = ["make_providers", "model_catalog", "load_provider_config"]

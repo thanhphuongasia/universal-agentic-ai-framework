@@ -39,7 +39,7 @@ from ryuu_observability_core.logger import StdlibLogger
 
 from eval_suites import TEMPLATES, runner_factory
 from eval_consumer.crud_matrix_oracle.strategy import CrudMatrixOracleStrategy
-from providers import make_providers
+from providers import make_providers, model_catalog
 
 # Eval logger — DEBUG level so _strip_code_fence and per-call logs are visible
 _eval_logger = StdlibLogger("eval_suites", level=logging.DEBUG)
@@ -79,6 +79,7 @@ _CODE_ANALYSIS_URL = os.environ.get("CODE_ANALYSIS_URL", "http://localhost:8000/
 # Both the oracle strategy and the meta-generate endpoint pull from here —
 # no module instantiates AnthropicProvider/OpenAIProvider on its own.
 PROVIDERS = make_providers()
+MODEL_CATALOG = model_catalog()
 print(f"  LLM     : {sorted(PROVIDERS.keys()) or '(none — set ANTHROPIC_API_KEY / OPENAI_API_KEY)'}")
 
 app.include_router(
@@ -88,6 +89,7 @@ app.include_router(
         serve_ui=True,
         kv_store=_db_store,
         llm_providers=PROVIDERS,
+        model_catalog=MODEL_CATALOG,
         oracle_strategy_factory=(
             (lambda: CrudMatrixOracleStrategy(provider=PROVIDERS["anthropic"]))
             if "anthropic" in PROVIDERS else None

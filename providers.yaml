@@ -12,6 +12,8 @@
 #   init_kwargs:   keyword args passed to the class constructor.
 #                  Each value is either a plain literal, or
 #                  {env: VAR, fallback: VALUE} to read from env at boot.
+#   models:        list of model IDs to show in the UI dropdown.
+#                  First entry is the default selection.
 
 - key: anthropic
   import: "ryuu_providers_anthropic:AnthropicProvider"
@@ -20,6 +22,10 @@
     default_model:
       env: ANTHROPIC_DEFAULT_MODEL
       fallback: claude-opus-4-7
+  models:
+    - claude-opus-4-7
+    - claude-sonnet-4-6
+    - claude-haiku-4-5
 
 - key: openai
   import: "ryuu_providers_openai:OpenAIProvider"
@@ -28,6 +34,12 @@
     default_model:
       env: OPENAI_DEFAULT_MODEL
       fallback: gpt-4o
+  models:
+    - gpt-4o-mini
+    - gpt-4o
+    - gpt-5
+    - o1
+    - o3-mini
 
 # ── Add new providers below — no Python changes needed ──
 #
@@ -38,9 +50,6 @@
 #     default_model:
 #       env: GEMINI_DEFAULT_MODEL
 #       fallback: gemini-2.0-flash-exp
-#
-# - key: ollama
-#   import: "ryuu_providers_ollama:OllamaProvider"
-#   init_kwargs:
-#     host: http://localhost:11434
-#     default_model: llama3.3
+#   models:
+#     - gemini-2.0-flash-exp
+#     - gemini-1.5-pro

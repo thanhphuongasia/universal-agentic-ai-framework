@@ -97,6 +97,7 @@ def build_eval_router(
     oracle_fixtures_dir: Path | None = None,
     oracle_strategy_factory: Callable[[], Any] | None = None,
     llm_providers: dict[str, Any] | None = None,
+    model_catalog: dict[str, dict[str, Any]] | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -1763,8 +1764,26 @@ def build_eval_router(
 
     @r.get("/oracle-review/providers", dependencies=auth_dep)
     def list_llm_providers() -> dict:
-        """Provider keys registered with build_eval_router (for UI dropdown)."""
-        return {"providers": sorted((llm_providers or {}).keys())}
+        """Provider keys + models + default_model registered with build_eval_router.
+
+        Response shape:
+            {"providers": [{key, models, default_model}, ...]}
+
+        Frontend uses this for the provider AND model dropdowns — no
+        hardcoded model lists in JS/TS.
+        """
+        keys = sorted((llm_providers or {}).keys())
+        catalog = model_catalog or {}
+        return {
+            "providers": [
+                {
+                    "key": k,
+                    "models": list(catalog.get(k, {}).get("models", []) or []),
+                    "default_model": str(catalog.get(k, {}).get("default_model", "")),
+                }
+                for k in keys
+            ],
+        }
 
     @r.post("/oracle-review/meta-generate", dependencies=auth_dep)
     async def meta_generate_oracle_prompt(payload: dict) -> dict:

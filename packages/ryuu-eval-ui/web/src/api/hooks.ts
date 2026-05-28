@@ -341,8 +341,13 @@ export function useDeleteOracleFixture() {
 
 // ── Oracle Ground Truth Studio hooks ─────────────────────────────────────────
 
+export interface ProviderInfo {
+  key: string;
+  models: string[];
+  default_model: string;
+}
 export interface ProvidersResponse {
-  providers: string[];
+  providers: ProviderInfo[];
 }
 
 export function useLLMProviders() {

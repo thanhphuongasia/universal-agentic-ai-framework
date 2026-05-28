@@ -8,6 +8,7 @@ import {
   useCreateSuite, useUpdateSuite, useDeleteSuite,
   useLLMProviders, useMetaGenerateOraclePrompt,
   useRunWithPrompt, useSaveStudioFixture, usePromoteToSuite,
+  type ProviderInfo,
 } from "@/api/hooks";
 import type {
   Suite,
@@ -468,29 +469,21 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
 
 // ─── Provider + model selector (shared by Tab 2 + Tab 3) ─────────────────────
 
-// Hardcoded model catalog per provider. Adding a new model = add a line here.
-// (Eventually this should come from a backend endpoint exposing each provider's
-// supported_models() — track as a separate task.)
-const MODELS_BY_PROVIDER: Record<string, string[]> = {
-  anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"],
-  openai:    ["gpt-4o-mini", "gpt-4o", "gpt-5", "o1", "o3-mini"],
-  gemini:    ["gemini-2.0-flash-exp", "gemini-1.5-pro"],
-};
-
-function defaultModelFor(provider: string): string {
-  return MODELS_BY_PROVIDER[provider]?.[0] ?? "";
-}
+// Provider/model dropdowns — models list comes from server's /providers
+// endpoint, which reads providers.yaml on the framework side. Adding a new
+// model = edit YAML, no frontend change.
 
 function ProviderSelector({
   providers, provider, model, onChange, disabled,
 }: {
-  providers: string[];
+  providers: import("@/api/hooks").ProviderInfo[];
   provider: string;
   model: string;
   onChange: (p: string, m: string) => void;
   disabled?: boolean;
 }) {
-  const knownModels = MODELS_BY_PROVIDER[provider] ?? [];
+  const current = providers.find(p => p.key === provider);
+  const knownModels = current?.models ?? [];
   const modelOptions = knownModels.includes(model)
     ? knownModels
     : (model ? [model, ...knownModels] : knownModels);
@@ -500,11 +493,14 @@ function ProviderSelector({
       <select
         value={provider}
         disabled={disabled}
-        onChange={e => onChange(e.target.value, defaultModelFor(e.target.value))}
+        onChange={e => {
+          const next = providers.find(p => p.key === e.target.value);
+          onChange(e.target.value, next?.default_model ?? "");
+        }}
         className="text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-indigo-400 disabled:opacity-50"
       >
         {providers.length === 0 && <option value="">(no providers)</option>}
-        {providers.map(p => <option key={p} value={p}>{p}</option>)}
+        {providers.map(p => <option key={p.key} value={p.key}>{p.key}</option>)}
       </select>
       <select
         value={model}
@@ -531,7 +527,7 @@ function Tab2_OraclePrompt({
   productionPrompt: string;
   oraclePrompt: string;
   onOraclePromptChange: (v: string) => void;
-  providers: string[];
+  providers: ProviderInfo[];
   provider: string;
   model: string;
   onProviderModelChange: (p: string, m: string) => void;
@@ -823,7 +819,7 @@ function Tab3_Execution({
 }: {
   fixture: OracleFixtureDetail;
   oraclePrompt: string;
-  providers: string[];
+  providers: ProviderInfo[];
   provider: string;
   model: string;
   onProviderModelChange: (p: string, m: string) => void;
@@ -1770,12 +1766,14 @@ export function OracleReviewPage() {
 
   const providers = providersResp?.providers ?? [];
 
-  // Initialize provider/model when the registry loads
+  // Initialize provider/model when the registry loads. Prefer anthropic
+  // (meta-prompt + oracle are designed for Opus-class judges); fall back to
+  // the first registered provider.
   useEffect(() => {
     if (!provider && providers.length > 0) {
-      const firstProvider = providers[0];
-      setProvider(firstProvider);
-      if (!model) setModel(defaultModelFor(firstProvider));
+      const preferred = providers.find(p => p.key === "anthropic") ?? providers[0];
+      setProvider(preferred.key);
+      if (!model) setModel(preferred.default_model || preferred.models[0] || "");
     }
   }, [providers, provider, model]);
 
