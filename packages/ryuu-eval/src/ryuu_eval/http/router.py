@@ -1921,6 +1921,13 @@ def build_eval_router(
                 400,
                 "oracle_prompt must contain both `system` and `user_template`",
             )
+        # Structured output — pass the oracle's output_schema to the provider.
+        # Both Anthropic (tool_use forcing) and OpenAI (response_format json_schema)
+        # enforce the shape at API level, so we don't fight the LLM with prompt
+        # text. The schema must be a JSON Schema object; we hand it off verbatim.
+        output_schema_obj = parsed_prompt.get("output_schema")
+        if not isinstance(output_schema_obj, dict):
+            output_schema_obj = None
 
         # Pick provider (same routing rules as meta-generate)
         provider_key = str(payload.get("provider", "")).strip()
@@ -1964,6 +1971,7 @@ def build_eval_router(
             system=system_text,
             temperature=0.0,
             max_tokens=4096,
+            response_schema=output_schema_obj,
         )
         t0 = _time.perf_counter()
         try:
