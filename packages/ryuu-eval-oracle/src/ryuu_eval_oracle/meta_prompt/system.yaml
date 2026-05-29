@@ -1,5 +1,5 @@
 name: "oracle_meta_prompt"
-version: "1.3.0"
+version: "1.4.0"
 model: "claude-opus-4-7"
 description: >
   Generic meta-prompt that turns ANY production LLM prompt into an independent
@@ -24,6 +24,29 @@ system: |
        element/key convention, anti-hallucination guards (use only entities
        present in input, omit when unsure). The oracle output MUST be
        comparable to production output element-by-element.
+
+       PRIORITY ORDER for the oracle's output schema:
+         a) If `EXPECTED OUTPUT SHAPE` is provided below, use it VERBATIM —
+            same nesting, same key names, same enum values. Do not rename,
+            wrap, or restructure.
+         b) Else if the PRODUCTION PROMPT specifies an output JSON shape
+            (look for phrases like "Output JSON: {...}", "Return: {...}",
+            or an explicit schema block), preserve that EXACT shape.
+         c) Else (no hint, prompt doesn't specify), DEFAULT to a 2-level
+            nested mapping for cell-by-cell comparability:
+                {
+                  "<top_group_name>": {
+                    "<item_name>": {
+                      "op":         "<short string from production>",
+                      "confidence": "low" | "medium" | "high",
+                      "why":        "<one short sentence>"
+                    }
+                  }
+                }
+            ⚠ Do NOT invent a wrapper key like "operations", "results",
+              "cards", "items" that doesn't appear in the production
+              prompt. Do NOT emit a flat array `[{...}, {...}]` — each
+              evaluable element MUST be addressable by a stable name.
 
     2. STRIP OUT — all DOMAIN-SPECIFIC reasoning heuristics the production
        prompt hardcodes (any rule that dictates HOW to decide, rather than WHAT
