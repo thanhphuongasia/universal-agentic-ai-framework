@@ -1858,9 +1858,30 @@ def build_eval_router(
         except Exception as exc:  # noqa: BLE001 — surface LLM errors to UI
             raise HTTPException(502, f"meta-prompt failed: {exc}") from exc
 
+        # When the user supplied an output_schema_hint, don't trust the LLM
+        # to have copied it verbatim into oracle_prompt's output_schema field.
+        # Parse the LLM output, derive a JSON Schema from the hint sample,
+        # and FORCE the oracle prompt's output_schema to match.
+        oracle_prompt_final = result.oracle_prompt
+        if output_schema_hint.strip():
+            try:
+                # Hint may be a raw JSON sample like {entity:{field:{op, conf, why}}}
+                # or already a JSON Schema. Build a schema from the sample if needed.
+                hint_obj = json.loads(output_schema_hint)
+                derived_schema = _sample_to_json_schema(hint_obj)
+                parsed_oracle = yaml.safe_load(oracle_prompt_final)
+                if isinstance(parsed_oracle, dict):
+                    parsed_oracle["output_schema"] = derived_schema
+                    oracle_prompt_final = yaml.safe_dump(
+                        parsed_oracle, sort_keys=False, allow_unicode=True,
+                    )
+            except (yaml.YAMLError, json.JSONDecodeError, ValueError):
+                # Hint not parseable → keep LLM output as-is
+                pass
+
         from datetime import datetime as _dt, timezone as _tz
         return {
-            "oracle_prompt": result.oracle_prompt,
+            "oracle_prompt": oracle_prompt_final,
             "meta_prompt_version": result.meta_prompt_version or META_PROMPT_VERSION,
             "provider": provider_key,
             "model": result.model,
@@ -2262,6 +2283,41 @@ def build_eval_router(
 def _is_cron_enabled() -> bool:
     """Q3 — cron auto-optimize opt-in via env."""
     return os.environ.get("CRON_OPTIMIZE_ENABLED", "").lower() in ("1", "true", "yes")
+
+
+def _sample_to_json_schema(sample: Any) -> dict:
+    """Convert a JSON sample value into a JSON Schema.
+
+    Treats dict keys as fixed properties (entity/field names are dynamic per
+    case, so each sample becomes a concrete schema mirroring its structure).
+    Used to force oracle prompts to honor the user-supplied output shape
+    instead of trusting the LLM to copy verbatim.
+    """
+    if isinstance(sample, dict):
+        if not sample:
+            return {"type": "object", "additionalProperties": True}
+        # If all values share the same shape, derive additionalProperties
+        # schema from the first value (allows dynamic keys like entity names).
+        first_val = next(iter(sample.values()))
+        return {
+            "type": "object",
+            "additionalProperties": _sample_to_json_schema(first_val),
+            "properties": {
+                k: _sample_to_json_schema(v) for k, v in sample.items()
+            },
+        }
+    if isinstance(sample, list):
+        return {
+            "type": "array",
+            "items": _sample_to_json_schema(sample[0]) if sample else {},
+        }
+    if isinstance(sample, bool):
+        return {"type": "boolean"}
+    if isinstance(sample, int):
+        return {"type": "integer"}
+    if isinstance(sample, float):
+        return {"type": "number"}
+    return {"type": "string"}
 
 
 async def _maybe_await(fn: Any, *args, **kwargs) -> Any:
