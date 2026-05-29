@@ -1315,14 +1315,15 @@ function Tab4_Review({
 
   // No-review-items case: still need to surface Promote so user can ship a
   // fixture where every cell is high-confidence (nothing to review by hand).
+  // Also render the saved cells so the human can eyeball them before promoting.
   if (totalCount === 0) {
     const hasExpectation = Object.keys(fixture.expected || {}).length > 0;
     return (
       <div className="space-y-3">
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30 p-4 text-center">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30 p-3 text-center">
           {hasExpectation ? (
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              ✓ No cells require manual review — all are high-confidence.
+              ✓ No cells require manual review — all are high-confidence. Eyeball below, then Promote.
             </p>
           ) : (
             <p className="text-sm text-gray-400 dark:text-gray-500">
@@ -1331,15 +1332,18 @@ function Tab4_Review({
           )}
         </div>
         {hasExpectation && (
-          <div className="flex justify-end">
-            <button
-              onClick={onPromote}
-              disabled={isPromoting}
-              className="text-sm px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold disabled:opacity-40 transition-colors"
-            >
-              {isPromoting ? "Promoting…" : "🚀 Promote to suite"}
-            </button>
-          </div>
+          <>
+            <CellsView cells={fixture.expected} />
+            <div className="flex justify-end">
+              <button
+                onClick={onPromote}
+                disabled={isPromoting}
+                className="text-sm px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold disabled:opacity-40 transition-colors"
+              >
+                {isPromoting ? "Promoting…" : "🚀 Promote to suite"}
+              </button>
+            </div>
+          </>
         )}
       </div>
     );
