@@ -984,7 +984,31 @@ function Tab3_Execution({
   const source = preview ? preview.cells : fixture.expected;
   const entities = Object.keys(source);
   const hasCells = entities.length > 0;
-  const totalCells = entities.reduce((n, e) => n + Object.keys(source[e]).length, 0);
+
+  // Shape detection — the CRUD table assumes {entity: {field: {op, ...}}}.
+  // Many domains (sequence/class diagram, summary, classification) emit
+  // different shapes. Show table only when CRUD-like; otherwise fall back
+  // to formatted JSON + a notice pointing the user to the raw response.
+  function looksCrudShape(): boolean {
+    if (!hasCells) return false;
+    for (const entity of entities) {
+      const fields = source[entity];
+      if (typeof fields !== "object" || fields === null || Array.isArray(fields)) return false;
+      for (const f of Object.values(fields)) {
+        if (typeof f !== "object" || f === null) return false;
+        const cell = f as Record<string, unknown>;
+        // Accept any of these as a cell signature
+        if (cell.op == null && cell.score == null && cell.verdict == null && cell.value == null) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+  const crudShape = looksCrudShape();
+  const totalCells = crudShape
+    ? entities.reduce((n, e) => n + Object.keys(source[e] as object).length, 0)
+    : 0;
 
   return (
     <div className="space-y-3">
@@ -1055,10 +1079,12 @@ function Tab3_Execution({
         </div>
       )}
 
-      {/* Result summary — adapts to parse state */}
+      {/* Result summary — adapts to parse state + shape detection */}
       <p className="text-xs text-gray-500 dark:text-gray-400">
         {hasCells
-          ? <>{preview ? "Preview" : "Saved expectation"}: <span className="font-semibold">{entities.length}</span> entities · <span className="font-semibold">{totalCells}</span> cells</>
+          ? (crudShape
+              ? <>{preview ? "Preview" : "Saved expectation"}: <span className="font-semibold">{entities.length}</span> entities · <span className="font-semibold">{totalCells}</span> cells</>
+              : <span className="text-amber-600 dark:text-amber-400">Output shape isn't CRUD-style — showing raw JSON. CRUD table needs {`{entity:{field:{op,...}}}`} shape.</span>)
           : preview
             ? (preview.parse_error
                 ? <span className="text-red-500">Run completed but JSON parsing failed — see Run Trace below.</span>
@@ -1066,7 +1092,16 @@ function Tab3_Execution({
             : "No expectation yet — click Run."}
       </p>
 
-      {hasCells && (
+      {/* Non-CRUD shape — show formatted JSON instead of broken table */}
+      {hasCells && !crudShape && (
+        <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-3">
+          <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
+            {JSON.stringify(source, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {hasCells && crudShape && (
         <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="w-full text-xs min-w-[560px]">
             <thead>
