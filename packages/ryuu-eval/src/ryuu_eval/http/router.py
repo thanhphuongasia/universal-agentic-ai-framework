@@ -1862,7 +1862,11 @@ def build_eval_router(
         # to have copied it verbatim into oracle_prompt's output_schema field.
         # Parse the LLM output, derive a JSON Schema from the hint sample,
         # and FORCE the oracle prompt's output_schema to match.
-        oracle_prompt_final = result.oracle_prompt
+        oracle_prompt_final = result.oracle_prompt.strip()
+        # Strip ```yaml / ```json fences that some LLMs wrap output with
+        import re as _re_fence
+        oracle_prompt_final = _re_fence.sub(r"^```(?:yaml|json)?\s*", "", oracle_prompt_final)
+        oracle_prompt_final = _re_fence.sub(r"\s*```$", "", oracle_prompt_final)
         if output_schema_hint.strip():
             try:
                 # Hint may be a raw JSON sample like {entity:{field:{op, conf, why}}}
