@@ -1977,7 +1977,23 @@ def build_eval_router(
         try:
             resp = await provider.complete(req)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(502, f"provider call failed: {exc}") from exc
+            # OpenAI strict mode rejects schemas with additionalProperties: <obj>
+            # (dynamic keys). Anthropic is more lenient via tool_use. When a
+            # schema-related failure occurs, retry without response_schema and
+            # let the prompt text enforce shape best-effort.
+            err_msg = str(exc).lower()
+            schema_failure = output_schema_obj is not None and (
+                "schema" in err_msg or "response_format" in err_msg
+                or "additionalproperties" in err_msg
+            )
+            if schema_failure:
+                req.response_schema = None
+                try:
+                    resp = await provider.complete(req)
+                except Exception as exc2:  # noqa: BLE001
+                    raise HTTPException(502, f"provider call failed (after schema fallback): {exc2}") from exc2
+            else:
+                raise HTTPException(502, f"provider call failed: {exc}") from exc
         latency_ms = (_time.perf_counter() - t0) * 1000.0
 
         raw = (resp.content or "").strip()
