@@ -1,6 +1,8 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useParams, Link } from "react-router-dom";
 import { CellsView, pickRenderer } from "@/components/oracle/CellsView";
+import { CrudReviewMatrix } from "@/components/oracle/review/CrudReviewMatrix";
+import { buildRows, countPendingReview, isCrudReviewable } from "@/components/oracle/review/reviewModel";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
   useOracleFixtures, useOracleFixture,
@@ -13,7 +15,7 @@ import {
 } from "@/api/hooks";
 import type {
   Suite,
-  OracleFixtureDetail, OracleReviewItem,
+  OracleFixtureDetail,
   ReviewActionPayload,
 } from "@/api/types";
 
@@ -33,7 +35,12 @@ const PIPE_STEPS = [
 function pipeStatuses(fixture: OracleFixtureDetail | null): PipeStatus[] {
   if (!fixture) return ["pending", "pending", "na", "na", "pending", "pending"];
   const hasCells = Object.keys(fixture.expected).length > 0;
-  const pendingCount = fixture.review_items.filter(r => r.action == null).length;
+  // For CRUD the source of truth is `expected` + per-cell confidence (review_items
+  // may be empty for fixtures whose .review.json was never written). Non-CRUD
+  // falls back to the persisted needs_review list.
+  const pendingCount = isCrudReviewable(fixture.expected)
+    ? countPendingReview(buildRows(fixture, []))
+    : fixture.review_items.filter(r => r.action == null).length;
   const allReviewed = hasCells && pendingCount === 0;
   const finalized = allReviewed && !!fixture.reviewed_by;
   return [
@@ -157,39 +164,6 @@ function CodePane({ title, content, maxHeight = "260px", badge }: {
         </pre>
       </div>
     </div>
-  );
-}
-
-// ─── OpBadge / ConfBadge ──────────────────────────────────────────────────────
-
-function OpBadge({ op }: { op: string }) {
-  const colors: Record<string, string> = {
-    C: "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700",
-    R: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700",
-    U: "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700",
-    D: "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700",
-  };
-  if (!op) return (
-    <span className="text-gray-400 font-mono text-xs border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 rounded">—</span>
-  );
-  return (
-    <span className="flex gap-0.5">
-      {op.split("").map(ch => (
-        <span key={ch} className={`font-mono text-xs font-bold px-1.5 py-0.5 rounded border ${colors[ch] ?? "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600"}`}>
-          {ch}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function ConfBadge({ confidence }: { confidence: string }) {
-  const cls =
-    confidence === "high"   ? "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800" :
-    confidence === "medium" ? "text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800" :
-                              "text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800";
-  return (
-    <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded border ${cls}`}>{confidence}</span>
   );
 }
 
@@ -1069,37 +1043,6 @@ function Tab3_Execution({
 
       {hasCells && <CellsView cells={source} />}
 
-      {false && hasCells && (
-        <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-xs min-w-[560px]">
-            <thead>
-              <tr className="bg-gray-50 dark:bg-gray-800 text-left">
-                {["Entity", "Field", "OP", "Confidence", "Reasoning"].map(h => (
-                  <th key={h} className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {entities.flatMap(entity =>
-                Object.entries(source[entity]).map(([field, cell]) => {
-                  const why = (cell as { oracle_why?: string; why?: string }).oracle_why
-                    ?? (cell as { why?: string }).why ?? "";
-                  return (
-                    <tr key={`${entity}::${field}`} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                      <td className="px-3 py-2 font-mono font-medium text-gray-700 dark:text-gray-300">{entity}</td>
-                      <td className="px-3 py-2 font-mono text-gray-500 dark:text-gray-400">{field}</td>
-                      <td className="px-3 py-2"><OpBadge op={String(cell.op ?? "")} /></td>
-                      <td className="px-3 py-2"><ConfBadge confidence={String(cell.confidence ?? "")} /></td>
-                      <td className="px-3 py-2 text-gray-500 dark:text-gray-400 max-w-[240px] truncate" title={why}>{why}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {/* Run Trace — always visible when there's a preview */}
       {preview && (
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -1225,63 +1168,6 @@ function Tab3_Execution({
 
 // ─── Tab 4: Human Review ──────────────────────────────────────────────────────
 
-function ReviewCell({ item, pending, onAction }: {
-  item: OracleReviewItem; pending: ReviewActionPayload | undefined; onAction: (a: ReviewActionPayload) => void;
-}) {
-  const current = pending?.action ?? item.action;
-  const [showFix, setShowFix] = useState(false);
-  const [customOp, setCustomOp] = useState(pending?.corrected_op ?? item.corrected_op ?? "");
-
-  const wrapCls =
-    current === "approve" ? "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30" :
-    current === "remove"  ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30" :
-    current === "fix"     ? "border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30" :
-                            "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900";
-
-  return (
-    <div className={`p-3 rounded-lg border transition-colors ${wrapCls}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 font-mono">{item.entity}</span>
-            <span className="text-gray-300 dark:text-gray-600">·</span>
-            <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{item.field}</span>
-            <OpBadge op={item.op} />
-            <ConfBadge confidence={item.confidence} />
-          </div>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2">{item.oracle_why}</p>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button onClick={() => onAction({ entity: item.entity, field: item.field, action: "approve" })}
-            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${current === "approve" ? "bg-green-500 border-green-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-green-300 hover:text-green-600"}`}>
-            ✓ Approve</button>
-          <button onClick={() => setShowFix(f => !f)}
-            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${current === "fix" ? "bg-yellow-500 border-yellow-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-yellow-300 hover:text-yellow-600"}`}>
-            ✏ Fix</button>
-          <button onClick={() => onAction({ entity: item.entity, field: item.field, action: "remove" })}
-            className={`text-[11px] px-2 py-1 rounded border transition-colors font-medium ${current === "remove" ? "bg-red-500 border-red-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-500 hover:border-red-300 hover:text-red-600"}`}>
-            ✕ Remove</button>
-        </div>
-      </div>
-      {showFix && (
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            className="flex-1 text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono focus:outline-none focus:border-yellow-400"
-            placeholder="Corrected op (e.g. CU)"
-            value={customOp}
-            onChange={e => setCustomOp(e.target.value.toUpperCase())}
-          />
-          <button
-            className="text-xs px-2 py-1 rounded bg-yellow-500 text-white font-semibold disabled:opacity-50"
-            disabled={!customOp.trim()}
-            onClick={() => { onAction({ entity: item.entity, field: item.field, action: "fix", corrected_op: customOp }); setShowFix(false); }}
-          >Apply</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Tab4_Review({
   fixture, pendingActions, onAction, onSave, isSaving,
   reviewerName, onReviewerChange,
@@ -1292,9 +1178,12 @@ function Tab4_Review({
   isSaving: boolean; reviewerName: string; onReviewerChange: (s: string) => void;
   onPromote: () => void; isPromoting: boolean;
 }) {
-  const pendingMap = new Map(pendingActions.map(a => [`${a.entity}::${a.field}`, a]));
-  const pendingCount = fixture.review_items.filter(r => r.action == null).length;
-  const totalCount = fixture.review_items.length;
+  const hasExpectation = Object.keys(fixture.expected || {}).length > 0;
+  const isCrud = isCrudReviewable(fixture.expected);
+  // Source of truth = expected + per-cell confidence (review_items may be empty
+  // for fixtures whose .review.json was never written). For non-CRUD shapes the
+  // matrix falls back to read-only CellsView, so pending is 0 there.
+  const pendingCount = isCrud ? countPendingReview(buildRows(fixture, pendingActions)) : 0;
 
   // Pull Actual Output from sessionStorage (saved in step 1)
   const actualRaw = (() => {
@@ -1305,46 +1194,20 @@ function Tab4_Review({
     try { return JSON.parse(actualRaw); } catch { return actualRaw; }
   })();
 
-  function approveAll() {
-    for (const item of fixture.review_items) {
-      if (item.action == null && !pendingMap.has(`${item.entity}::${item.field}`)) {
-        onAction({ entity: item.entity, field: item.field, action: "approve" });
+  function approveAllRemaining() {
+    for (const row of buildRows(fixture, pendingActions)) {
+      if (row.status === "pending") {
+        onAction({ entity: row.entity, field: row.field, action: "approve" });
       }
     }
   }
 
-  // No-review-items case: still need to surface Promote so user can ship a
-  // fixture where every cell is high-confidence (nothing to review by hand).
-  // Also render the saved cells so the human can eyeball them before promoting.
-  if (totalCount === 0) {
-    const hasExpectation = Object.keys(fixture.expected || {}).length > 0;
+  if (!hasExpectation) {
     return (
-      <div className="space-y-3">
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30 p-3 text-center">
-          {hasExpectation ? (
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              ✓ No cells require manual review — all are high-confidence. Eyeball below, then Promote.
-            </p>
-          ) : (
-            <p className="text-sm text-gray-400 dark:text-gray-500">
-              No expectation yet — run the oracle in step 3 first.
-            </p>
-          )}
-        </div>
-        {hasExpectation && (
-          <>
-            <CellsView cells={fixture.expected} />
-            <div className="flex justify-end">
-              <button
-                onClick={onPromote}
-                disabled={isPromoting}
-                className="text-sm px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold disabled:opacity-40 transition-colors"
-              >
-                {isPromoting ? "Promoting…" : "🚀 Promote to suite"}
-              </button>
-            </div>
-          </>
-        )}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30 p-3 text-center">
+        <p className="text-sm text-gray-400 dark:text-gray-500">
+          No expectation yet — run the oracle in step 3 first.
+        </p>
       </div>
     );
   }
@@ -1374,18 +1237,20 @@ function Tab4_Review({
           />
           <span className="text-xs shrink-0 font-semibold">
             {pendingCount > 0
-              ? <span className="text-yellow-600 dark:text-yellow-400">{pendingCount}/{totalCount} pending</span>
+              ? <span className="text-yellow-600 dark:text-yellow-400">{pendingCount} pending</span>
               : <span className="text-green-600 dark:text-green-400">✓ all reviewed</span>}
           </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={approveAll}
-            disabled={pendingCount === 0}
-            className="text-xs px-3 py-1.5 rounded-lg border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/40 font-semibold disabled:opacity-40 transition-colors"
-          >
-            ✓ Approve all remaining ({pendingCount})
-          </button>
+          {isCrud && (
+            <button
+              onClick={approveAllRemaining}
+              disabled={pendingCount === 0}
+              className="text-xs px-3 py-1.5 rounded-lg border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/40 font-semibold disabled:opacity-40 transition-colors"
+            >
+              ✓ Approve all remaining ({pendingCount})
+            </button>
+          )}
           <button
             onClick={onSave}
             disabled={isSaving || pendingActions.length === 0}
@@ -1408,17 +1273,8 @@ function Tab4_Review({
         </div>
       </div>
 
-      {/* Per-cell review list */}
-      <div className="space-y-2">
-        {fixture.review_items.map(item => (
-          <ReviewCell
-            key={`${item.entity}::${item.field}`}
-            item={item}
-            pending={pendingMap.get(`${item.entity}::${item.field}`)}
-            onAction={onAction}
-          />
-        ))}
-      </div>
+      {/* Interactive CRUD matrix (falls back to read-only CellsView for non-CRUD) */}
+      <CrudReviewMatrix fixture={fixture} pendingActions={pendingActions} onAction={onAction} />
     </div>
   );
 }
@@ -2050,7 +1906,11 @@ export function OracleReviewPage() {
   }
 
   const hasCells     = fixture ? Object.keys(fixture.expected).length > 0 : false;
-  const pendingCount = fixture ? fixture.review_items.filter(r => r.action == null).length : 0;
+  const pendingCount = fixture
+    ? (isCrudReviewable(fixture.expected)
+        ? countPendingReview(buildRows(fixture, pendingActions))
+        : fixture.review_items.filter(r => r.action == null).length)
+    : 0;
 
   return (
     <div className="h-[calc(100vh-56px)] flex bg-gray-50 dark:bg-gray-950">

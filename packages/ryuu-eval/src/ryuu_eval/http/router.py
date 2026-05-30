@@ -1515,11 +1515,47 @@ def build_eval_router(
             })
         return result
 
+    def _looks_like_cell(obj: object) -> bool:
+        """A leaf cell carries one of the recognised value keys."""
+        return isinstance(obj, dict) and any(
+            k in obj for k in ("op", "confidence", "verdict", "score", "value")
+        )
+
+    def _is_crud_2level(cells: object) -> bool:
+        """True iff cells == {entity: {field: cell}} with cell leaves."""
+        if not isinstance(cells, dict) or not cells:
+            return False
+        for fields in cells.values():
+            if not isinstance(fields, dict) or not fields:
+                return False
+            if not all(_looks_like_cell(c) for c in fields.values()):
+                return False
+        return True
+
+    def _unwrap_extra_nesting(cells: dict) -> dict:
+        """Strip a single placeholder wrapper key the oracle LLM sometimes emits.
+
+        Some generated oracle prompts leak a literal key like ``$FUNCTION_NAME``
+        so the model returns ``{"$FUNCTION_NAME": {entity: {field: cell}}}`` —
+        one level too deep. When cells is a single-key dict whose value is a
+        valid {entity:{field:cell}} matrix, unwrap it so the rest of the
+        pipeline (needs_review, UI table, promote) sees the canonical 2-level
+        shape. A genuine single-entity matrix is detected as 2-level first and
+        left untouched.
+        """
+        if not isinstance(cells, dict) or _is_crud_2level(cells):
+            return cells
+        if len(cells) == 1:
+            inner = next(iter(cells.values()))
+            if _is_crud_2level(inner):
+                return inner
+        return cells
+
     def _get_cells(expected: dict) -> dict:
         """Return mutable cells dict, handling new {cells:{…}} and old {entity:{…}} formats."""
         if "cells" in expected and isinstance(expected["cells"], dict):
-            return expected["cells"]
-        return expected
+            return _unwrap_extra_nesting(expected["cells"])
+        return _unwrap_extra_nesting(expected)
 
     def _normalize_fixture_for_ui(data: dict) -> dict:
         """Normalize on-disk fixture to a stable shape for the frontend.
@@ -1548,9 +1584,13 @@ def build_eval_router(
                 data["meta"] = {}
             data["meta"].setdefault("valid_fields", expected.get("valid_fields", {}))
             data["meta"].setdefault("framework", expected.get("framework", ""))
-            data["expected"] = expected["cells"]
+            data["expected"] = _unwrap_extra_nesting(expected["cells"])
         elif "meta" not in data:
             data["meta"] = {}
+        # Defensively unwrap any leaked wrapper key (e.g. $FUNCTION_NAME) even
+        # for v0 fixtures whose expected is already top-level.
+        if isinstance(data.get("expected"), dict):
+            data["expected"] = _unwrap_extra_nesting(data["expected"])
 
         # v2 — inputs[] array. Three cases:
         #   a) `inputs` already present on disk (v2 fixture) — surface as-is,
@@ -1569,6 +1609,8 @@ def build_eval_router(
                 exp = entry.get("expected", {})
                 if isinstance(exp, dict) and "cells" in exp and isinstance(exp["cells"], dict):
                     exp = exp["cells"]
+                if isinstance(exp, dict):
+                    exp = _unwrap_extra_nesting(exp)
                 normalized.append({
                     "name": str(entry.get("name", "")) or "input",
                     "data": entry.get("data", {}),
@@ -1692,6 +1734,14 @@ def build_eval_router(
                 valid_fields = candidate.get("valid_fields", {})
                 prompt_version_val = getattr(strategy, "prompt_version", "unknown")
                 oracle_model_val = getattr(strategy, "_model", "")
+
+        # Strip any leaked wrapper key (e.g. $FUNCTION_NAME) the oracle LLM may
+        # have emitted, so needs_review and stored cells use the 2-level shape.
+        if isinstance(cells, dict):
+            cells = _unwrap_extra_nesting(cells)
+        for _entry in normalized_inputs:
+            if isinstance(_entry.get("expected"), dict):
+                _entry["expected"] = _unwrap_extra_nesting(_entry["expected"])
 
         fixture: dict = {
             "fixture_id": case_id,
