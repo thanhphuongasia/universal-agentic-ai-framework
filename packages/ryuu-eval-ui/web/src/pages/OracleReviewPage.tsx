@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useParams, Link } from "react-router-dom";
 import { CellsView, pickRenderer } from "@/components/oracle/CellsView";
 import { CrudReviewMatrix } from "@/components/oracle/review/CrudReviewMatrix";
+import { OracleRunHistory } from "@/components/oracle/OracleRunHistory";
 import { buildRows, countPendingReview, isCrudReviewable } from "@/components/oracle/review/reviewModel";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
@@ -922,6 +923,8 @@ function Tab3_Execution({
         input_data: fixture.input_data,
         provider: provider || undefined,
         model: model || undefined,
+        fixture_id: fixture.fixture_id,
+        oracle_prompt_version: oraclePromptVersion || undefined,
       });
       setPreview({
         cells: result.cells,
@@ -1042,6 +1045,9 @@ function Tab3_Execution({
       </p>
 
       {hasCells && <CellsView cells={source} />}
+
+      {/* Run history — trace + compare across past Execute runs */}
+      <OracleRunHistory fixtureId={fixture.fixture_id} />
 
       {/* Run Trace — always visible when there's a preview */}
       {preview && (

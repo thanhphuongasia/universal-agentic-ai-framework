@@ -392,6 +392,9 @@ export interface RunWithPromptRequest {
   input_data: Record<string, unknown>;
   provider?: string;
   model?: string;
+  /** When set, the run is appended to the fixture's history (trace + compare). */
+  fixture_id?: string;
+  oracle_prompt_version?: string;
 }
 export interface RunWithPromptResponse {
   cells: Record<string, Record<string, { op: string; confidence?: string | number; oracle_why?: string; why?: string }>>;
@@ -403,15 +406,37 @@ export interface RunWithPromptResponse {
   input_tokens: number;
   output_tokens: number;
   parse_error?: string;
+  schema_skipped?: string;
 }
 
 export function useRunWithPrompt() {
+  const qc = useQueryClient();
   return useMutation<RunWithPromptResponse, Error, RunWithPromptRequest>({
     mutationFn: (payload) =>
       apiFetch("/oracle-review/run-with-prompt", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    onSuccess: (_data, vars) => {
+      if (vars.fixture_id) qc.invalidateQueries({ queryKey: ["oracle-runs", vars.fixture_id] });
+    },
+  });
+}
+
+export interface OracleRunRecord extends RunWithPromptResponse {
+  run_id: string;
+  fixture_id: string;
+  oracle_prompt_version?: string;
+  cells_count: number;
+  ts: string;
+  created_at: number;
+}
+
+export function useOracleRuns(fixtureId: string) {
+  return useQuery<{ fixture_id: string; runs: OracleRunRecord[] }>({
+    queryKey: ["oracle-runs", fixtureId],
+    queryFn: () => apiFetch(`/oracle-review/${fixtureId}/runs`),
+    enabled: !!fixtureId,
   });
 }
 

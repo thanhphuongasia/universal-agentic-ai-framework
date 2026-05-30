@@ -98,6 +98,7 @@ def build_eval_router(
     oracle_strategy_factory: Callable[[], Any] | None = None,
     llm_providers: dict[str, Any] | None = None,
     model_catalog: dict[str, dict[str, Any]] | None = None,
+    oracle_runs_store: Any | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -1475,6 +1476,36 @@ def build_eval_router(
 
     _oracle_dir = oracle_fixtures_dir or Path("artifacts/eval/oracle_fixtures/crud_matrix")
 
+    # Run-history store for Tab 3 "Execute" runs (trace + compare). Depends on
+    # the framework's ICollectionStore contract, so the JSONL backend here can be
+    # swapped for Sqlite/Postgres by injecting a different store — no code change
+    # in this router. Lazily default to JSONL; if unavailable, history is a no-op.
+    _runs_store = oracle_runs_store
+    if _runs_store is None:
+        try:
+            from ryuu_storage_jsonl import JsonlCollectionStore
+            _runs_store = JsonlCollectionStore(
+                root_dir=_oracle_dir.parent / "oracle_runs", table="runs",
+            )
+        except Exception:  # noqa: BLE001 — history is optional, never block runs
+            _runs_store = None
+
+    async def _record_run(fixture_id: str, record: dict) -> None:
+        """Append one Execute run to history; failures never break the run."""
+        if not _runs_store or not fixture_id:
+            return
+        try:
+            await _runs_store.append(
+                fixture_id,
+                json.dumps(record, ensure_ascii=False),
+                metadata={
+                    "model": str(record.get("model", "")),
+                    "cells_count": record.get("cells_count", 0),
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     def _list_oracle_fixtures(suite_id: str | None = None) -> list[dict]:
         if not _oracle_dir.exists():
             return []
@@ -2139,7 +2170,46 @@ def build_eval_router(
             result["parse_error"] = parse_error
         if schema_skipped:
             result["schema_skipped"] = schema_skipped
+
+        # Persist this run to history (trace + compare) when a fixture is known.
+        fixture_id = str(payload.get("fixture_id", "")).strip()
+        if fixture_id:
+            await _record_run(fixture_id, {
+                **result,
+                "fixture_id": fixture_id,
+                "oracle_prompt_version": str(payload.get("oracle_prompt_version", "")),
+                "cells_count": sum(
+                    len(v) for v in cells.values() if isinstance(v, dict)
+                ),
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            })
         return result
+
+    @r.get("/oracle-review/{fixture_id}/runs", dependencies=auth_dep)
+    async def list_oracle_runs(fixture_id: str, limit: int = 50) -> dict:
+        """Run history for a fixture (newest first) — Tab 3 trace + compare.
+
+        Each entry is a prior /run-with-prompt result: cells, raw_response,
+        model, latency, cost, tokens, schema_skipped + ts. Backed by the
+        injected ICollectionStore (JSONL by default).
+        """
+        if not _runs_store:
+            return {"fixture_id": fixture_id, "runs": []}
+        try:
+            items = await _runs_store.list(fixture_id, limit=max(1, min(limit, 200)))
+        except Exception:  # noqa: BLE001
+            return {"fixture_id": fixture_id, "runs": []}
+        runs: list[dict] = []
+        for it in items:
+            try:
+                rec = json.loads(it.content)
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            rec["run_id"] = it.id
+            rec["created_at"] = it.created_at
+            runs.append(rec)
+        runs.reverse()  # newest first
+        return {"fixture_id": fixture_id, "runs": runs}
 
     @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
     def get_oracle_fixture(fixture_id: str) -> dict:
