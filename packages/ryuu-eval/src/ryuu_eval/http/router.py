@@ -1557,6 +1557,22 @@ def build_eval_router(
             return _unwrap_extra_nesting(expected["cells"])
         return _unwrap_extra_nesting(expected)
 
+    def _is_dynamic_map_schema(schema: object) -> bool:
+        """True for an open-ended map schema: {type:object, additionalProperties:<obj>}
+        with no fixed `properties`/`required`.
+
+        Such a schema constrains nothing at the top level, so forcing it via
+        structured output (Anthropic tool_use / OpenAI json_schema) lets the
+        model satisfy it with an empty `{}`. The CRUD oracle shape
+        ({entity:{field:cell}}) is exactly this kind of dynamic-key map, so we
+        must NOT hand it to the provider as a response schema — the prompt's
+        explicit shape instructions drive instead.
+        """
+        if not isinstance(schema, dict) or schema.get("type") != "object":
+            return False
+        ap = schema.get("additionalProperties")
+        return isinstance(ap, dict) and not schema.get("properties") and not schema.get("required")
+
     def _normalize_fixture_for_ui(data: dict) -> dict:
         """Normalize on-disk fixture to a stable shape for the frontend.
 
@@ -2003,6 +2019,13 @@ def build_eval_router(
         output_schema_obj = parsed_prompt.get("output_schema")
         if not isinstance(output_schema_obj, dict):
             output_schema_obj = None
+        # Dynamic-key map schemas (e.g. the CRUD matrix) make structured-output
+        # forcing return an empty `{}` — skip them and let the prompt enforce
+        # shape (which works reliably). Fixed-shape schemas keep the guarantee.
+        schema_skipped = ""
+        if output_schema_obj is not None and _is_dynamic_map_schema(output_schema_obj):
+            schema_skipped = "dynamic-key map schema (additionalProperties) — prompt enforces shape"
+            output_schema_obj = None
 
         # Pick provider (same routing rules as meta-generate)
         provider_key = str(payload.get("provider", "")).strip()
@@ -2072,18 +2095,30 @@ def build_eval_router(
         latency_ms = (_time.perf_counter() - t0) * 1000.0
 
         raw = (resp.content or "").strip()
-        # Strip ```json fences if present
-        cleaned = _re.sub(r"^```(?:json)?\s*", "", raw)
-        cleaned = _re.sub(r"\s*```$", "", cleaned)
 
-        cells: dict[str, Any] = {}
-        parse_error: str | None = None
-        try:
-            parsed = json.loads(cleaned)
-            # Accept either {entity: {field: cell}} or {cells: {...}} shapes
-            cells = parsed.get("cells", parsed) if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError as exc:
-            parse_error = f"response is not valid JSON: {exc}"
+        def _parse_cells(text: str) -> tuple[dict, str | None]:
+            c = _re.sub(r"^```(?:json)?\s*", "", text)
+            c = _re.sub(r"\s*```$", "", c)
+            try:
+                p = json.loads(c)
+            except json.JSONDecodeError as exc:
+                return {}, f"response is not valid JSON: {exc}"
+            return (p.get("cells", p) if isinstance(p, dict) else {}), None
+
+        cells, parse_error = _parse_cells(raw)
+
+        # Safety net: a parsed-but-empty result while a schema was still in force
+        # usually means the schema let the model answer with `{}`. Retry once
+        # without the schema so the prompt instructions can drive the shape.
+        if not cells and not parse_error and req.response_schema is not None:
+            req.response_schema = None
+            try:
+                resp = await provider.complete(req)
+                raw = (resp.content or "").strip()
+                cells, parse_error = _parse_cells(raw)
+                schema_skipped = "empty result with schema — retried without structured output"
+            except Exception:  # noqa: BLE001 — keep the original empty result on failure
+                pass
 
         usage = getattr(resp, "usage", None)
         in_tok = getattr(usage, "input_tokens", 0) if usage else 0
@@ -2102,6 +2137,8 @@ def build_eval_router(
         }
         if parse_error:
             result["parse_error"] = parse_error
+        if schema_skipped:
+            result["schema_skipped"] = schema_skipped
         return result
 
     @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
