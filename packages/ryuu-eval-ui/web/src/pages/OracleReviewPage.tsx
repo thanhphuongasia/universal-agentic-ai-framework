@@ -1838,6 +1838,27 @@ export function OracleReviewPage() {
   // Studio: save preview cells from Tab 3 back into the fixture as expectation
   async function handleSavePreview() {
     if (!preview || !fixture) return;
+
+    // Safeguard: this REPLACES the whole saved expectation. Warn before a
+    // weaker/partial run silently nukes a richer ground truth (e.g. a 6-cell
+    // matrix overwritten by a 1-cell run from a different model).
+    const countCells = (cells: unknown) =>
+      buildRows({ expected: cells as never, review_items: [] }, []).length;
+    const existing = countCells(fixture.expected);
+    const incoming = countCells(preview.cells);
+    const modelChanged =
+      !!fixture.oracle_model && !!preview.model && fixture.oracle_model !== preview.model;
+    if (existing > 0 && (incoming < existing || modelChanged)) {
+      const reasons: string[] = [];
+      if (incoming < existing) reasons.push(`fewer cells (${existing} → ${incoming})`);
+      if (modelChanged) reasons.push(`different model (${fixture.oracle_model} → ${preview.model})`);
+      const ok = window.confirm(
+        `This overwrites the saved expectation with ${reasons.join(" and ")}.\n\n` +
+        `The current ${existing}-cell ground truth will be replaced. Continue?`,
+      );
+      if (!ok) return;
+    }
+
     const version = oraclePromptVersion || `auto-${new Date().toISOString()}`;
     await saveStudio.mutateAsync({
       case_id: fixture.fixture_id,
