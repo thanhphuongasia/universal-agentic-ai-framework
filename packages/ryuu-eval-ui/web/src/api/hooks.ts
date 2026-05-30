@@ -482,11 +482,39 @@ export interface PromoteResponse {
 }
 
 export function usePromoteToSuite() {
+  const qc = useQueryClient();
   return useMutation<PromoteResponse, Error, PromoteRequest>({
     mutationFn: ({ fixture_id, ...body }) =>
       apiFetch(`/oracle-review/${fixture_id}/promote-to-suite`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["oracle-promotes", vars.fixture_id] });
+    },
+  });
+}
+
+export interface PromotedCell { entity: string; column: string; op: string }
+export interface OraclePromoteRecord {
+  promote_id: string;
+  fixture_id: string;
+  target_suite_id: string;
+  case_id: string;
+  written_path: string;
+  cells_count: number;
+  verdict: string;
+  overwrite: boolean;
+  cells: PromotedCell[];
+  metadata: Record<string, unknown>;
+  ts: string;
+  created_at: number;
+}
+
+export function useOraclePromotes(fixtureId: string) {
+  return useQuery<{ fixture_id: string; promotes: OraclePromoteRecord[] }>({
+    queryKey: ["oracle-promotes", fixtureId],
+    queryFn: () => apiFetch(`/oracle-review/${fixtureId}/promotes`),
+    enabled: !!fixtureId,
   });
 }

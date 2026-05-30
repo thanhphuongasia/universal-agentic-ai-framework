@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { CellsView, pickRenderer } from "@/components/oracle/CellsView";
 import { CrudReviewMatrix } from "@/components/oracle/review/CrudReviewMatrix";
 import { OracleRunHistory } from "@/components/oracle/OracleRunHistory";
+import { OraclePromoteHistory } from "@/components/oracle/OraclePromoteHistory";
 import { buildRows, countPendingReview, isCrudReviewable } from "@/components/oracle/review/reviewModel";
 import {
   useSuites, useSuite, useSaveDefaultPrompt,
@@ -1281,6 +1282,9 @@ function Tab4_Review({
 
       {/* Interactive CRUD matrix (falls back to read-only CellsView for non-CRUD) */}
       <CrudReviewMatrix fixture={fixture} pendingActions={pendingActions} onAction={onAction} />
+
+      {/* Promote history — what landed in which suite, when, with detail */}
+      <OraclePromoteHistory fixtureId={fixture.fixture_id} />
     </div>
   );
 }

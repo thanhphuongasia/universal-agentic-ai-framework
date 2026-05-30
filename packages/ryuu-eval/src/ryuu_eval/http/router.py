@@ -99,6 +99,7 @@ def build_eval_router(
     llm_providers: dict[str, Any] | None = None,
     model_catalog: dict[str, dict[str, Any]] | None = None,
     oracle_runs_store: Any | None = None,
+    oracle_promotes_store: Any | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -1476,35 +1477,50 @@ def build_eval_router(
 
     _oracle_dir = oracle_fixtures_dir or Path("artifacts/eval/oracle_fixtures/crud_matrix")
 
-    # Run-history store for Tab 3 "Execute" runs (trace + compare). Depends on
-    # the framework's ICollectionStore contract, so the JSONL backend here can be
+    # History stores (Tab 3 Execute runs + Tab 4 promotes). Both depend on the
+    # framework's ICollectionStore contract, so the JSONL backend here can be
     # swapped for Sqlite/Postgres by injecting a different store — no code change
     # in this router. Lazily default to JSONL; if unavailable, history is a no-op.
-    _runs_store = oracle_runs_store
-    if _runs_store is None:
+    def _default_jsonl_store(table: str):
         try:
             from ryuu_storage_jsonl import JsonlCollectionStore
-            _runs_store = JsonlCollectionStore(
-                root_dir=_oracle_dir.parent / "oracle_runs", table="runs",
+            return JsonlCollectionStore(
+                root_dir=_oracle_dir.parent / "oracle_runs", table=table,
             )
-        except Exception:  # noqa: BLE001 — history is optional, never block runs
-            _runs_store = None
+        except Exception:  # noqa: BLE001 — history is optional, never block work
+            return None
 
-    async def _record_run(fixture_id: str, record: dict) -> None:
-        """Append one Execute run to history; failures never break the run."""
-        if not _runs_store or not fixture_id:
+    _runs_store = oracle_runs_store or _default_jsonl_store("runs")
+    _promotes_store = oracle_promotes_store or _default_jsonl_store("promotes")
+
+    async def _record_history(store, scope_key: str, record: dict, meta: dict) -> None:
+        """Append one history entry; failures never break the underlying action."""
+        if not store or not scope_key:
             return
         try:
-            await _runs_store.append(
-                fixture_id,
-                json.dumps(record, ensure_ascii=False),
-                metadata={
-                    "model": str(record.get("model", "")),
-                    "cells_count": record.get("cells_count", 0),
-                },
-            )
+            await store.append(scope_key, json.dumps(record, ensure_ascii=False), metadata=meta)
         except Exception:  # noqa: BLE001
             pass
+
+    async def _list_history(store, scope_key: str, limit: int) -> list[dict]:
+        """Return history entries newest-first, parsed from stored JSON."""
+        if not store:
+            return []
+        try:
+            items = await store.list(scope_key, limit=max(1, min(limit, 200)))
+        except Exception:  # noqa: BLE001
+            return []
+        out: list[dict] = []
+        for it in items:
+            try:
+                rec = json.loads(it.content)
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            rec["entry_id"] = it.id
+            rec["created_at"] = it.created_at
+            out.append(rec)
+        out.reverse()
+        return out
 
     def _list_oracle_fixtures(suite_id: str | None = None) -> list[dict]:
         if not _oracle_dir.exists():
@@ -2174,15 +2190,14 @@ def build_eval_router(
         # Persist this run to history (trace + compare) when a fixture is known.
         fixture_id = str(payload.get("fixture_id", "")).strip()
         if fixture_id:
-            await _record_run(fixture_id, {
+            cells_count = sum(len(v) for v in cells.values() if isinstance(v, dict))
+            await _record_history(_runs_store, fixture_id, {
                 **result,
                 "fixture_id": fixture_id,
                 "oracle_prompt_version": str(payload.get("oracle_prompt_version", "")),
-                "cells_count": sum(
-                    len(v) for v in cells.values() if isinstance(v, dict)
-                ),
+                "cells_count": cells_count,
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            })
+            }, {"model": str(result.get("model", "")), "cells_count": cells_count})
         return result
 
     @r.get("/oracle-review/{fixture_id}/runs", dependencies=auth_dep)
@@ -2193,22 +2208,9 @@ def build_eval_router(
         model, latency, cost, tokens, schema_skipped + ts. Backed by the
         injected ICollectionStore (JSONL by default).
         """
-        if not _runs_store:
-            return {"fixture_id": fixture_id, "runs": []}
-        try:
-            items = await _runs_store.list(fixture_id, limit=max(1, min(limit, 200)))
-        except Exception:  # noqa: BLE001
-            return {"fixture_id": fixture_id, "runs": []}
-        runs: list[dict] = []
-        for it in items:
-            try:
-                rec = json.loads(it.content)
-            except (json.JSONDecodeError, AttributeError):
-                continue
-            rec["run_id"] = it.id
-            rec["created_at"] = it.created_at
-            runs.append(rec)
-        runs.reverse()  # newest first
+        runs = await _list_history(_runs_store, fixture_id, limit)
+        for r_ in runs:  # keep the `run_id` field the UI already expects
+            r_["run_id"] = r_.pop("entry_id", "")
         return {"fixture_id": fixture_id, "runs": runs}
 
     @r.get("/oracle-review/{fixture_id}", dependencies=auth_dep)
@@ -2320,7 +2322,7 @@ def build_eval_router(
         return candidate
 
     @r.post("/oracle-review/{fixture_id}/promote-to-suite", dependencies=auth_dep)
-    def promote_oracle_fixture_to_suite(fixture_id: str, payload: dict) -> dict:
+    async def promote_oracle_fixture_to_suite(fixture_id: str, payload: dict) -> dict:
         """Copy a reviewed oracle fixture into a suite's cases dir as a YAML case.
 
         Step 5 of the Studio flow: once cells are reviewed and approved, the
@@ -2409,12 +2411,39 @@ def build_eval_router(
             encoding="utf-8",
         )
 
+        ts = promoted["metadata"]["promoted_at"]
+        await _record_history(_promotes_store, fixture_id, {
+            "fixture_id": fixture_id,
+            "target_suite_id": target_suite,
+            "case_id": case_id,
+            "written_path": str(out_path),
+            "cells_count": len(cells_list),
+            "verdict": verdict,
+            "overwrite": overwrite,
+            "cells": cells_list,
+            "metadata": promoted["metadata"],
+            "ts": ts,
+        }, {"target_suite_id": target_suite, "case_id": case_id, "cells_count": len(cells_list)})
+
         return {
             "written_path": str(out_path),
             "case_id": case_id,
             "target_suite_id": target_suite,
             "cells_count": len(cells_list),
         }
+
+    @r.get("/oracle-review/{fixture_id}/promotes", dependencies=auth_dep)
+    async def list_oracle_promotes(fixture_id: str, limit: int = 50) -> dict:
+        """Promote history for a fixture (newest first) — Tab 4 list + detail.
+
+        Each entry snapshots a prior promote: target suite, case_id, written
+        path, cells_count, the promoted cells list, audit metadata + ts.
+        Backed by the injected ICollectionStore (JSONL by default).
+        """
+        promotes = await _list_history(_promotes_store, fixture_id, limit)
+        for p_ in promotes:
+            p_["promote_id"] = p_.pop("entry_id", "")
+        return {"fixture_id": fixture_id, "promotes": promotes}
 
     @r.delete("/oracle-review/{fixture_id}", dependencies=auth_dep)
     def delete_oracle_fixture(fixture_id: str) -> dict:
