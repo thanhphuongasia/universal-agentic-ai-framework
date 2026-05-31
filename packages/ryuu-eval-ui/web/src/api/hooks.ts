@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useCallback } from "react";
 import { apiFetch, apiUrl } from "./client";
 import type {
-  Suite, Case, Template, RunSummary, RunResult, RunConfig,
+  Suite, Case, CaseProvenance, Template, RunSummary, RunResult, RunConfig,
   ServerStatus, RefineHistoryEntry, StreamEvent, RunHistoryEntry,
   Project, SyncResult,
 } from "./types";
@@ -68,6 +68,14 @@ export function useCases(suiteId: string) {
     queryKey: ["cases", suiteId],
     queryFn: () => apiFetch(`/suites/${suiteId}/cases`),
     enabled: !!suiteId,
+  });
+}
+
+export function useCaseProvenance(suiteId: string | null | undefined, caseId: string) {
+  return useQuery<CaseProvenance>({
+    queryKey: ["case-provenance", suiteId, caseId],
+    queryFn: () => apiFetch(`/suites/${suiteId}/cases/${caseId}/provenance`),
+    enabled: !!suiteId && !!caseId,
   });
 }
 

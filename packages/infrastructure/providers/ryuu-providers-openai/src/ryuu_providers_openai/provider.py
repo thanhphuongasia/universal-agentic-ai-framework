@@ -50,6 +50,30 @@ def _supports_strict_schema(model: str) -> bool:
     return any(model.startswith(prefix) for prefix in _STRICT_SCHEMA_PREFIXES)
 
 
+def _is_strict_compatible(schema: Any) -> bool:
+    """True if ``schema`` can be sent under OpenAI strict json_schema mode.
+
+    Strict mode requires *closed* objects: every object must declare its
+    properties explicitly and set ``additionalProperties: false``. Schemas with
+    open-ended dynamic keys (``additionalProperties`` set to a sub-schema, e.g.
+    a CRUD matrix keyed by entity/field names) cannot be expressed in strict
+    mode — the API rejects them. For those we fall back to ``json_object`` mode,
+    which still forbids prose but accepts any JSON shape.
+    """
+    if not isinstance(schema, dict):
+        return True
+    if schema.get("type") == "object" and schema.get("additionalProperties", False) is not False:
+        return False
+    for value in schema.values():
+        if isinstance(value, dict) and not _is_strict_compatible(value):
+            return False
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict) and not _is_strict_compatible(item):
+                    return False
+    return True
+
+
 def _is_unsupported_param_error(exc: Exception) -> bool:
     """True when API rejected a parameter the model doesn't support (e.g. temperature on o-series)."""
     msg = str(exc).lower()
@@ -126,7 +150,7 @@ class OpenAIProvider:
         if request.response_schema:
             # Phase 11.y: gpt-4o family supports strict JSON Schema mode.
             # Older models (gpt-3.5, gpt-4 base) fall back to basic json_object.
-            if _supports_strict_schema(model):
+            if _supports_strict_schema(model) and _is_strict_compatible(request.response_schema):
                 kwargs["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
@@ -136,6 +160,8 @@ class OpenAIProvider:
                     },
                 }
             else:
+                # Older models, or schemas with dynamic keys that strict mode
+                # can't express → JSON mode (valid JSON, no prose, any shape).
                 kwargs["response_format"] = {"type": "json_object"}
         if request.tools:
             kwargs["tools"] = request.tools

@@ -41,6 +41,24 @@ export interface Case {
   metadata?: Record<string, unknown>;
 }
 
+/** Provenance for an oracle-derived case (GET .../cases/{id}/provenance).
+ *  Empty string fields mean "not recorded" → render as N/A. */
+export interface CaseProvenance {
+  suite_id: string;
+  case_id: string;
+  has_oracle: boolean;
+  source_fixture?: string | null;
+  fixture_missing?: boolean;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  production_prompt?: string;
+  oracle_prompt?: string;
+  oracle_prompt_version?: string;
+  oracle_model?: string;
+  input?: unknown;
+  expected?: unknown;
+}
+
 export type CaseStatus = "queued" | "running" | "pass" | "fail" | "error" | "cancelled";
 
 export interface CaseStep {

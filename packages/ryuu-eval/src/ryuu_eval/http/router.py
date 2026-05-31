@@ -163,9 +163,14 @@ def build_eval_router(
             n_params = 2
         if n_params >= 4:
             extra_kwargs: dict[str, Any] = {}
+            # Suite CATEGORY for behavior dispatch — keyed on template_id from
+            # suite_config, NOT the suite's name. Lets cloned suites keep the
+            # right target/scorer. Falls back to suite_id inside the factory.
+            template_id = _read_suite_config(suite_id).get("template_id")
             for k, v in (("max_tokens", max_tokens),
                          ("temperature", temperature),
-                         ("budget_cap_usd", budget_cap_usd)):
+                         ("budget_cap_usd", budget_cap_usd),
+                         ("template_id", template_id)):
                 if v is not None and k in params:
                     extra_kwargs[k] = v
             return runner_factory(suite_id, log_path, model, system_prompt, **extra_kwargs)
@@ -437,7 +442,9 @@ def build_eval_router(
         suite_dir = _suite_dir(suite_id)
         suite_dir.mkdir(parents=True, exist_ok=True)
         cfg: dict[str, Any] = {}
-        for key in ("title", "description", "default_system_prompt"):
+        # template_id = the suite's CATEGORY → drives target/scorer dispatch.
+        # Persist it so a cloned suite keeps the right behavior regardless of name.
+        for key in ("title", "description", "default_system_prompt", "template_id"):
             if body.get(key) is not None:
                 cfg[key] = body[key]
         if cfg:
@@ -672,6 +679,61 @@ def build_eval_router(
         out = _dataclass_dict(cr)
         out["passed"] = cr.passed  # @property dropped by asdict
         out["suite_id"] = suite_id
+        return out
+
+    @r.get("/suites/{suite_id}/cases/{case_id}/provenance", dependencies=auth_dep)
+    def get_case_provenance(suite_id: str, case_id: str) -> dict:
+        """Provenance for an oracle-derived case — what the UI shows for an
+        approved case:
+          1. approval: who + when  (empty → caller renders "N/A")
+          2. production_prompt      (the prompt under test)
+          3. oracle_prompt          (the prompt that generated the ground truth)
+          4. input + expected       (the approved expectation)
+
+        Joins the case (cases_dir, for source_fixture) with its oracle fixture
+        (oracle_fixtures). ``has_oracle: false`` when the case wasn't promoted
+        from an oracle fixture.
+        """
+        match = next(
+            (c for c in _load_all_cases(suite_id) if c.get("case_id") == case_id),
+            None,
+        )
+        if match is None:
+            raise HTTPException(404, f"case {case_id!r} not found in suite {suite_id!r}")
+
+        meta = match.get("metadata") or {}
+        fixture_id = meta.get("source_fixture")
+        out: dict[str, Any] = {
+            "suite_id": suite_id,
+            "case_id": case_id,
+            "has_oracle": False,
+            "source_fixture": fixture_id,
+            "input": match.get("input"),
+            "expected": match.get("expected"),
+        }
+        if not fixture_id:
+            return out  # hand-written / non-oracle case — nothing to join
+
+        fix_path = _oracle_dir / f"{fixture_id}.json"
+        if not fix_path.exists():
+            out["fixture_missing"] = True
+            return out
+
+        fx = json.loads(fix_path.read_text(encoding="utf-8"))
+        out.update({
+            "has_oracle": True,
+            # 1. approval — fall back to "" so the UI shows N/A
+            "reviewed_by": fx.get("reviewed_by") or "",
+            "reviewed_at": fx.get("reviewed_at") or "",
+            # 2/3. the two prompts (case file strips them; fixture keeps them)
+            "production_prompt": fx.get("production_prompt") or "",
+            "oracle_prompt": fx.get("oracle_prompt") or "",
+            "oracle_prompt_version": fx.get("oracle_prompt_version") or meta.get("oracle_prompt_version") or "",
+            "oracle_model": fx.get("oracle_model") or meta.get("oracle_model") or "",
+            # 4. input + approved expectation (prefer the fixture's reviewed copy)
+            "input": fx.get("input_data") if fx.get("input_data") is not None else match.get("input"),
+            "expected": fx.get("expected") if fx.get("expected") is not None else match.get("expected"),
+        })
         return out
 
     # ── Fixture cases (read-only from fixtures_dir) ────────────────────
