@@ -166,6 +166,7 @@ export interface RunConfig {
   model?: string;
   models?: string[];
   prompt?: string;
+  prompt_version?: string;
   temperature?: number;
   max_tokens?: number;
   case_ids?: string[];

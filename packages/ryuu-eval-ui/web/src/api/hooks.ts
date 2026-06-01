@@ -60,6 +60,22 @@ export function useActivePromptVersion(suiteId: string) {
   });
 }
 
+export function useSavePromptVersion(suiteId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    PromptVersion,
+    Error,
+    { version: string; config: Record<string, unknown>; status?: PromptStatus }
+  >({
+    mutationFn: (body) =>
+      apiFetch(`/suites/${suiteId}/prompt-versions`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prompt-versions", suiteId] }),
+  });
+}
+
 export function usePromotePromptVersion(suiteId: string) {
   const qc = useQueryClient();
   return useMutation<PromptVersion, Error, { version: string; by?: string }>({

@@ -1,8 +1,10 @@
+import { useState } from "react";
 import {
   usePromptVersions,
   useActivePromptVersion,
   usePromotePromptVersion,
   useSetPromptVersionStatus,
+  useSavePromptVersion,
 } from "@/api/hooks";
 import type { PromptStatus } from "@/api/types";
 
@@ -26,19 +28,83 @@ export function PromptVersionsPanel({ suiteId }: { suiteId: string }) {
   const { data: active } = useActivePromptVersion(suiteId);
   const promote = usePromotePromptVersion(suiteId);
   const setStatus = useSetPromptVersionStatus(suiteId);
+  const save = useSavePromptVersion(suiteId);
 
-  const busy = promote.isPending || setStatus.isPending;
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ version: "", model: "claude-sonnet-4-6", system: "" });
+
+  const busy = promote.isPending || setStatus.isPending || save.isPending;
+
+  function submitNew() {
+    if (!form.version.trim()) return;
+    save.mutate(
+      {
+        version: form.version.trim(),
+        config: {
+          version: form.version.trim(),
+          description: "",
+          model: form.model,
+          temperature: 0.0,
+          max_tokens: 2048,
+          prompts: { system: { system: form.system, user: "{query}" } },
+          tools: [],
+        },
+      },
+      { onSuccess: () => { setCreating(false); setForm({ version: "", model: form.model, system: "" }); } },
+    );
+  }
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Prompt versions</h3>
-        {active && (
-          <span className="text-xs text-gray-500">
-            live: <span className="font-mono">{active.version}</span>
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {active && (
+            <span className="text-xs text-gray-500">
+              live: <span className="font-mono">{active.version}</span>
+            </span>
+          )}
+          <button
+            onClick={() => setCreating((v) => !v)}
+            className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            {creating ? "Cancel" : "+ New version"}
+          </button>
+        </div>
       </div>
+
+      {creating && (
+        <div className="mb-3 space-y-2 rounded-md border border-gray-100 dark:border-gray-800 p-3">
+          <div className="flex gap-2">
+            <input
+              value={form.version}
+              onChange={(e) => setForm({ ...form, version: e.target.value })}
+              placeholder="version (e.g. v3)"
+              className="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-transparent px-2 py-1 text-sm"
+            />
+            <input
+              value={form.model}
+              onChange={(e) => setForm({ ...form, model: e.target.value })}
+              placeholder="model"
+              className="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-transparent px-2 py-1 text-sm font-mono"
+            />
+          </div>
+          <textarea
+            value={form.system}
+            onChange={(e) => setForm({ ...form, system: e.target.value })}
+            placeholder="system prompt"
+            rows={4}
+            className="w-full rounded border border-gray-300 dark:border-gray-600 bg-transparent px-2 py-1 text-sm font-mono"
+          />
+          <button
+            disabled={busy || !form.version.trim()}
+            onClick={submitNew}
+            className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Create draft
+          </button>
+        </div>
+      )}
 
       {isLoading ? (
         <p className="text-xs text-gray-400">Loading…</p>

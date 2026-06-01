@@ -373,6 +373,18 @@ export function CaseDetail() {
         </details>
       )}
 
+      {/* ── Scoring spec (per-case, drives build_scorers) ── */}
+      {current.metadata?.scoring != null && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-xs font-medium text-gray-500">
+            Scoring spec
+          </div>
+          <pre className="px-3 py-2 text-xs font-mono text-gray-600 dark:text-gray-300 max-h-48 overflow-auto whitespace-pre-wrap break-words">
+            {JSON.stringify(current.metadata.scoring, null, 2)}
+          </pre>
+        </div>
+      )}
+
       {/* ── Expected vs Actual ── */}
       <div>
         {/* View mode toggle */}

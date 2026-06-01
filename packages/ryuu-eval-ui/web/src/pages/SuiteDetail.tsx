@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useSuites, useSuite, useCases, useLastRun, useRunHistory, useRefineHistory, useStartRun, useTemplates, useCreateCase, useUpdateCase, useDeleteCase, useProject, useSaveDefaultPrompt } from "@/api/hooks";
+import { useSuites, useSuite, useCases, useLastRun, useRunHistory, useRefineHistory, useStartRun, useTemplates, useCreateCase, useUpdateCase, useDeleteCase, useProject, useSaveDefaultPrompt, usePromptVersions } from "@/api/hooks";
 import { PromptVersionsPanel } from "@/components/PromptVersionsPanel";
 import { useActiveProject } from "@/context/ProjectContext";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -45,6 +45,8 @@ function RunConfigDialog({
   const navigate = useNavigate();
   const startRun = useStartRun();
   const { data: allCases } = useCases(suiteId);
+  const { data: promptVersions } = usePromptVersions(suiteId);
+  const [selectedVersion, setSelectedVersion] = useState<string>(""); // "" = default/custom prompt
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const allSelected = !!allCases?.length && selectedIds.size === allCases.length;
@@ -93,7 +95,10 @@ function RunConfigDialog({
     const config: RunConfig = {
       suite_id: suiteId,
       models,
-      prompt: values.prompt || undefined,
+      // A selected prompt version drives the run (backend resolves its system
+      // prompt); otherwise fall back to the typed prompt text.
+      prompt_version: selectedVersion || undefined,
+      prompt: selectedVersion ? undefined : (values.prompt || undefined),
       temperature: values.temperature,
       max_tokens: values.max_tokens,
       case_ids: selectedIds.size > 0 ? [...selectedIds] : undefined,
@@ -160,11 +165,34 @@ function RunConfigDialog({
             )}
           </div>
 
+          {/* Prompt version (optional — overrides the system prompt below) */}
+          {promptVersions && promptVersions.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Prompt version
+              </label>
+              <select
+                value={selectedVersion}
+                onChange={(e) => setSelectedVersion(e.target.value)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="">— use the prompt below —</option>
+                {promptVersions.map((v) => (
+                  <option key={v.id} value={v.version}>
+                    {v.version} ({v.status}){v.config?.model ? ` · ${v.config.model}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* System Prompt */}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
               System Prompt
-              {defaultPrompt
+              {selectedVersion
+                ? <span className="ml-1 font-normal text-gray-400">(ignored — using prompt version {selectedVersion})</span>
+                : defaultPrompt
                 ? <span className="ml-1 font-normal text-purple-500">(pre-filled from last run — edit to change)</span>
                 : <span className="ml-1 font-normal text-gray-400">(instructions sent before every case)</span>
               }
@@ -172,7 +200,8 @@ function RunConfigDialog({
             <textarea
               {...register("prompt")}
               rows={4}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+              disabled={!!selectedVersion}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
               placeholder="Leave blank for no system prompt"
             />
           </div>
