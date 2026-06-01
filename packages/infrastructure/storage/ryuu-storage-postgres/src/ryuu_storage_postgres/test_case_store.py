@@ -50,6 +50,9 @@ class PostgresTestCaseStore:
             metadata.setdefault("name", row["name"])
         if row["template_id"] is not None:
             metadata.setdefault("template_id", row["template_id"])
+        # Per-case prompt override (NULL = use the suite's active prompt version).
+        if row["prompt_override_id"] is not None:
+            metadata.setdefault("prompt_override_id", row["prompt_override_id"])
         return EvalCase(
             case_id=row["id"],
             input=_jsonb(row["input"]),
@@ -89,22 +92,25 @@ class PostgresTestCaseStore:
         eff_scoring = scoring if scoring is not None else meta.pop("scoring", None)
         name = meta.pop("name", None) or case.case_id
         eff_template = template_id or meta.pop("template_id", None)
+        prompt_override_id = meta.pop("prompt_override_id", None)
         pool = await get_pool(self.dsn)
         async with pool.acquire() as conn:
             await conn.execute(
                 f"INSERT INTO {self.table}"
-                f" (id, suite_id, template_id, name, input, expected, scoring, metadata)"
-                f" VALUES($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)"
+                f" (id, suite_id, template_id, name, input, expected, scoring,"
+                f"  prompt_override_id, metadata)"
+                f" VALUES($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9::jsonb)"
                 f" ON CONFLICT (suite_id, id) DO UPDATE SET"
-                f"   template_id = EXCLUDED.template_id,"
-                f"   name        = EXCLUDED.name,"
-                f"   input       = EXCLUDED.input,"
-                f"   expected    = EXCLUDED.expected,"
-                f"   scoring     = EXCLUDED.scoring,"
-                f"   metadata    = EXCLUDED.metadata",
+                f"   template_id        = EXCLUDED.template_id,"
+                f"   name               = EXCLUDED.name,"
+                f"   input              = EXCLUDED.input,"
+                f"   expected           = EXCLUDED.expected,"
+                f"   scoring            = EXCLUDED.scoring,"
+                f"   prompt_override_id = EXCLUDED.prompt_override_id,"
+                f"   metadata           = EXCLUDED.metadata",
                 case.case_id, suite_id, eff_template, name,
                 json.dumps(case.input), json.dumps(case.expected),
-                json.dumps(eff_scoring or {}), json.dumps(meta),
+                json.dumps(eff_scoring or {}), prompt_override_id, json.dumps(meta),
             )
 
     async def delete_case(self, suite_id: str, case_id: str) -> bool:

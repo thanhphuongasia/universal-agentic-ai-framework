@@ -105,6 +105,21 @@ async def test_cases_scoped_to_suite():
     assert [c.case_id for c in await store.list_cases(a)] == ["x"]
 
 
+async def test_prompt_override_id_roundtrips():
+    suite = await _make_suite()
+    # prompt_override_id FKs prompt_versions(id) — create one first.
+    pool = await get_pool(DSN)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO prompt_versions(id, suite_id, version, config)"
+            " VALUES('pv_x', $1, 'v1', '{}'::jsonb)", suite)
+    store = PostgresTestCaseStore(dsn=DSN)
+    await store.save_case(
+        suite, EvalCase(case_id="tc1", input="i", metadata={"prompt_override_id": "pv_x"}))
+    got = await store.get_case(suite, "tc1")
+    assert got.metadata["prompt_override_id"] == "pv_x"
+
+
 # --- PostgresEvalRunStore -------------------------------------------------
 
 
