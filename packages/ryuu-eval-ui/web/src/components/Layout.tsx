@@ -8,7 +8,7 @@ const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/suites", label: "Suites", icon: FlaskConical },
   { to: "/compare", label: "Compare", icon: GitCompare },
-  { to: "/oracle-review", label: "Oracle Review", icon: ClipboardCheck },
+  { to: "/oracle-review", label: "Golden Dataset", icon: ClipboardCheck },
 ];
 
 export function Layout() {

@@ -2083,6 +2083,23 @@ def build_eval_router(
             data.setdefault(fld, "")
         return data
 
+    @r.get("/oracle-promotes", dependencies=auth_dep)
+    async def list_all_oracle_promotes(limit: int = 100) -> dict:
+        """Global promote history across ALL fixtures, newest first.
+
+        Distinct path (not under /oracle-review/) to avoid colliding with the
+        per-fixture /oracle-review/{fixture_id} routes.
+        """
+        entries: list[dict] = []
+        for fx in _list_oracle_fixtures():
+            fid = fx.get("fixture_id")
+            if fid:
+                for rec in await _list_history(_promotes_store, fid, 200):
+                    rec.setdefault("fixture_id", fid)
+                    entries.append(rec)
+        entries.sort(key=lambda r: r.get("created_at") or 0.0, reverse=True)
+        return {"promotes": entries[: max(1, min(limit, 500))]}
+
     @r.get("/oracle-review/", dependencies=auth_dep)
     def list_oracle_fixtures(suite_id: str | None = None) -> list[dict]:
         """List oracle fixtures. Pass ?suite_id=xxx to filter by suite."""

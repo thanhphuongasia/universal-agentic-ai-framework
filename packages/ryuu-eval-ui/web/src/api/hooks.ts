@@ -593,3 +593,11 @@ export function useOraclePromotes(fixtureId: string) {
     enabled: !!fixtureId,
   });
 }
+
+/** Global promote history across all fixtures (newest first). */
+export function useAllOraclePromotes(limit = 100) {
+  return useQuery<{ promotes: (OraclePromoteRecord & { fixture_id?: string })[] }>({
+    queryKey: ["oracle-promotes-all", limit],
+    queryFn: () => apiFetch(`/oracle-promotes?limit=${limit}`),
+  });
+}

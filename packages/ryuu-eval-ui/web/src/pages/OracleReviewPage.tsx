@@ -8,6 +8,7 @@ import { buildRows, countPendingReview, isCrudReviewable } from "@/components/or
 import {
   useSuites,
   usePromptVersions, useActivePromptVersion, useSavePromptVersion, usePromotePromptVersion,
+  useAllOraclePromotes,
   useOracleFixtures, useOracleFixture,
   useUpdateOracleReview,
   useGenerateOracle, useDeleteOracleFixture,
@@ -1475,7 +1476,7 @@ function OracleTree({ suites, expandedId, selectedFixtureId, onToggleSuite, onSe
   return (
     <aside className="w-60 shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       <div className="px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Oracle Review</div>
+        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Golden Dataset</div>
         <button
           onClick={onAddSuite}
           className="w-full text-xs py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
@@ -1723,6 +1724,37 @@ function FixtureModal({ suiteId, fixture, onClose, onGenerate, isGenerating }: {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
+
+// ─── Global promote history — all suites, newest first (landing view) ────────
+function GlobalPromoteHistory() {
+  const { data, isLoading } = useAllOraclePromotes(100);
+  const rows = data?.promotes ?? [];
+  return (
+    <div className="p-6 max-w-3xl">
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">Promote history</h2>
+      <p className="text-xs text-gray-400 mb-4">Every fixture promoted into a suite, newest first. Pick a suite on the left to review.</p>
+      {isLoading ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">No promotes yet — review a fixture and promote it to a suite.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {rows.map((r, i) => (
+            <li key={r.promote_id ?? i} className="flex items-center gap-3 rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2 text-xs">
+              <span className="text-gray-400 font-mono shrink-0">{r.ts?.slice(0, 16).replace("T", " ")}</span>
+              <span className="font-mono text-gray-800 dark:text-gray-100">
+                {r.target_suite_id}<span className="text-gray-400">/</span>{r.case_id}
+              </span>
+              <span className="rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-0.5">{r.cells_count} cells</span>
+              {r.overwrite && <span className="text-amber-600">overwrote</span>}
+              <span className="ml-auto text-gray-400 font-mono truncate">{r.fixture_id}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function OracleReviewPage() {
   const { suiteId: urlSuiteId } = useParams<{ suiteId?: string }>();
@@ -1992,12 +2024,16 @@ export function OracleReviewPage() {
             >+ Create First Suite</button>
           </div>
         ) : !selectedFixtureId ? (
-          <SuiteDetailPane
-            suiteId={expandedSuiteId}
-            onAddCase={suiteId => setFixtureModal({ suiteId })}
-            onEditSuite={suite => setSuiteModal({ mode: "edit", suite })}
-            suites={suites}
-          />
+          expandedSuiteId ? (
+            <SuiteDetailPane
+              suiteId={expandedSuiteId}
+              onAddCase={suiteId => setFixtureModal({ suiteId })}
+              onEditSuite={suite => setSuiteModal({ mode: "edit", suite })}
+              suites={suites}
+            />
+          ) : (
+            <GlobalPromoteHistory />
+          )
         ) : (
           <>
             {/* Header breadcrumb */}
