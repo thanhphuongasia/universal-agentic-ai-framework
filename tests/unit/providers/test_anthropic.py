@@ -26,7 +26,7 @@ def _make_request(content: str = "test") -> CompletionRequest:
 
 @pytest.mark.anyio
 async def test_complete_returns_response() -> None:
-    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_block = MagicMock()
         mock_block.type = "text"
@@ -58,7 +58,7 @@ async def test_complete_maps_rate_limit_to_retryable() -> None:
 
     FakeOverloadedError.__name__ = "OverloadedError"
 
-    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.messages.create = AsyncMock(side_effect=FakeOverloadedError("overloaded"))
 
@@ -76,7 +76,7 @@ async def test_complete_maps_auth_error_to_fatal() -> None:
 
     FakeAuthError.__name__ = "AuthenticationError"
 
-    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.messages.create = AsyncMock(side_effect=FakeAuthError("bad key"))
 
@@ -92,7 +92,7 @@ async def test_complete_maps_auth_error_to_fatal() -> None:
 
 @pytest.mark.anyio
 async def test_embed_raises_not_implemented() -> None:
-    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic"):
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic"):
         provider = AnthropicProvider(api_key="ak-test")
 
     with pytest.raises(NotImplementedError):
@@ -105,7 +105,7 @@ async def test_embed_raises_not_implemented() -> None:
 
 
 def test_estimate_cost_returns_cost_object() -> None:
-    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic"):
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic"):
         provider = AnthropicProvider(api_key="ak-test")
 
     cost = provider.estimate_cost(_make_request())
@@ -121,7 +121,7 @@ def test_estimate_cost_returns_cost_object() -> None:
 
 @pytest.mark.anyio
 async def test_complete_with_schema_uses_tool_result() -> None:
-    with patch("ryuu_providers.adapters.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
         mock_client = mock_cls.return_value
         mock_block = MagicMock()
         mock_block.type = "tool_use"

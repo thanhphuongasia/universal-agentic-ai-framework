@@ -127,7 +127,7 @@ class TestCancelToken(unittest.TestCase):
             tok.set()
             await tok.wait()   # should return immediately
 
-        asyncio.get_event_loop().run_until_complete(_go())
+        asyncio.run(_go())
 
 
 class TestSteeringContext(unittest.TestCase):
@@ -172,7 +172,7 @@ class TestScopeState(unittest.TestCase):
             except asyncio.CancelledError:
                 pass
 
-        asyncio.get_event_loop().run_until_complete(_go())
+        asyncio.run(_go())
 
     def test_reset_clears_summary(self) -> None:
         state = ScopeState()

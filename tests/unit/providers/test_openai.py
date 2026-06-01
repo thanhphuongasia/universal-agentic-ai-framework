@@ -12,7 +12,7 @@ from ryuu.providers.llm import CompletionRequest, Message
 
 
 def _make_provider() -> OpenAIProvider:
-    with patch("ryuu_providers.adapters.openai.AsyncOpenAI", autospec=True):
+    with patch("ryuu_providers_openai.provider.AsyncOpenAI", autospec=True):
         provider = OpenAIProvider(api_key="sk-test")
     return provider
 
@@ -34,7 +34,7 @@ def _make_request(content: str = "test", model: str = "gpt-4o-mini") -> Completi
 async def test_complete_returns_response() -> None:
     from unittest.mock import MagicMock
 
-    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers_openai.provider.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_choice = MagicMock()
         mock_choice.message.content = "AI response"
@@ -65,7 +65,7 @@ async def test_complete_maps_rate_limit_to_retryable() -> None:
 
     FakeRateLimitError.__name__ = "RateLimitError"
 
-    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers_openai.provider.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.chat.completions.create = AsyncMock(side_effect=FakeRateLimitError("limit"))
 
@@ -83,7 +83,7 @@ async def test_complete_maps_auth_error_to_fatal() -> None:
 
     FakeAuthError.__name__ = "AuthenticationError"
 
-    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers_openai.provider.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_client.chat.completions.create = AsyncMock(side_effect=FakeAuthError("bad key"))
 
@@ -98,7 +98,7 @@ async def test_complete_maps_auth_error_to_fatal() -> None:
 
 
 def test_estimate_cost_returns_cost_object() -> None:
-    with patch("ryuu_providers.adapters.openai.AsyncOpenAI"):
+    with patch("ryuu_providers_openai.provider.AsyncOpenAI"):
         provider = OpenAIProvider(api_key="sk-test")
 
     cost = provider.estimate_cost(_make_request())
@@ -117,7 +117,7 @@ def test_estimate_cost_returns_cost_object() -> None:
 
 @pytest.mark.anyio
 async def test_embed_returns_embedding() -> None:
-    with patch("ryuu_providers.adapters.openai.AsyncOpenAI") as mock_cls:
+    with patch("ryuu_providers_openai.provider.AsyncOpenAI") as mock_cls:
         mock_client = mock_cls.return_value
         mock_embed_data = MagicMock()
         mock_embed_data.embedding = [0.1, 0.2, 0.3]

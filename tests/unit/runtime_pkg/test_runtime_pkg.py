@@ -127,7 +127,7 @@ async def test_request_handler_routes_and_returns() -> None:
 
 
 def test_extract_json_handles_plain_json() -> None:
-    from ryuu_runtime.llm_analyzer import _extract_json
+    from ryuu_intent.llm_analyzer import _extract_json
 
     data = _extract_json('{"intent_type": "query", "action": "search"}')
     assert data is not None
@@ -135,7 +135,7 @@ def test_extract_json_handles_plain_json() -> None:
 
 
 def test_extract_json_handles_markdown_block() -> None:
-    from ryuu_runtime.llm_analyzer import _extract_json
+    from ryuu_intent.llm_analyzer import _extract_json
 
     text = '```json\n{"intent_type": "command"}\n```'
     data = _extract_json(text)
@@ -144,6 +144,6 @@ def test_extract_json_handles_markdown_block() -> None:
 
 
 def test_extract_json_returns_none_for_garbage() -> None:
-    from ryuu_runtime.llm_analyzer import _extract_json
+    from ryuu_intent.llm_analyzer import _extract_json
 
     assert _extract_json("no json here at all") is None
