@@ -43,6 +43,23 @@ class ITestCaseStore(Protocol):
 
 
 @runtime_checkable
+class ISuiteStore(Protocol):
+    """Persisted suites (the ``suites`` table). When wired, the eval app is
+    DB-only for suites — no file-based discovery. Depend on this Protocol.
+    """
+
+    async def list_suites(self) -> list[dict[str, Any]]: ...
+
+    async def get_suite(self, suite_id: str) -> dict[str, Any] | None: ...
+
+    async def create_suite(
+        self, suite_id: str, *, title: str = "", domain_id: str | None = None
+    ) -> None: ...
+
+    async def delete_suite(self, suite_id: str) -> bool: ...
+
+
+@runtime_checkable
 class IEvalRunStore(Protocol):
     """Persisted eval runs + per-case results (``eval_runs`` + ``eval_results``).
 

@@ -1,11 +1,9 @@
-"""Seed the eval/prompt-store schema with one realistic suite.
+"""Seed demo eval data into a freshly-migrated database.
 
-Populates a freshly-migrated database (docs/eval-prompt-store-schema.sql) so the
-end-to-end shape is visible: a system → domain → suite, two prompt versions (v2
-promoted live via suites.active_prompt_version_id), one template, two test cases
-whose scoring column is a build_scorers() spec.
-
-Idempotent — re-running upserts, never duplicates.
+Creates a code-analysis system → diagrams domain → three demo suites
+(crud_matrix_llm, class_diagram, sequence_diagram), each with two prompt
+versions (v2 promoted live) and a few test cases whose `scoring` column is a
+build_scorers() spec. Idempotent — re-running upserts, never duplicates.
 
 Run:
     DATABASE_URL=postgresql://macbook@localhost/ryuu_eval python scripts/seed_eval.py
@@ -14,36 +12,95 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 
 from ryuu_prompts import PromptConfig, PromptStatus, PromptTemplate, PromptVersion
-from ryuu_storage_postgres import PostgresPromptStore, close_all
+from ryuu_storage_postgres import (
+    PostgresPromptStore,
+    PostgresSuiteStore,
+    PostgresTestCaseStore,
+    close_all,
+)
 from ryuu_storage_postgres._pool import get_pool
+from ryuu_eval_core.models import EvalCase
 
 DSN = os.environ["DATABASE_URL"]
-
 SYSTEM_ID = "code-analysis"
 DOMAIN_ID = "diagrams"
-SUITE_ID = "crud_matrix"
 
 
 def _prompt(version: str, system: str) -> PromptConfig:
     return PromptConfig(
-        version=version,
-        description=f"CRUD matrix extractor {version}",
-        model="claude-sonnet-4-6",
-        temperature=0.0,
-        max_tokens=2048,
-        prompts={"extract": PromptTemplate(system=system, user="{query}")},
+        version=version, description=f"{version}", model="claude-sonnet-4-6",
+        temperature=0.0, max_tokens=2048,
+        prompts={"system": PromptTemplate(system=system, user="{query}")},
     )
+
+
+# Demo suites: each → (title, [(version, system_prompt)], [(case_id, name, input, expected, scoring)])
+SUITES: list[dict] = [
+    {
+        "id": "crud_matrix_llm", "title": "CRUD Matrix",
+        "versions": [
+            ("v1", "Extract the CRUD matrix. Return JSON."),
+            ("v2", "Extract the CRUD matrix per entity. Use only C/R/U/D. Strict JSON, no prose, no GraphQL."),
+        ],
+        "cases": [
+            ("orders_happy", "Orders CRUD", {"code": "class OrderController {...}"},
+             {"Order": "CR"},
+             {"scorers": [{"type": "contains", "config": {"required": ["CREATE", "READ"]}}],
+              "combine": "and", "forbidden": ["GraphQL"]}),
+            ("users_full", "Users full CRUD", {"code": "class UserController {...}"},
+             {"User": "CRUD"},
+             {"scorers": [{"type": "contains",
+              "config": {"required": ["CREATE", "READ", "UPDATE", "DELETE"]}}]}),
+        ],
+    },
+    {
+        "id": "class_diagram", "title": "Class Diagram",
+        "versions": [
+            ("v1", "Extract a UML class diagram from the code. Return JSON."),
+            ("v2", "Extract a UML class diagram: classes, fields, methods, and "
+                   "relationships (extends/implements/association). Strict JSON only."),
+        ],
+        "cases": [
+            ("order_model", "Order aggregate", {"code": "class Order extends Base { Item[] items; }"},
+             {"classes": ["Order", "Item"], "relationships": ["Order->Item"]},
+             {"scorers": [{"type": "contains", "config": {"required": ["Order", "Item"]}}],
+              "combine": "and"}),
+            ("inheritance", "Inheritance chain", {"code": "class Admin extends User implements Auditable {}"},
+             {"classes": ["Admin", "User", "Auditable"]},
+             {"scorers": [{"type": "contains",
+              "config": {"required": ["Admin", "User", "extends"]}}]}),
+        ],
+    },
+    {
+        "id": "sequence_diagram", "title": "Sequence Diagram",
+        "versions": [
+            ("v1", "Extract a UML sequence diagram from the code. Return JSON."),
+            ("v2", "Extract a UML sequence diagram: participants and ordered messages "
+                   "(caller → callee : method). Preserve call order. Strict JSON only."),
+        ],
+        "cases": [
+            ("checkout_flow", "Checkout flow",
+             {"code": "Controller.checkout() -> Service.pay() -> Gateway.charge()"},
+             {"participants": ["Controller", "Service", "Gateway"],
+              "messages": ["Controller->Service:pay", "Service->Gateway:charge"]},
+             {"scorers": [{"type": "contains",
+              "config": {"required": ["Controller", "Service", "Gateway"]}}],
+              "combine": "and"}),
+        ],
+    },
+]
 
 
 async def seed() -> None:
     pool = await get_pool(DSN)
-    store = PostgresPromptStore(dsn=DSN)
+    prompts = PostgresPromptStore(dsn=DSN)
+    suites = PostgresSuiteStore(dsn=DSN)
+    cases = PostgresTestCaseStore(dsn=DSN)
 
-    # 1. system → domain (parents of the suite)
+    # system → domain (parents of every suite)
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO systems(id, name, description) VALUES($1, $2, $3)"
@@ -56,70 +113,33 @@ async def seed() -> None:
             DOMAIN_ID, SYSTEM_ID, "Diagrams",
         )
 
-    # 2. suite
-    await store.ensure_suite(SUITE_ID, domain_id=DOMAIN_ID, name="CRUD Matrix")
-
-    # 3. two prompt versions; v2 is the improved one
-    await store.save(PromptVersion(
-        id="pv_crud_v1", suite_id=SUITE_ID, version="v1", created_at=1.0,
-        config=_prompt("v1", "Extract the CRUD matrix. Return JSON."),
-    ))
-    await store.save(PromptVersion(
-        id="pv_crud_v2", suite_id=SUITE_ID, version="v2", created_at=2.0,
-        config=_prompt(
-            "v2",
-            "Extract the CRUD matrix per entity. Use only C/R/U/D. "
-            "Return strict JSON, no prose, no GraphQL.",
-        ),
-    ))
-
-    # 4. lifecycle: v2 → staging → promote (sets suites.active_prompt_version_id)
-    await store.set_status(SUITE_ID, "v2", PromptStatus.STAGING)
-    await store.promote(SUITE_ID, "v2", by="seed-script")
-
-    # 5. one template + two test cases (scoring = build_scorers spec)
-    input_schema = {"type": "object", "properties": {"code": {"type": "string"}}}
-    expected_schema = {"type": "object"}
-    scoring_happy = {
-        "scorers": [{"type": "contains", "config": {"required": ["CREATE", "READ"]}}],
-        "combine": "and",
-        "forbidden": ["GraphQL"],
-    }
-    scoring_strict = {
-        "scorers": [{"type": "contains", "config": {"required": ["CREATE", "READ", "UPDATE", "DELETE"]}}],
-        "combine": "and",
-    }
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO templates(id, suite_id, title, description, input_schema, expected_schema, tags)"
-            " VALUES($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb)"
-            " ON CONFLICT (id) DO NOTHING",
-            "tpl_crud", SUITE_ID, "CRUD extraction", "Extract CRUD ops per entity",
-            json.dumps(input_schema), json.dumps(expected_schema), json.dumps(["crud", "diagrams"]),
-        )
-        for tc_id, name, scoring in [
-            ("tc_orders_happy", "orders happy path", scoring_happy),
-            ("tc_users_full", "users full CRUD", scoring_strict),
-        ]:
-            await conn.execute(
-                "INSERT INTO test_cases(id, suite_id, template_id, name, input, expected, scoring, metadata)"
-                " VALUES($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, '{}'::jsonb)"
-                " ON CONFLICT (suite_id, id) DO UPDATE SET scoring = EXCLUDED.scoring",
-                tc_id, SUITE_ID, "tpl_crud", name,
-                json.dumps({"code": "// ..."}), json.dumps({}), json.dumps(scoring),
+    for spec in SUITES:
+        sid = spec["id"]
+        await suites.create_suite(sid, title=spec["title"], domain_id=DOMAIN_ID)
+        for ver, system in spec["versions"]:
+            await prompts.save(PromptVersion(
+                id=f"{sid}-{ver}", suite_id=sid, version=ver, config=_prompt(ver, system),
+            ))
+        await prompts.set_status(sid, "v2", PromptStatus.STAGING)
+        await prompts.promote(sid, "v2", by="seed-script")
+        for cid, name, inp, exp, scoring in spec["cases"]:
+            await cases.save_case(
+                sid, EvalCase(case_id=cid, input=inp, expected=exp, metadata={"name": name}),
+                scoring=scoring,
             )
 
-    # 6. report
+    # report
     async with pool.acquire() as conn:
-        counts = {}
-        for t in ["systems", "domains", "suites", "prompt_versions", "templates", "test_cases"]:
-            counts[t] = await conn.fetchval(f"SELECT count(*) FROM {t}")
-        active = await conn.fetchval(
-            "SELECT active_prompt_version_id FROM suites WHERE id = $1", SUITE_ID
+        rows = await conn.fetch(
+            "SELECT s.id, s.active_prompt_version_id,"
+            "  (SELECT count(*) FROM prompt_versions p WHERE p.suite_id = s.id) AS versions,"
+            "  (SELECT count(*) FROM test_cases t WHERE t.suite_id = s.id) AS cases"
+            " FROM suites s ORDER BY s.id"
         )
-    print("Seeded row counts:", counts)
-    print(f"suites.active_prompt_version_id for {SUITE_ID!r} =", active)
-
+    print("Seeded suites:")
+    for r in rows:
+        print(f"  {r['id']:<18} versions={r['versions']} cases={r['cases']} "
+              f"active={r['active_prompt_version_id']}")
     await close_all()
 
 

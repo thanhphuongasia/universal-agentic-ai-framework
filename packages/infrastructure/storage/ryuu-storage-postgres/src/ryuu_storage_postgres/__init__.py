@@ -7,6 +7,7 @@ from ryuu_storage_postgres.kv import PostgresKVStore
 from ryuu_storage_postgres.profile import PostgresProfileStore
 from ryuu_storage_postgres.prompt_store import PostgresPromptStore
 from ryuu_storage_postgres.session import PostgresSessionStore
+from ryuu_storage_postgres.suite_store import PostgresSuiteStore
 from ryuu_storage_postgres.test_case_store import PostgresTestCaseStore
 
 __all__ = [
@@ -21,7 +22,8 @@ __all__ = [
     "ProfileEntry",   # from ryuu_storage_core — canonical, not duplicated
     # prompt lifecycle store (IPromptStore → ryuu_prompts)
     "PostgresPromptStore",
-    # eval schema stores (ITestCaseStore / IEvalRunStore → ryuu_eval_core)
+    # eval schema stores (ISuiteStore / ITestCaseStore / IEvalRunStore → ryuu_eval_core)
+    "PostgresSuiteStore",
     "PostgresTestCaseStore",
     "PostgresEvalRunStore",
     # pool lifecycle

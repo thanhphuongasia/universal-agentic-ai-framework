@@ -28,6 +28,7 @@ from ryuu_eval_core.models import (
 from ryuu_eval_core.protocols import (
     EvalTarget,
     IEvalRunStore,
+    ISuiteStore,
     ITestCaseStore,
     Scorer,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "ExternalProject",
     "FixtureLoader",
     "IEvalRunStore",
+    "ISuiteStore",
     "ITestCaseStore",
     "ProgressEvent",
     "ProgressEventType",

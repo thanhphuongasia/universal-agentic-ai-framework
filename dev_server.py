@@ -56,6 +56,7 @@ _db_store = None
 _prompt_store = None
 _test_case_store = None
 _run_store = None
+_suite_store = None
 _PROMPT_DEFAULT_DOMAIN = "eval-default"
 _db_url = os.environ.get("DATABASE_URL")
 if _db_url:
@@ -64,6 +65,7 @@ if _db_url:
             PostgresEvalRunStore,
             PostgresKVStore,
             PostgresPromptStore,
+            PostgresSuiteStore,
             PostgresTestCaseStore,
         )
         # NOTE: table renamed from "eval_runs" → "eval_run_blobs". The migration
@@ -73,6 +75,7 @@ if _db_url:
         _prompt_store = PostgresPromptStore(dsn=_db_url)
         _test_case_store = PostgresTestCaseStore(dsn=_db_url)
         _run_store = PostgresEvalRunStore(dsn=_db_url)
+        _suite_store = PostgresSuiteStore(dsn=_db_url)
         print(f"  DB      : PostgreSQL connected ({_db_url[:30]}...)")
 
         # Bootstrap a default system → domain so prompt versions for any suite
@@ -133,6 +136,7 @@ app.include_router(
         prompt_default_domain_id=_PROMPT_DEFAULT_DOMAIN,
         test_case_store=_test_case_store,
         run_store=_run_store,
+        suite_store=_suite_store,
         llm_providers=PROVIDERS,
         model_catalog=MODEL_CATALOG,
         oracle_strategy_factory=(

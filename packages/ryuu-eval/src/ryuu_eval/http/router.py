@@ -151,6 +151,7 @@ def build_eval_router(
     prompt_default_domain_id: str | None = None,
     test_case_store: Any | None = None,
     run_store: Any | None = None,
+    suite_store: Any | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -384,11 +385,16 @@ def build_eval_router(
             pass  # best-effort — never fail the run for a write error
 
     @r.get("/suites", dependencies=auth_dep)
-    def list_suites() -> list[dict]:
-        """List all suite_ids discovered from templates + cases_dir subdirs.
-
-        UI uses this to dynamically render suite cards instead of hardcoding.
-        """
+    async def list_suites() -> list[dict]:
+        """List suites. From suite_store (DB-only, no file discovery) when wired,
+        else discovered from templates + cases_dir subdirs."""
+        if suite_store is not None:
+            out: list[dict] = []
+            for s in await suite_store.list_suites():
+                sid = s["suite_id"]
+                tpls = [t for t in template_registry.values() if t.suite_id == sid]
+                out.append({**s, "templates": [_dataclass_dict(t) for t in tpls]})
+            return out
         suite_ids: set[str] = set()
         for tpl in template_registry.values():
             if tpl.suite_id:
@@ -407,9 +413,33 @@ def build_eval_router(
         return result
 
     @r.get("/suites/{suite_id}", dependencies=auth_dep)
-    def get_suite_metadata(suite_id: str) -> dict:
+    async def get_suite_metadata(suite_id: str) -> dict:
         """Metadata for one suite — title (from first template), case count,
         datasets, last_run summary, model (inferred from last_run)."""
+        if suite_store is not None:
+            db_suite = await suite_store.get_suite(suite_id)
+            if db_suite is None:
+                raise HTTPException(404, f"Suite not found: {suite_id}")
+            tpls = [t for t in template_registry.values() if t.suite_id == suite_id]
+            last_run = _read_last_run(suite_id)
+            return {
+                **db_suite,
+                "templates": [_dataclass_dict(t) for t in tpls],
+                "datasets": [],
+                "model": (last_run or {}).get("model"),
+                "last_run": (
+                    {
+                        "run_id": last_run.get("run_id"),
+                        "passed_count": last_run.get("passed_count"),
+                        "total_count": last_run.get("total_count"),
+                        "pass_rate": last_run.get("pass_rate"),
+                        "total_cost_usd": last_run.get("total_cost_usd"),
+                        "finished_at": last_run.get("finished_at"),
+                        "system_prompt": last_run.get("system_prompt"),
+                    }
+                    if last_run else None
+                ),
+            }
         tpls = [t for t in template_registry.values() if t.suite_id == suite_id]
         last_run = _read_last_run(suite_id)
         cfg = _read_suite_config(suite_id)
@@ -579,13 +609,19 @@ def build_eval_router(
         return _pv_to_dict(pv)
 
     @r.post("/suites", dependencies=auth_dep)
-    def create_suite(body: dict) -> dict:
-        """Create a new suite directory + optional config."""
+    async def create_suite(body: dict) -> dict:
+        """Create a new suite. DB-backed via suite_store when wired, else a dir + config."""
         suite_id = str(body.get("suite_id", "")).strip().replace(" ", "_")
         if not suite_id:
             raise HTTPException(400, "suite_id required")
         if not all(c.isalnum() or c in "_-" for c in suite_id):
             raise HTTPException(400, "suite_id may only contain letters, numbers, _ and -")
+        if suite_store is not None:
+            await suite_store.create_suite(
+                suite_id, title=str(body.get("title") or suite_id),
+                domain_id=prompt_default_domain_id,
+            )
+            return {"suite_id": suite_id, "title": body.get("title") or suite_id}
         suite_dir = _suite_dir(suite_id)
         suite_dir.mkdir(parents=True, exist_ok=True)
         cfg: dict[str, Any] = {}
@@ -610,8 +646,14 @@ def build_eval_router(
         return {"suite_id": suite_id, **_read_suite_config(suite_id)}
 
     @r.delete("/suites/{suite_id}", dependencies=auth_dep)
-    def delete_suite(suite_id: str) -> dict:
-        """Delete suite directory and its config file."""
+    async def delete_suite(suite_id: str) -> dict:
+        """Delete a suite. DB-backed via suite_store (cascades cases/versions/runs)
+        when wired, else removes the suite dir + config file."""
+        if suite_store is not None:
+            ok = await suite_store.delete_suite(suite_id)
+            if not ok:
+                raise HTTPException(404, f"Suite not found: {suite_id}")
+            return {"deleted": suite_id}
         import shutil
         suite_dir = _suite_dir(suite_id)
         if suite_dir.exists():
@@ -1593,7 +1635,7 @@ def build_eval_router(
                 "title": "Local",
                 "description": "Suites defined in this framework instance.",
                 "remote": False,
-                "suites": list_suites(),
+                "suites": await list_suites(),
             }
 
         ep = next((p for p in _ext_projects if p.project_id == project_id), None)
@@ -1635,7 +1677,7 @@ def build_eval_router(
         For external: fetches from remote; falls back to cached suite list entry.
         """
         if project_id == "local":
-            return get_suite_metadata(suite_id)
+            return await get_suite_metadata(suite_id)
 
         ep = next((p for p in _ext_projects if p.project_id == project_id), None)
         if ep is None:
