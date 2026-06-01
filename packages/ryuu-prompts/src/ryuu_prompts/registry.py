@@ -31,7 +31,7 @@ import yaml
 
 from ryuu_providers.llm import CompletionRequest, Message
 
-from ryuu_prompts.models import PromptConfig, PromptTemplate, ToolDefinition
+from ryuu_prompts.models import PromptConfig
 
 
 class PromptRegistry:
@@ -98,30 +98,9 @@ class PromptRegistry:
 
     @staticmethod
     def _parse(raw: dict[str, Any]) -> PromptConfig:
-        prompts: dict[str, PromptTemplate] = {}
-        for name, tmpl in raw.get("prompts", {}).items():
-            prompts[name] = PromptTemplate(
-                system=tmpl.get("system", ""),
-                user=tmpl.get("user", "{query}"),
-            )
-
-        tools: list[ToolDefinition] = []
-        for t in raw.get("tools", []):
-            tools.append(ToolDefinition(
-                name=t["name"],
-                description=t["description"],
-                parameters=t.get("parameters", {}),
-            ))
-
-        return PromptConfig(
-            version=str(raw.get("version", "1.0")),
-            description=raw.get("description", ""),
-            model=raw.get("model", "gpt-4o-mini"),
-            temperature=float(raw.get("temperature", 0.1)),
-            max_tokens=int(raw.get("max_tokens", 1024)),
-            prompts=prompts,
-            tools=tools,
-        )
+        # YAML row and `prompt_versions.config` JSONB share one shape — keep the
+        # parse logic in one place (PromptConfig.from_dict).
+        return PromptConfig.from_dict(raw)
 
     # ------------------------------------------------------------------
     # Rendering

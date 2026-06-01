@@ -12,6 +12,7 @@ All scorers satisfy the `Scorer` Protocol from ryuu-eval-core:
     StructuredScorer  — precision/recall/F1 on nested JSON dicts
 """
 
+from ryuu_eval_scorers.factory import build_scorers, metadata_scorer_resolver
 from ryuu_eval_scorers.scorers import (
     Composite,
     Constraint,
@@ -36,4 +37,6 @@ __all__ = [
     "SemanticSimilarity",
     "StructuredScorer",
     "Threshold",
+    "build_scorers",
+    "metadata_scorer_resolver",
 ]

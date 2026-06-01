@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,12 +35,19 @@ class EvalRunner:
         scorers: list[Scorer],
         budget_usd: float | None = None,
         refine_logger: "RefineLogger | None" = None,
+        scorer_for: "Callable[[EvalCase], list[Scorer] | None] | None" = None,
     ) -> None:
         self.suite_id = suite_id
         self.run_id = uuid.uuid4().hex
         self.model: str | None = getattr(target, "model", None)
         self._target = target
         self._scorers = scorers
+        # Optional per-case scorer resolver. When it returns a non-empty list
+        # for a case, those scorers are used instead of the suite-level
+        # ``scorers``; returning None/[] falls back to suite-level. This lets a
+        # per-case scoring spec (e.g. test_cases.scoring) drive build_scorers()
+        # without changing the suite-wide default. Backward-compatible.
+        self._scorer_for = scorer_for
         self._budget_usd = budget_usd
         self._refine_logger = refine_logger
         self._cancel_event = asyncio.Event()
@@ -274,12 +281,21 @@ class EvalRunner:
     # Internal — execute one case
     # ------------------------------------------------------------------
 
+    def _scorers_for(self, case: EvalCase) -> list[Scorer]:
+        """Per-case scorers if a resolver supplied non-empty; else suite-level."""
+        if self._scorer_for is not None:
+            per_case = self._scorer_for(case)
+            if per_case:
+                return per_case
+        return self._scorers
+
     async def _run_case(self, case: EvalCase) -> CaseResult:
         t0 = time.monotonic()
         try:
             case_result = await self._target.run(case)
             case_result.latency_ms = (time.monotonic() - t0) * 1000
-            case_result.scores = [await s.score(case, case_result.output) for s in self._scorers]
+            scorers = self._scorers_for(case)
+            case_result.scores = [await s.score(case, case_result.output) for s in scorers]
             # Pull refine info if target exposed last_refine_meta
             if hasattr(self._target, "last_refine_meta"):
                 meta = self._target.last_refine_meta() or {}

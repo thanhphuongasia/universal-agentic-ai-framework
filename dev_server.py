@@ -21,6 +21,7 @@ try:
 except ImportError:
     pass
 
+import asyncio
 import logging
 import functools
 
@@ -52,12 +53,52 @@ _runner_factory = functools.partial(runner_factory, logger=_eval_logger)
 # ---------------------------------------------------------------------------
 
 _db_store = None
+_prompt_store = None
+_test_case_store = None
+_run_store = None
+_PROMPT_DEFAULT_DOMAIN = "eval-default"
 _db_url = os.environ.get("DATABASE_URL")
 if _db_url:
     try:
-        from ryuu_storage_postgres import PostgresKVStore
-        _db_store = PostgresKVStore(dsn=_db_url, table="eval_runs")
+        from ryuu_storage_postgres import (
+            PostgresEvalRunStore,
+            PostgresKVStore,
+            PostgresPromptStore,
+            PostgresTestCaseStore,
+        )
+        # NOTE: table renamed from "eval_runs" → "eval_run_blobs". The migration
+        # (docs/eval-prompt-store-schema.sql) now owns a NORMALIZED eval_runs table,
+        # so the legacy KV run-blob cache must not collide with it.
+        _db_store = PostgresKVStore(dsn=_db_url, table="eval_run_blobs")
+        _prompt_store = PostgresPromptStore(dsn=_db_url)
+        _test_case_store = PostgresTestCaseStore(dsn=_db_url)
+        _run_store = PostgresEvalRunStore(dsn=_db_url)
         print(f"  DB      : PostgreSQL connected ({_db_url[:30]}...)")
+
+        # Bootstrap a default system → domain so prompt versions for any suite
+        # have a parent to FK against. Uses a short-lived connection (not the
+        # shared pool) so we don't bind a cached pool to a throwaway event loop.
+        async def _bootstrap_prompt_schema() -> None:
+            import asyncpg
+            conn = await asyncpg.connect(_db_url)
+            try:
+                await conn.execute(
+                    "INSERT INTO systems(id, name) VALUES('eval', 'Eval')"
+                    " ON CONFLICT (id) DO NOTHING"
+                )
+                await conn.execute(
+                    "INSERT INTO domains(id, system_id, name)"
+                    " VALUES($1, 'eval', 'Default') ON CONFLICT (id) DO NOTHING",
+                    _PROMPT_DEFAULT_DOMAIN,
+                )
+            finally:
+                await conn.close()
+
+        try:
+            asyncio.run(_bootstrap_prompt_schema())
+        except Exception as exc:  # schema not migrated yet, etc.
+            print(f"  DB      : prompt-schema bootstrap skipped ({exc})")
+            _prompt_store = None
     except ImportError:
         print("  DB      : ryuu-storage-postgres not installed, skipping")
 
@@ -88,6 +129,10 @@ app.include_router(
         template_registry=TEMPLATES,
         serve_ui=True,
         kv_store=_db_store,
+        prompt_store=_prompt_store,
+        prompt_default_domain_id=_PROMPT_DEFAULT_DOMAIN,
+        test_case_store=_test_case_store,
+        run_store=_run_store,
         llm_providers=PROVIDERS,
         model_catalog=MODEL_CATALOG,
         oracle_strategy_factory=(

@@ -46,8 +46,15 @@ except ImportError as exc:
         "FastAPI required for ryuu_eval.http. Install: pip install fastapi"
     ) from exc
 
-from ryuu_eval_core import EvalCaseTemplate, EvalRunner, ExternalProject
+from ryuu_eval_core import EvalCase, EvalCaseTemplate, EvalRunner, ExternalProject
 from ryuu_eval_core.fixture_loader import FixtureLoader
+from ryuu_prompts import (
+    PromptConfig,
+    PromptStatus,
+    PromptStoreError,
+    PromptVersion,
+    PromptVersionNotFoundError,
+)
 
 # ----------------------------------------------------------------------------
 # Type aliases — caller provides these
@@ -71,6 +78,30 @@ def _dataclass_dict(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _dataclass_dict(v) for k, v in obj.items()}
     return obj
+
+
+def _pv_to_dict(pv: PromptVersion) -> dict:
+    """Serialize a PromptVersion (config via PromptConfig.to_dict, status → str)."""
+    return {
+        "id": pv.id,
+        "suite_id": pv.suite_id,
+        "version": pv.version,
+        "config": pv.config.to_dict(),
+        "status": pv.status.value,
+        "promoted_at": pv.promoted_at,
+        "promoted_by": pv.promoted_by,
+        "created_at": pv.created_at,
+    }
+
+
+def _case_to_dict(case: Any) -> dict:
+    """Serialize an EvalCase → the UI case shape (case_id/input/expected/metadata)."""
+    return {
+        "case_id": case.case_id,
+        "input": case.input,
+        "expected": case.expected,
+        "metadata": dict(case.metadata or {}),
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -100,6 +131,10 @@ def build_eval_router(
     model_catalog: dict[str, dict[str, Any]] | None = None,
     oracle_runs_store: Any | None = None,
     oracle_promotes_store: Any | None = None,
+    prompt_store: Any | None = None,
+    prompt_default_domain_id: str | None = None,
+    test_case_store: Any | None = None,
+    run_store: Any | None = None,
 ) -> APIRouter:
     """Build APIRouter — caller mounts với prefix='/api/eval'.
 
@@ -431,6 +466,83 @@ def build_eval_router(
         _write_suite_config(suite_id, {"default_system_prompt": prompt})
         return {"default_system_prompt": prompt}
 
+    # ── Prompt versions (IPromptStore lifecycle: draft→staging→promote) ──
+    # Backed by `prompt_store` (e.g. PostgresPromptStore over the eval schema).
+    # 501 when not configured — keeps the router usable without a prompt store.
+
+    @r.get("/suites/{suite_id}/prompt-versions", dependencies=auth_dep)
+    async def list_prompt_versions(suite_id: str) -> list[dict]:
+        if prompt_store is None:
+            raise HTTPException(501, "prompt_store not configured")
+        return [_pv_to_dict(v) for v in await prompt_store.list_versions(suite_id)]
+
+    @r.get("/suites/{suite_id}/prompt-versions/active", dependencies=auth_dep)
+    async def get_active_prompt_version(suite_id: str) -> dict:
+        if prompt_store is None:
+            raise HTTPException(501, "prompt_store not configured")
+        active = await prompt_store.get_active(suite_id)
+        if active is None:
+            raise HTTPException(404, f"No active prompt version for suite_id={suite_id}")
+        return _pv_to_dict(active)
+
+    @r.post("/suites/{suite_id}/prompt-versions", dependencies=auth_dep)
+    async def save_prompt_version(suite_id: str, body: dict) -> dict:
+        if prompt_store is None:
+            raise HTTPException(501, "prompt_store not configured")
+        version = str(body.get("version", "")).strip()
+        if not version:
+            raise HTTPException(400, "version required")
+        config_raw = body.get("config")
+        if not isinstance(config_raw, dict):
+            raise HTTPException(400, "config (PromptConfig dict) required")
+        # Bridge the file-based suite to the DB row when a default domain is wired.
+        if prompt_default_domain_id and hasattr(prompt_store, "ensure_suite"):
+            await prompt_store.ensure_suite(
+                suite_id, domain_id=prompt_default_domain_id, name=suite_id
+            )
+        pv = PromptVersion(
+            id=str(body.get("id") or f"{suite_id}-{version}"),
+            suite_id=suite_id,
+            version=version,
+            config=PromptConfig.from_dict(config_raw),
+            status=PromptStatus(body.get("status", "draft")),
+            created_at=time.time(),
+        )
+        try:
+            await prompt_store.save(pv)
+        except Exception as exc:  # FK / connection / validation
+            raise HTTPException(400, f"save failed: {exc}") from exc
+        return _pv_to_dict(pv)
+
+    @r.post("/suites/{suite_id}/prompt-versions/{version}/promote", dependencies=auth_dep)
+    async def promote_prompt_version(
+        suite_id: str, version: str, body: dict | None = None
+    ) -> dict:
+        if prompt_store is None:
+            raise HTTPException(501, "prompt_store not configured")
+        by = str((body or {}).get("by", "ui"))
+        try:
+            pv = await prompt_store.promote(suite_id, version, by=by)
+        except PromptVersionNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PromptStoreError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return _pv_to_dict(pv)
+
+    @r.patch("/suites/{suite_id}/prompt-versions/{version}/status", dependencies=auth_dep)
+    async def set_prompt_version_status(suite_id: str, version: str, body: dict) -> dict:
+        if prompt_store is None:
+            raise HTTPException(501, "prompt_store not configured")
+        try:
+            status = PromptStatus(body.get("status"))
+        except ValueError as exc:
+            raise HTTPException(400, f"invalid status {body.get('status')!r}") from exc
+        try:
+            pv = await prompt_store.set_status(suite_id, version, status)
+        except PromptVersionNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return _pv_to_dict(pv)
+
     @r.post("/suites", dependencies=auth_dep)
     def create_suite(body: dict) -> dict:
         """Create a new suite directory + optional config."""
@@ -541,13 +653,33 @@ def build_eval_router(
                 result.append({"case_id": f.stem, "error": str(exc), "_path": str(f)})
         return result
 
+    async def _db_eval_cases(suite_id: str, case_ids: list[str] | None) -> list:
+        """Load EvalCases from test_case_store, optionally filtered by case_ids."""
+        cases = await test_case_store.list_cases(suite_id)
+        if case_ids:
+            wanted = set(case_ids)
+            cases = [c for c in cases if c.case_id in wanted]
+        return cases
+
     @r.get("/suites/{suite_id}/cases", dependencies=auth_dep)
-    def list_suite_cases(suite_id: str) -> list[dict]:
-        """Returns UI-created cases + read-only fixtures merged (fixture loses on duplicate case_id)."""
+    async def list_suite_cases(suite_id: str) -> list[dict]:
+        """Cases for a suite. From test_case_store (DB) when configured, else
+        UI YAML cases + read-only fixtures merged (fixture loses on duplicate)."""
+        if test_case_store is not None:
+            return [_case_to_dict(c) for c in await test_case_store.list_cases(suite_id)]
         return _load_all_cases(suite_id)
 
     @r.put("/suites/{suite_id}/cases/{case_id}", dependencies=auth_dep)
-    def update_case(suite_id: str, case_id: str, payload: dict) -> dict:
+    async def update_case(suite_id: str, case_id: str, payload: dict) -> dict:
+        if test_case_store is not None:
+            case = EvalCase(
+                case_id=case_id,
+                input=payload["input"],
+                expected=payload.get("expected"),
+                metadata=payload.get("metadata", {}),
+            )
+            await test_case_store.save_case(suite_id, case, scoring=payload.get("scoring"))
+            return {"ok": True, "case_id": case_id}
         suite_dir = cases_dir / suite_id
         out_path = suite_dir / f"{case_id}.yml"
         if not out_path.exists():
@@ -569,7 +701,12 @@ def build_eval_router(
         return {"ok": True, "case_id": case_id}
 
     @r.delete("/suites/{suite_id}/cases/{case_id}", dependencies=auth_dep)
-    def delete_case(suite_id: str, case_id: str) -> dict:
+    async def delete_case(suite_id: str, case_id: str) -> dict:
+        if test_case_store is not None:
+            ok = await test_case_store.delete_case(suite_id, case_id)
+            if not ok:
+                raise HTTPException(404, f"Case not found: {suite_id}/{case_id}")
+            return {"ok": True, "deleted": f"{suite_id}/{case_id}"}
         out_path = cases_dir / suite_id / f"{case_id}.yml"
         if not out_path.exists():
             raise HTTPException(404, f"Case not found: {out_path}")
@@ -876,7 +1013,16 @@ def build_eval_router(
         except (ValueError, RuntimeError) as exc:
             raise HTTPException(400, str(exc)) from exc
         run_id = runner.run_id
-        eval_cases = _build_eval_cases(suite_id, case_ids)
+        if test_case_store is not None:
+            eval_cases = await _db_eval_cases(suite_id, case_ids)
+        else:
+            eval_cases = _build_eval_cases(suite_id, case_ids)
+
+        if run_store is not None:
+            try:
+                await run_store.create_run(run_id, suite_id, triggered_by=model or "")
+            except Exception:
+                pass  # best-effort; suite may not exist in DB
 
         # Snapshot the request params so the UI Log tab can show what was used.
         # started_at recorded here so the Log shows wall-clock duration.
@@ -928,6 +1074,23 @@ def build_eval_router(
                                 f"run:{run_id}",
                                 _json.dumps(_run_results[run_id], default=str),
                             )
+                        except Exception:
+                            pass  # best-effort
+                    if run_store is not None:
+                        try:
+                            sr = runner.last_suite_result
+                            for cr in sr.cases:
+                                await run_store.save_result(
+                                    run_id, _dataclass_dict(cr),
+                                    test_case_id=cr.case.case_id, passed=cr.passed,
+                                )
+                            await run_store.finish_run(run_id, status="completed", summary={
+                                "passed_count": sr.passed_count,
+                                "total_count": sr.total_count,
+                                "pass_rate": sr.pass_rate,
+                                "total_cost_usd": sr.total_cost_usd,
+                                "model": model or None,
+                            })
                         except Exception:
                             pass  # best-effort
 

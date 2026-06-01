@@ -25,7 +25,12 @@ from ryuu_eval_core.models import (
     ScoreResult,
     SuiteResult,
 )
-from ryuu_eval_core.protocols import EvalTarget, Scorer
+from ryuu_eval_core.protocols import (
+    EvalTarget,
+    IEvalRunStore,
+    ITestCaseStore,
+    Scorer,
+)
 from ryuu_eval_core.runner import EvalRunner
 
 __version__ = "0.4.0a1"
@@ -38,6 +43,8 @@ __all__ = [
     "EvalTarget",
     "ExternalProject",
     "FixtureLoader",
+    "IEvalRunStore",
+    "ITestCaseStore",
     "ProgressEvent",
     "ProgressEventType",
     "Scorer",

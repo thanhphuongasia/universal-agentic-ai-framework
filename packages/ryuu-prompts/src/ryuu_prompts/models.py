@@ -62,6 +62,54 @@ class PromptConfig:
     def tool_by_name(self, name: str) -> ToolDefinition | None:
         return next((t for t in self.tools if t.name == name), None)
 
+    # -- Serialization: round-trips with the `prompt_versions.config` JSONB column --
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict (→ JSONB). Inverse of ``from_dict``."""
+        return {
+            "version": self.version,
+            "description": self.description,
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "prompts": {
+                name: {"system": t.system, "user": t.user}
+                for name, t in self.prompts.items()
+            },
+            "tools": [
+                {"name": t.name, "description": t.description, "parameters": t.parameters}
+                for t in self.tools
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "PromptConfig":
+        """Build from a plain dict (YAML row or JSONB). Inverse of ``to_dict``."""
+        prompts = {
+            name: PromptTemplate(
+                system=tmpl.get("system", ""),
+                user=tmpl.get("user", "{query}"),
+            )
+            for name, tmpl in raw.get("prompts", {}).items()
+        }
+        tools = [
+            ToolDefinition(
+                name=t["name"],
+                description=t["description"],
+                parameters=t.get("parameters", {}),
+            )
+            for t in raw.get("tools", [])
+        ]
+        return cls(
+            version=str(raw.get("version", "1.0")),
+            description=raw.get("description", ""),
+            model=raw.get("model", "gpt-4o-mini"),
+            temperature=float(raw.get("temperature", 0.1)),
+            max_tokens=int(raw.get("max_tokens", 1024)),
+            prompts=prompts,
+            tools=tools,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Template rendering — safe: unknown variables stay as {placeholder}

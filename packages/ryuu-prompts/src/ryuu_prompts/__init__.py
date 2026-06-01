@@ -22,6 +22,14 @@ from ryuu_prompts.registry import (
     make_framework_registry,
     package_default_root,
 )
+from ryuu_prompts.store import (
+    InMemoryPromptStore,
+    IPromptStore,
+    PromptStatus,
+    PromptStoreError,
+    PromptVersion,
+    PromptVersionNotFoundError,
+)
 from ryuu_prompts.skills import (
     PromptSkill,
     PromptSkillRegistry,
@@ -39,6 +47,13 @@ __all__ = [
     "ToolDefinition",
     "make_framework_registry",
     "package_default_root",
+    # Prompt lifecycle store (versioning + promotion) — maps to prompt_versions
+    "IPromptStore",
+    "InMemoryPromptStore",
+    "PromptStatus",
+    "PromptVersion",
+    "PromptStoreError",
+    "PromptVersionNotFoundError",
     # Phase 8.12 — Prompt Skills (Claude Code-style task templates)
     "PromptSkill",
     "PromptSkillRegistry",

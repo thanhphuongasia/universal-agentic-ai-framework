@@ -23,7 +23,7 @@ from ryuu_eval_core.runner import EvalRunner
 from eval_consumer.crud_matrix_llm.scorer import CRUDOpsMatch
 from eval_consumer.crud_matrix_llm.target import CrudMatrixTarget
 from eval_consumer.crud_matrix_llm.template import TEMPLATE as crud_matrix_llm_template
-from ryuu_eval_scorers import ExactMatch, SemanticSimilarity
+from ryuu_eval_scorers import ExactMatch, SemanticSimilarity, metadata_scorer_resolver
 from ryuu_execution.llm_agent import LLMAgent
 from ryuu_providers_core._pricing import calculate_usd
 from ryuu_providers_core.llm import CompletionRequest, Message
@@ -357,7 +357,13 @@ def runner_factory(
         logger.info("[eval] suite=%s budget_cap=$%.4f (advisory only — not enforced yet)",
                     suite_id, budget_cap_usd)
 
-    return EvalRunner(suite_id=suite_id, target=target, scorers=scorers)
+    # Per-case scoring: when a case carries metadata["scoring"] (a build_scorers
+    # spec, e.g. from test_cases.scoring), score it with those instead of the
+    # suite-level `scorers`. Cases without a spec fall back to `scorers`.
+    return EvalRunner(
+        suite_id=suite_id, target=target, scorers=scorers,
+        scorer_for=metadata_scorer_resolver(provider=_make_judge_provider()),
+    )
 
 
 # ---------------------------------------------------------------------------
