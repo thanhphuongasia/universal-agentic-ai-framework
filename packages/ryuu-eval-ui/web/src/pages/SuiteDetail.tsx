@@ -402,7 +402,7 @@ function CaseFormModal({
     if (isEdit) {
       await updateCase.mutateAsync({ caseId: values.case_id, payload });
     } else {
-      await createCase.mutateAsync({ templateId, payload });
+      await createCase.mutateAsync(payload);
     }
     onClose();
   }

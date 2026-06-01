@@ -746,6 +746,43 @@ def build_eval_router(
             return [_case_to_dict(c) for c in await test_case_store.list_cases(suite_id)]
         return _load_all_cases(suite_id)
 
+    @r.post("/suites/{suite_id}/cases", dependencies=auth_dep)
+    async def create_case(suite_id: str, payload: dict) -> dict:
+        """Create a case directly in a suite (no template needed). DB-backed via
+        test_case_store when wired, else a YAML file under cases_dir."""
+        case_id = str(payload.get("case_id", "")).strip()
+        if not case_id:
+            raise HTTPException(400, "case_id required")
+        if test_case_store is not None:
+            if await test_case_store.get_case(suite_id, case_id) is not None:
+                raise HTTPException(409, f"case '{case_id}' already exists in '{suite_id}'")
+            await test_case_store.save_case(
+                suite_id,
+                EvalCase(
+                    case_id=case_id, input=payload.get("input"),
+                    expected=payload.get("expected"), metadata=payload.get("metadata") or {},
+                ),
+                scoring=payload.get("scoring"),
+            )
+            return {"ok": True, "case_id": case_id}
+        try:
+            import yaml
+        except ImportError:
+            raise HTTPException(500, "PyYAML required")
+        suite_dir = cases_dir / suite_id
+        suite_dir.mkdir(parents=True, exist_ok=True)
+        out_path = suite_dir / f"{case_id}.yml"
+        if out_path.exists():
+            raise HTTPException(409, f"case already exists at {out_path}")
+        out_path.write_text(
+            yaml.safe_dump({
+                "case_id": case_id, "input": payload.get("input"),
+                "expected": payload.get("expected"), "metadata": payload.get("metadata") or {},
+            }, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        return {"ok": True, "case_id": case_id}
+
     @r.put("/suites/{suite_id}/cases/{case_id}", dependencies=auth_dep)
     async def update_case(suite_id: str, case_id: str, payload: dict) -> dict:
         if test_case_store is not None:

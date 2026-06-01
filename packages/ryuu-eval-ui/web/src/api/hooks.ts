@@ -221,10 +221,13 @@ export function useTemplates() {
 
 export function useCreateCase(suiteId: string) {
   const qc = useQueryClient();
-  return useMutation<{ ok: boolean }, Error, { templateId: string; payload: Record<string, unknown> }>({
-    mutationFn: ({ templateId, payload }) =>
-      apiFetch(`/templates/${templateId}/cases`, { method: "POST", body: JSON.stringify(payload) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["cases", suiteId] }),
+  return useMutation<{ ok: boolean }, Error, Record<string, unknown>>({
+    mutationFn: (payload) =>
+      apiFetch(`/suites/${suiteId}/cases`, { method: "POST", body: JSON.stringify(payload) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cases", suiteId] });
+      qc.invalidateQueries({ queryKey: ["suite", suiteId] });
+    },
   });
 }
 
