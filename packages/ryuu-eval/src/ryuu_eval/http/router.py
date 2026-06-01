@@ -2743,25 +2743,49 @@ def build_eval_router(
             },
         }
 
-        target_dir = cases_dir / target_suite
-        target_dir.mkdir(parents=True, exist_ok=True)
-        out_path = target_dir / f"{case_id}.yml"
-        if out_path.exists() and not overwrite:
-            raise HTTPException(
-                409,
-                f"case already exists at {out_path} — pass overwrite=true to replace",
+        if test_case_store is not None:
+            # DB-backed: ensure the suite exists (FK), then persist as a test case
+            # so the promoted oracle case shows up in the (DB-only) UI cases list.
+            if suite_store is not None:
+                await suite_store.create_suite(
+                    target_suite, title=target_suite, domain_id=prompt_default_domain_id,
+                )
+            existing = await test_case_store.get_case(target_suite, case_id)
+            if existing is not None and not overwrite:
+                raise HTTPException(
+                    409,
+                    f"case '{case_id}' already exists in suite '{target_suite}' — "
+                    f"pass overwrite=true to replace",
+                )
+            await test_case_store.save_case(
+                target_suite,
+                EvalCase(
+                    case_id=case_id, input=promoted["input"],
+                    expected=promoted["expected"], metadata=promoted["metadata"],
+                ),
             )
-        out_path.write_text(
-            yaml.safe_dump(promoted, sort_keys=False, allow_unicode=True),
-            encoding="utf-8",
-        )
+            written = f"db:{target_suite}/{case_id}"
+        else:
+            target_dir = cases_dir / target_suite
+            target_dir.mkdir(parents=True, exist_ok=True)
+            out_path = target_dir / f"{case_id}.yml"
+            if out_path.exists() and not overwrite:
+                raise HTTPException(
+                    409,
+                    f"case already exists at {out_path} — pass overwrite=true to replace",
+                )
+            out_path.write_text(
+                yaml.safe_dump(promoted, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            written = str(out_path)
 
         ts = promoted["metadata"]["promoted_at"]
         await _record_history(_promotes_store, fixture_id, {
             "fixture_id": fixture_id,
             "target_suite_id": target_suite,
             "case_id": case_id,
-            "written_path": str(out_path),
+            "written_path": written,
             "cells_count": len(cells_list),
             "verdict": verdict,
             "overwrite": overwrite,
@@ -2771,7 +2795,7 @@ def build_eval_router(
         }, {"target_suite_id": target_suite, "case_id": case_id, "cells_count": len(cells_list)})
 
         return {
-            "written_path": str(out_path),
+            "written_path": written,
             "case_id": case_id,
             "target_suite_id": target_suite,
             "cells_count": len(cells_list),
