@@ -6,7 +6,8 @@ import { OracleRunHistory } from "@/components/oracle/OracleRunHistory";
 import { OraclePromoteHistory } from "@/components/oracle/OraclePromoteHistory";
 import { buildRows, countPendingReview, isCrudReviewable } from "@/components/oracle/review/reviewModel";
 import {
-  useSuites, useSuite, useSaveDefaultPrompt,
+  useSuites,
+  usePromptVersions, useActivePromptVersion, useSavePromptVersion, usePromotePromptVersion,
   useOracleFixtures, useOracleFixture,
   useUpdateOracleReview,
   useGenerateOracle, useDeleteOracleFixture,
@@ -360,11 +361,22 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
   const routeBadge = route ? `${route.http_method ?? ""} ${route.endpoint ?? ""}`.trim() : undefined;
   const inputJson  = JSON.stringify(fixture.input_data, null, 2);
 
-  const { data: suite } = useSuite(suiteId);
-  const saveMutation = useSaveDefaultPrompt(suiteId);
+  // Production prompt = the suite's ACTIVE prompt version (prompt_versions),
+  // not the legacy file-based default_system_prompt. Saving here creates a new
+  // version and promotes it to live — one source of truth shared with the Run path.
+  const { data: versions } = usePromptVersions(suiteId);
+  const { data: activeVersion } = useActivePromptVersion(suiteId);
+  const savePromptVersion = usePromotePromptVersion(suiteId);  // promote after save
+  const createPromptVersion = useSavePromptVersion(suiteId);
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
-  const productionPrompt = suite?.default_system_prompt ?? "";
+
+  function _systemOf(pv: typeof activeVersion): string {
+    const p = pv?.config?.prompts ?? {};
+    return p.system?.system ?? p.extract?.system ?? Object.values(p)[0]?.system ?? "";
+  }
+  const productionPrompt = _systemOf(activeVersion);
+  const saving = createPromptVersion.isPending || savePromptVersion.isPending;
 
   function startEdit() {
     setPromptDraft(productionPrompt);
@@ -372,7 +384,18 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
   }
 
   async function savePrompt() {
-    await saveMutation.mutateAsync(promptDraft);
+    const version = `v${(versions?.length ?? 0) + 1}`;
+    await createPromptVersion.mutateAsync({
+      version,
+      config: {
+        version, description: "from Oracle Studio",
+        model: activeVersion?.config?.model ?? "claude-sonnet-4-6",
+        temperature: 0.0, max_tokens: 2048,
+        prompts: { system: { system: promptDraft, user: "{query}" } },
+        tools: [],
+      },
+    });
+    await savePromptVersion.mutateAsync({ version });  // promote → live
     setEditingPrompt(false);
   }
 
@@ -403,9 +426,9 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
             <div className="flex gap-2">
               <button
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 transition-colors"
-                disabled={saveMutation.isPending}
+                disabled={saving}
                 onClick={savePrompt}
-              >{saveMutation.isPending ? "Saving…" : "Save"}</button>
+              >{saving ? "Saving…" : "Save & promote"}</button>
               <button
                 className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 onClick={() => setEditingPrompt(false)}
