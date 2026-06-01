@@ -4,7 +4,7 @@ import { apiFetch, apiUrl } from "./client";
 import type {
   Suite, Case, CaseProvenance, Template, RunSummary, RunResult, RunConfig,
   ServerStatus, RefineHistoryEntry, StreamEvent, RunHistoryEntry,
-  Project, SyncResult,
+  Project, SyncResult, PromptVersion, PromptStatus,
 } from "./types";
 
 // ── Suites ───────────────────────────────────────────────────────────────────
@@ -33,6 +33,54 @@ export function useSaveDefaultPrompt(suiteId: string) {
         body: JSON.stringify({ default_system_prompt: prompt }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["suite", suiteId] }),
+  });
+}
+
+// ── Prompt versions ──────────────────────────────────────────────────────────
+
+export function usePromptVersions(suiteId: string) {
+  return useQuery<PromptVersion[]>({
+    queryKey: ["prompt-versions", suiteId],
+    queryFn: () => apiFetch(`/suites/${suiteId}/prompt-versions`),
+    enabled: !!suiteId,
+  });
+}
+
+export function useActivePromptVersion(suiteId: string) {
+  return useQuery<PromptVersion | null>({
+    queryKey: ["prompt-versions", suiteId, "active"],
+    queryFn: async () => {
+      try {
+        return await apiFetch<PromptVersion>(`/suites/${suiteId}/prompt-versions/active`);
+      } catch {
+        return null; // 404 — no active version promoted yet
+      }
+    },
+    enabled: !!suiteId,
+  });
+}
+
+export function usePromotePromptVersion(suiteId: string) {
+  const qc = useQueryClient();
+  return useMutation<PromptVersion, Error, { version: string; by?: string }>({
+    mutationFn: ({ version, by }) =>
+      apiFetch(`/suites/${suiteId}/prompt-versions/${version}/promote`, {
+        method: "POST",
+        body: JSON.stringify({ by: by ?? "ui" }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prompt-versions", suiteId] }),
+  });
+}
+
+export function useSetPromptVersionStatus(suiteId: string) {
+  const qc = useQueryClient();
+  return useMutation<PromptVersion, Error, { version: string; status: PromptStatus }>({
+    mutationFn: ({ version, status }) =>
+      apiFetch(`/suites/${suiteId}/prompt-versions/${version}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prompt-versions", suiteId] }),
   });
 }
 

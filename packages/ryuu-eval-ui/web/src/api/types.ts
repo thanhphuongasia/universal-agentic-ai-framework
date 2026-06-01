@@ -292,3 +292,28 @@ export interface OracleRunPreview {
   cells: Record<string, Record<string, OracleCellData>>;
   valid_fields: Record<string, string[]>;
 }
+
+// ── Prompt versions (lifecycle: draft → staging → promote) ──────────────────
+
+export interface PromptConfig {
+  version: string;
+  description: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  prompts: Record<string, { system: string; user: string }>;
+  tools: unknown[];
+}
+
+export type PromptStatus = "draft" | "staging" | "archived";
+
+export interface PromptVersion {
+  id: string;
+  suite_id: string;
+  version: string;
+  config: PromptConfig;
+  status: PromptStatus;
+  promoted_at: number | null;
+  promoted_by: string | null;
+  created_at: number;
+}
