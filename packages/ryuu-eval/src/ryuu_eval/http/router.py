@@ -435,8 +435,27 @@ def build_eval_router(
         return data
 
     @r.get("/suites/{suite_id}/runs", dependencies=auth_dep)
-    def list_suite_runs(suite_id: str, limit: int = 20) -> list[dict]:
-        """List past runs for a suite, most recent first (max ``limit`` entries)."""
+    async def list_suite_runs(suite_id: str, limit: int = 20) -> list[dict]:
+        """List past runs for a suite, most recent first (max ``limit`` entries).
+
+        From run_store (eval_runs) when configured, else the JSONL run history.
+        """
+        if run_store is not None:
+            rows = await run_store.list_runs(suite_id, limit)
+            out: list[dict] = []
+            for rec in rows:
+                s = rec.get("summary") or {}
+                out.append({
+                    "run_id": rec["run_id"],
+                    "suite_id": rec["suite_id"],
+                    "model": s.get("model"),
+                    "status": rec.get("status"),
+                    "passed_count": s.get("passed_count"),
+                    "total_count": s.get("total_count"),
+                    "pass_rate": s.get("pass_rate"),
+                    "finished_at": rec.get("completed_at") or rec.get("started_at"),
+                })
+            return out
         return _read_run_history(suite_id, limit)
 
     @r.get("/suites/{suite_id}/prompt", dependencies=auth_dep)
@@ -1288,6 +1307,26 @@ def build_eval_router(
     async def get_run_result(run_id: str) -> dict:
         """Fetch completed run result by run_id, normalized to frontend RunResult shape."""
         raw = _run_results.get(run_id)
+        if raw is None and run_store is not None:
+            # Canonical DB source: eval_runs + eval_results. Adapt to the flat
+            # ``raw`` shape the normalizer below expects (top-level counts/model).
+            try:
+                rec = await run_store.get_run(run_id)
+            except Exception:
+                rec = None
+            if rec is not None:
+                s = rec.get("summary") or {}
+                raw = {
+                    "run_id": run_id,
+                    "suite_id": rec.get("suite_id", ""),
+                    "model": s.get("model"),
+                    "total_count": s.get("total_count", 0),
+                    "passed_count": s.get("passed_count", 0),
+                    "pass_rate": s.get("pass_rate", 0.0),
+                    "total_cost_usd": s.get("total_cost_usd", 0.0),
+                    "cases": rec.get("cases", []),
+                }
+                _run_results[run_id] = raw
         if raw is None and kv_store is not None:
             import json as _json
             try:

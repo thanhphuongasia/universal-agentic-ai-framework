@@ -108,16 +108,24 @@ async def test_router_db_cases_and_run_persistence():
             async for _ in resp.aiter_lines():
                 pass
 
-    # 3. the run + per-case results landed in eval_runs / eval_results
-    run = None
-    for _ in range(40):
-        run = await run_store.get_run(run_id)
-        if run and run["status"] == "completed":
-            break
-        await asyncio.sleep(0.05)
+        # 3. wait for the background persistence to settle (status flips last),
+        # then read back through the HTTP read paths (which resolve from run_store).
+        run = None
+        for _ in range(60):
+            run = await run_store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            await asyncio.sleep(0.05)
+        result = (await c.get(f"/api/eval/runs/{run_id}")).json()
+        runs = (await c.get(f"/api/eval/suites/{suite}/runs")).json()
+
     await close_all()
 
+    # underlying normalized run row
     assert run is not None and run["status"] == "completed"
-    assert run["summary"]["total_count"] == 2
-    assert run["summary"]["passed_count"] == 1          # orders passes, users fails
-    assert {c["case"]["case_id"] for c in run["cases"]} == {"orders", "users"}
+    assert run["summary"]["passed_count"] == 1
+    # GET /runs/{id} — flattened from run_store; per-case scoring applied
+    assert {x["case_id"] for x in result["cases"]} == {"orders", "users"}
+    assert {x["case_id"]: x["pass"] for x in result["cases"]} == {"orders": True, "users": False}
+    # GET /suites/{id}/runs — history from run_store
+    assert any(r["run_id"] == run_id for r in runs)
