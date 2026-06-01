@@ -94,6 +94,22 @@ def _pv_to_dict(pv: PromptVersion) -> dict:
     }
 
 
+def _system_prompt_from_config(config: PromptConfig) -> str:
+    """Pick the system-prompt string from a PromptConfig for a run.
+
+    A PromptConfig can hold several named templates; a run takes one system
+    string. Prefer a conventionally-named template, else the first one
+    (dict preserves insertion order).
+    """
+    prompts = config.prompts
+    if not prompts:
+        return ""
+    for name in ("system", "default", "extract", "analyze"):
+        if name in prompts:
+            return prompts[name].system
+    return next(iter(prompts.values())).system
+
+
 def _case_to_dict(case: Any) -> dict:
     """Serialize an EvalCase → the UI case shape (case_id/input/expected/metadata)."""
     return {
@@ -1020,6 +1036,7 @@ def build_eval_router(
         temperature: float | None = None,
         budget_cap_usd: float | None = None,
         mode: str = "parallel",
+        prompt_version_id: str | None = None,
     ) -> str:
         """Spawn one background run and return its run_id."""
         log_path = refine_log_dir / f"{suite_id}.jsonl"
@@ -1039,7 +1056,10 @@ def build_eval_router(
 
         if run_store is not None:
             try:
-                await run_store.create_run(run_id, suite_id, triggered_by=model or "")
+                await run_store.create_run(
+                    run_id, suite_id,
+                    prompt_version_id=prompt_version_id, triggered_by=model or "",
+                )
             except Exception:
                 pass  # best-effort; suite may not exist in DB
 
@@ -1138,6 +1158,23 @@ def build_eval_router(
             raise HTTPException(400, "suite_id required")
 
         system_prompt = str(payload.get("prompt", "")).strip() or None
+        # Prompt version resolution (prompt_store): an explicit `prompt` string
+        # always wins. Otherwise use the requested `prompt_version`, or fall back
+        # to the suite's active (promoted) version — promote → runs use it.
+        resolved_pv_id: str | None = None
+        requested_version = str(payload.get("prompt_version", "")).strip() or None
+        if system_prompt is None and prompt_store is not None:
+            try:
+                pv = (
+                    await prompt_store.get(suite_id, requested_version)
+                    if requested_version
+                    else await prompt_store.get_active(suite_id)
+                )
+                if pv is not None:
+                    system_prompt = _system_prompt_from_config(pv.config)
+                    resolved_pv_id = pv.id
+            except Exception:
+                pass  # best-effort — fall through with no prompt
         case_ids: list[str] | None = payload.get("case_ids") or None
         concurrency = max(1, min(int(payload.get("concurrency", 4)), 16))
 
@@ -1196,6 +1233,7 @@ def build_eval_router(
                 suite_id, model, system_prompt, case_ids, concurrency,
                 max_tokens=max_tokens, temperature=temperature,
                 budget_cap_usd=budget_cap_usd, mode=mode,
+                prompt_version_id=resolved_pv_id,
             )
             return {"run_id": run_id, "suite_id": suite_id, "batch_id": None}
 
@@ -1207,6 +1245,7 @@ def build_eval_router(
                 suite_id, m or None, system_prompt, case_ids, concurrency, batch_id,
                 max_tokens=max_tokens, temperature=temperature,
                 budget_cap_usd=budget_cap_usd, mode=mode,
+                prompt_version_id=resolved_pv_id,
             )
             runs.append({"run_id": rid, "model": m})
 
