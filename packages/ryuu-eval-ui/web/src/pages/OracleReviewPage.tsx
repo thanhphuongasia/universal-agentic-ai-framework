@@ -371,6 +371,7 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
   const createPromptVersion = useSavePromptVersion(suiteId);
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
+  const [promptSaveError, setPromptSaveError] = useState<string | null>(null);
 
   function _systemOf(pv: typeof activeVersion): string {
     const p = pv?.config?.prompts ?? {};
@@ -381,23 +382,29 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
 
   function startEdit() {
     setPromptDraft(productionPrompt);
+    setPromptSaveError(null);
     setEditingPrompt(true);
   }
 
   async function savePrompt() {
+    setPromptSaveError(null);
     const version = `v${(versions?.length ?? 0) + 1}`;
-    await createPromptVersion.mutateAsync({
-      version,
-      config: {
-        version, description: "from Oracle Studio",
-        model: activeVersion?.config?.model ?? "claude-sonnet-4-6",
-        temperature: 0.0, max_tokens: 2048,
-        prompts: { system: { system: promptDraft, user: "{query}" } },
-        tools: [],
-      },
-    });
-    await savePromptVersion.mutateAsync({ version });  // promote → live
-    setEditingPrompt(false);
+    try {
+      await createPromptVersion.mutateAsync({
+        version,
+        config: {
+          version, description: "from Oracle Studio",
+          model: activeVersion?.config?.model ?? "claude-sonnet-4-6",
+          temperature: 0.0, max_tokens: 2048,
+          prompts: { system: { system: promptDraft, user: "{query}" } },
+          tools: [],
+        },
+      });
+      await savePromptVersion.mutateAsync({ version });  // promote → live
+      setEditingPrompt(false);
+    } catch (err) {
+      setPromptSaveError((err as Error).message ?? "Save failed");
+    }
   }
 
   return (
@@ -424,7 +431,7 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
               onChange={e => setPromptDraft(e.target.value)}
               placeholder="Enter the production system prompt…"
             />
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-50 transition-colors"
                 disabled={saving}
@@ -432,8 +439,11 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
               >{saving ? "Saving…" : "Save & promote"}</button>
               <button
                 className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                onClick={() => setEditingPrompt(false)}
+                onClick={() => { setEditingPrompt(false); setPromptSaveError(null); }}
               >Cancel</button>
+              {promptSaveError && (
+                <span className="text-[11px] text-red-500">⚠ {promptSaveError}</span>
+              )}
             </div>
           </div>
         ) : productionPrompt ? (

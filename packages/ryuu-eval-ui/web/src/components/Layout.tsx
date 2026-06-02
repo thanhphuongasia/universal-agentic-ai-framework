@@ -18,7 +18,7 @@ export function Layout() {
       <aside className="w-52 shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col">
         <div className="px-4 py-4 border-b border-gray-200 dark:border-gray-800">
           <span className="font-semibold text-sm tracking-wide text-purple-600 dark:text-purple-400">
-            Ryuu Eval
+            Eval Testing System
           </span>
         </div>
 

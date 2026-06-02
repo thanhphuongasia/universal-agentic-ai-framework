@@ -21,7 +21,6 @@ try:
 except ImportError:
     pass
 
-import asyncio
 import logging
 import functools
 
@@ -30,6 +29,8 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
     datefmt="%H:%M:%S",
 )
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,30 +79,6 @@ if _db_url:
         _suite_store = PostgresSuiteStore(dsn=_db_url)
         print(f"  DB      : PostgreSQL connected ({_db_url[:30]}...)")
 
-        # Bootstrap a default system → domain so prompt versions for any suite
-        # have a parent to FK against. Uses a short-lived connection (not the
-        # shared pool) so we don't bind a cached pool to a throwaway event loop.
-        async def _bootstrap_prompt_schema() -> None:
-            import asyncpg
-            conn = await asyncpg.connect(_db_url)
-            try:
-                await conn.execute(
-                    "INSERT INTO systems(id, name) VALUES('eval', 'Eval')"
-                    " ON CONFLICT (id) DO NOTHING"
-                )
-                await conn.execute(
-                    "INSERT INTO domains(id, system_id, name)"
-                    " VALUES($1, 'eval', 'Default') ON CONFLICT (id) DO NOTHING",
-                    _PROMPT_DEFAULT_DOMAIN,
-                )
-            finally:
-                await conn.close()
-
-        try:
-            asyncio.run(_bootstrap_prompt_schema())
-        except Exception as exc:  # schema not migrated yet, etc.
-            print(f"  DB      : prompt-schema bootstrap skipped ({exc})")
-            _prompt_store = None
     except ImportError:
         print("  DB      : ryuu-storage-postgres not installed, skipping")
 
@@ -109,7 +86,42 @@ if _db_url:
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="ryuu-eval dev server")
+async def _bootstrap_prompt_schema() -> None:
+    """Seed systems/domains FK rows so prompt_versions saves don't fail.
+
+    Runs inside uvicorn's event loop — safe to use asyncpg directly.
+    Bootstrap failure is non-fatal: warn and continue (prompt store still works
+    for suites whose parent rows already exist).
+    """
+    if not _db_url or _prompt_store is None:
+        return
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(_db_url)
+        try:
+            await conn.execute(
+                "INSERT INTO systems(id, name) VALUES('eval', 'Eval')"
+                " ON CONFLICT (id) DO NOTHING"
+            )
+            await conn.execute(
+                "INSERT INTO domains(id, system_id, name)"
+                " VALUES($1, 'eval', 'Default') ON CONFLICT (id) DO NOTHING",
+                _PROMPT_DEFAULT_DOMAIN,
+            )
+        finally:
+            await conn.close()
+        print("  startup : prompt-schema bootstrap OK")
+    except Exception as exc:
+        print(f"  startup : prompt-schema bootstrap warning ({exc})")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):  # noqa: ARG001
+    await _bootstrap_prompt_schema()
+    yield
+
+
+app = FastAPI(title="ryuu-eval dev server", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:8001"],

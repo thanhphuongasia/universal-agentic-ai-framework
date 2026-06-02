@@ -11,6 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Play, X, FlaskConical, Plus, Pencil, Trash2, ExternalLink, BarChart2, ShieldCheck } from "lucide-react";
 import { CallSequenceDiagram } from "@/components/CallSequenceDiagram";
+import { DataView } from "@/components/DataView";
 import type { RunConfig, Suite, Case, Template, RunHistoryEntry } from "@/api/types";
 
 // ── Run Config Form ───────────────────────────────────────────────────────────
@@ -186,10 +187,10 @@ function RunConfigDialog({
             </div>
           )}
 
-          {/* System Prompt */}
+          {/* Fallback System Prompt */}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-              System Prompt
+              Fallback System Prompt
               {selectedVersion
                 ? <span className="ml-1 font-normal text-gray-400">(ignored — using prompt version {selectedVersion})</span>
                 : defaultPrompt
@@ -628,7 +629,7 @@ function CasePreviewModal({ c, onClose, onEdit }: { c: Case; onClose: () => void
   const [showJson, setShowJson] = useState(false);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-[95vw] max-h-[92vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="font-semibold text-sm font-mono">{c.case_id}</h2>
           <div className="flex items-center gap-2">
@@ -640,7 +641,7 @@ function CasePreviewModal({ c, onClose, onEdit }: { c: Case; onClose: () => void
                   : "border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
               }`}
             >
-              {"{ } JSON"}
+              {showJson ? "★ Rich" : "⊞ Views"}
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16} /></button>
           </div>
@@ -648,9 +649,16 @@ function CasePreviewModal({ c, onClose, onEdit }: { c: Case; onClose: () => void
 
         <div className="p-5 space-y-5">
           {showJson ? (
-            <pre className="text-xs bg-gray-950 text-green-300 rounded-lg p-4 overflow-auto max-h-[60vh] font-mono whitespace-pre leading-relaxed">
-              {JSON.stringify({ input: c.input, expected: c.expected }, null, 2)}
-            </pre>
+            <div className="space-y-5">
+              <div>
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Input</div>
+                <DataView value={c.input} maxHeight="max-h-[40vh]" />
+              </div>
+              <div>
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Expected</div>
+                <DataView value={c.expected} maxHeight="max-h-[40vh]" />
+              </div>
+            </div>
           ) : (
             <>
               <div>
@@ -706,6 +714,16 @@ export function SuiteDetail() {
 
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState("");
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    lastRun: true,
+    cases: true,
+    fallbackPrompt: true,
+    promptVersions: true,
+    runHistory: false,
+  });
+  function toggleSection(key: string) {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   // Prefer explicit suite config, then last run, then refine history
   const defaultPrompt = suite?.default_system_prompt
@@ -762,41 +780,109 @@ export function SuiteDetail() {
 
       {/* Last run summary */}
       {lastRun && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 flex flex-wrap gap-5">
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">Last run</div>
-            <StatusBadge status={lastRun.status} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">Pass</div>
-            <span className="font-semibold tabular-nums">
-              {lastRun.passed_cases}/{lastRun.total_cases}
-            </span>
-          </div>
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">Score</div>
-            <ScoreBar score={lastRun.avg_score ?? null} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">Cost</div>
-            <span className="tabular-nums text-sm">
-              {lastRun.total_cost_usd != null ? `$${lastRun.total_cost_usd.toFixed(3)}` : "—"}
-            </span>
-          </div>
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">Model</div>
-            <span className="text-sm font-mono">{lastRun.model ?? "—"}</span>
-          </div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+          <button
+            onClick={() => toggleSection("lastRun")}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hover:bg-gray-50 dark:hover:bg-gray-800/50"
+          >
+            <span>Last Run</span>
+            <span>{openSections.lastRun ? "▲" : "▼"}</span>
+          </button>
+          {openSections.lastRun && (
+            <div className="flex flex-wrap gap-5 px-4 pb-4">
+              <div><div className="text-xs text-gray-400 mb-0.5">Status</div><StatusBadge status={lastRun.status} /></div>
+              <div><div className="text-xs text-gray-400 mb-0.5">Pass</div><span className="font-semibold tabular-nums">{lastRun.passed_cases}/{lastRun.total_cases}</span></div>
+              <div><div className="text-xs text-gray-400 mb-0.5">Score</div><ScoreBar score={lastRun.avg_score ?? null} /></div>
+              <div><div className="text-xs text-gray-400 mb-0.5">Cost</div><span className="tabular-nums text-sm">{lastRun.total_cost_usd != null ? `$${lastRun.total_cost_usd.toFixed(3)}` : "—"}</span></div>
+              <div><div className="text-xs text-gray-400 mb-0.5">Model</div><span className="text-sm font-mono">{lastRun.model ?? "—"}</span></div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* System Prompt */}
-      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            System Prompt
-          </span>
-          {!editingPrompt && (
+      {/* Cases table */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <button
+            onClick={() => toggleSection("cases")}
+            className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            <span>{openSections.cases ? "▲" : "▼"}</span>
+            <span>Cases {cases ? `(${cases.length})` : ""}</span>
+          </button>
+          <button
+            onClick={() => setCaseModal({ mode: "add" })}
+            className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white font-medium"
+          >
+            <Plus size={12} />
+            Add Case
+          </button>
+        </div>
+        {openSections.cases && (
+          <div className="border-t border-gray-100 dark:border-gray-800">
+            {casesLoading && <div className="p-4"><TableSkeleton rows={5} /></div>}
+            {cases && cases.length === 0 && (
+              <div
+                onClick={() => setCaseModal({ mode: "add" })}
+                className="m-4 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center text-sm text-gray-400 cursor-pointer hover:border-purple-400 hover:text-purple-500 transition-colors"
+              >
+                No cases yet — click to add the first one
+              </div>
+            )}
+            {cases && cases.length > 0 && (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-900">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Case ID</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Input</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Expected</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Tags</th>
+                    <th className="px-4 py-2.5 text-xs w-16"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {cases.map((c: Case) => (
+                    <tr key={c.case_id} onClick={() => setPreviewCase(c)} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors group cursor-pointer">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{c.case_id}</td>
+                      <td className="px-4 py-3 max-w-xs truncate text-gray-700 dark:text-gray-300">
+                        {typeof c.input === "string" ? c.input : JSON.stringify(c.input)}
+                      </td>
+                      <td className="px-4 py-3 max-w-xs truncate text-gray-500">
+                        {c.expected !== undefined ? (typeof c.expected === "string" ? c.expected : JSON.stringify(c.expected)) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(c.tags ?? []).map((t: string) => (
+                            <span key={t} className="rounded px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">{t}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => setCaseModal({ mode: "edit", case: c })} className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Edit"><Pencil size={13} /></button>
+                          <button onClick={() => handleDelete(c.case_id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-600 dark:hover:text-red-400" title="Delete"><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Fallback System Prompt */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <button
+            onClick={() => toggleSection("fallbackPrompt")}
+            className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            <span>{openSections.fallbackPrompt ? "▲" : "▼"}</span>
+            <span>Fallback System Prompt</span>
+          </button>
+          {!editingPrompt && openSections.fallbackPrompt && (
             <button
               onClick={() => { setDraftPrompt(defaultPrompt ?? ""); setEditingPrompt(true); }}
               className="text-xs text-purple-500 hover:text-purple-400"
@@ -805,51 +891,56 @@ export function SuiteDetail() {
             </button>
           )}
         </div>
-
-        {editingPrompt ? (
-          <div className="space-y-2">
-            <textarea
-              value={draftPrompt}
-              onChange={(e) => setDraftPrompt(e.target.value)}
-              rows={6}
-              autoFocus
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="System prompt sent before every case…"
-            />
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setEditingPrompt(false)}
-                className="text-xs px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={saveDefaultPrompt.isPending}
-                onClick={async () => {
-                  await saveDefaultPrompt.mutateAsync(draftPrompt);
-                  setEditingPrompt(false);
-                }}
-                className="text-xs px-3 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
-              >
-                {saveDefaultPrompt.isPending ? "Saving…" : "Save"}
-              </button>
-            </div>
+        {openSections.fallbackPrompt && (
+          <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3">
+            {editingPrompt ? (
+              <div className="space-y-2">
+                <textarea
+                  value={draftPrompt}
+                  onChange={(e) => setDraftPrompt(e.target.value)}
+                  rows={6}
+                  autoFocus
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="System prompt sent before every case…"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setEditingPrompt(false)} className="text-xs px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+                  <button
+                    disabled={saveDefaultPrompt.isPending}
+                    onClick={async () => { await saveDefaultPrompt.mutateAsync(draftPrompt); setEditingPrompt(false); }}
+                    className="text-xs px-3 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+                  >
+                    {saveDefaultPrompt.isPending ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            ) : defaultPrompt ? (
+              <pre className="text-xs font-mono text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{defaultPrompt}</pre>
+            ) : (
+              <p className="text-xs text-gray-400 italic">No default system prompt — will be blank on run.</p>
+            )}
           </div>
-        ) : defaultPrompt ? (
-          <pre className="text-xs font-mono text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">
-            {defaultPrompt}
-          </pre>
-        ) : (
-          <p className="text-xs text-gray-400 italic">No default system prompt — will be blank on run.</p>
         )}
       </div>
 
       {/* Prompt versions (lifecycle + promote) */}
-      <PromptVersionsPanel suiteId={suiteId} />
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+        <button
+          onClick={() => toggleSection("promptVersions")}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hover:bg-gray-50 dark:hover:bg-gray-800/50"
+        >
+          <span>Prompt Versions</span>
+          <span>{openSections.promptVersions ? "▲" : "▼"}</span>
+        </button>
+        {openSections.promptVersions && (
+          <div className="border-t border-gray-100 dark:border-gray-800 p-4">
+            <PromptVersionsPanel suiteId={suiteId} />
+          </div>
+        )}
+      </div>
 
-      {/* Run History */}
+      {/* Run History — collapsed by default */}
       {runHistory && runHistory.length > 0 && (() => {
-        // Group entries: batch runs together, solo runs standalone
         type Group = { batch_id: string | null; entries: RunHistoryEntry[] };
         const groups: Group[] = [];
         const batchMap = new Map<string, Group>();
@@ -863,163 +954,64 @@ export function SuiteDetail() {
           }
         }
         return (
-          <div>
-            <h2 className="font-medium text-sm text-gray-700 dark:text-gray-300 mb-3">
-              Run History
-              <span className="ml-1.5 text-gray-400 font-normal">({runHistory.length})</span>
-            </h2>
-            <div className="space-y-3">
-              {groups.map((g, gi) => (
-                <div key={g.batch_id ?? `solo-${gi}`} className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-                  {g.batch_id && g.entries.length > 1 && (
-                    <div className="flex items-center justify-between px-4 py-2 bg-purple-50 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900">
-                      <span className="text-xs font-mono text-purple-600 dark:text-purple-400">
-                        batch · {g.entries.length} models · {g.batch_id.slice(0, 8)}
-                      </span>
-                      <Link
-                        to={`/batch/${g.batch_id}/compare?suite_id=${suiteId}`}
-                        className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200 font-medium"
-                      >
-                        <BarChart2 size={11} /> Compare
-                      </Link>
-                    </div>
-                  )}
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-900 text-xs font-medium text-gray-500">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Date</th>
-                        <th className="px-4 py-2 text-left">Model</th>
-                        <th className="px-4 py-2 text-left">Pass</th>
-                        <th className="px-4 py-2 text-left">Score</th>
-                        <th className="px-4 py-2 text-left">Cost</th>
-                        <th className="px-4 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {g.entries.map((r) => {
-                        const pct = r.total_count > 0
-                          ? Math.round(r.passed_count / r.total_count * 100) : 0;
-                        return (
-                          <tr key={r.run_id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors">
-                            <td className="px-4 py-2.5 text-xs text-gray-500 tabular-nums">
-                              {r.finished_at
-                                ? new Date(r.finished_at * 1000).toLocaleString()
-                                : "—"}
-                            </td>
-                            <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300">
-                              {r.model ?? "—"}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs tabular-nums text-gray-600 dark:text-gray-300">
-                              {r.passed_count}/{r.total_count}
-                              <span className="ml-1 text-gray-400">({pct}%)</span>
-                            </td>
-                            <td className="px-4 py-2.5">
-                              <ScoreBar score={r.pass_rate ?? null} />
-                            </td>
-                            <td className="px-4 py-2.5 text-xs tabular-nums text-gray-500">
-                              {r.total_cost_usd != null ? `$${r.total_cost_usd.toFixed(4)}` : "—"}
-                            </td>
-                            <td className="px-4 py-2.5 text-right">
-                              <Link
-                                to={`/runs/${r.run_id}?suite_id=${suiteId}`}
-                                className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
-                              >
-                                View <ExternalLink size={10} />
-                              </Link>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+            <button
+              onClick={() => toggleSection("runHistory")}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            >
+              <span>Run History <span className="font-normal">({runHistory.length})</span></span>
+              <span>{openSections.runHistory ? "▲" : "▼"}</span>
+            </button>
+            {openSections.runHistory && (
+              <div className="border-t border-gray-100 dark:border-gray-800 p-4 space-y-3">
+                {groups.map((g, gi) => (
+                  <div key={g.batch_id ?? `solo-${gi}`} className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+                    {g.batch_id && g.entries.length > 1 && (
+                      <div className="flex items-center justify-between px-4 py-2 bg-purple-50 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900">
+                        <span className="text-xs font-mono text-purple-600 dark:text-purple-400">batch · {g.entries.length} models · {g.batch_id.slice(0, 8)}</span>
+                        <Link to={`/batch/${g.batch_id}/compare?suite_id=${suiteId}`} className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200 font-medium">
+                          <BarChart2 size={11} /> Compare
+                        </Link>
+                      </div>
+                    )}
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-900 text-xs font-medium text-gray-500">
+                        <tr>
+                          <th className="px-4 py-2 text-left">Date</th>
+                          <th className="px-4 py-2 text-left">Model</th>
+                          <th className="px-4 py-2 text-left">Pass</th>
+                          <th className="px-4 py-2 text-left">Score</th>
+                          <th className="px-4 py-2 text-left">Cost</th>
+                          <th className="px-4 py-2" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {g.entries.map((r) => {
+                          const pct = r.total_count > 0 ? Math.round(r.passed_count / r.total_count * 100) : 0;
+                          return (
+                            <tr key={r.run_id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors">
+                              <td className="px-4 py-2.5 text-xs text-gray-500 tabular-nums">{r.finished_at ? new Date(r.finished_at * 1000).toLocaleString() : "—"}</td>
+                              <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300">{r.model ?? "—"}</td>
+                              <td className="px-4 py-2.5 text-xs tabular-nums text-gray-600 dark:text-gray-300">{r.passed_count}/{r.total_count}<span className="ml-1 text-gray-400">({pct}%)</span></td>
+                              <td className="px-4 py-2.5"><ScoreBar score={r.pass_rate ?? null} /></td>
+                              <td className="px-4 py-2.5 text-xs tabular-nums text-gray-500">{r.total_cost_usd != null ? `$${r.total_cost_usd.toFixed(4)}` : "—"}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <Link to={`/runs/${r.run_id}?suite_id=${suiteId}`} className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline">
+                                  View <ExternalLink size={10} />
+                                </Link>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })()}
-
-      {/* Cases table */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium text-sm text-gray-700 dark:text-gray-300">
-            Cases {cases ? `(${cases.length})` : ""}
-          </h2>
-          <button
-            onClick={() => setCaseModal({ mode: "add" })}
-            className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white font-medium"
-          >
-            <Plus size={12} />
-            Add Case
-          </button>
-        </div>
-        {casesLoading && <TableSkeleton rows={5} />}
-        {cases && cases.length === 0 && (
-          <div
-            onClick={() => setCaseModal({ mode: "add" })}
-            className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center text-sm text-gray-400 cursor-pointer hover:border-purple-400 hover:text-purple-500 transition-colors"
-          >
-            No cases yet — click to add the first one
-          </div>
-        )}
-        {cases && cases.length > 0 && (
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-900">
-                <tr>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Case ID</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Input</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Expected</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 text-xs">Tags</th>
-                  <th className="px-4 py-2.5 text-xs w-16"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {cases.map((c: Case) => (
-                  <tr key={c.case_id} onClick={() => setPreviewCase(c)} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors group cursor-pointer">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{c.case_id}</td>
-                    <td className="px-4 py-3 max-w-xs truncate text-gray-700 dark:text-gray-300">
-                      {typeof c.input === "string" ? c.input : JSON.stringify(c.input)}
-                    </td>
-                    <td className="px-4 py-3 max-w-xs truncate text-gray-500">
-                      {c.expected !== undefined
-                        ? typeof c.expected === "string" ? c.expected : JSON.stringify(c.expected)
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(c.tags ?? []).map((t: string) => (
-                          <span key={t} className="rounded px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => setCaseModal({ mode: "edit", case: c })}
-                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                          title="Edit"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(c.case_id)}
-                          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-                          title="Delete"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
 
       {/* Run config dialog */}
       {showRunConfig && (
@@ -1074,9 +1066,9 @@ export function SuiteList() {
       {suites.length > 0 && (
         <div className="space-y-2">
           {suites.map((s: Suite) => (
-            <a
+            <Link
               key={s.suite_id}
-              href={`/suites/${s.suite_id}`}
+              to={`/suites/${s.suite_id}`}
               className="flex items-center justify-between rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-5 py-4 hover:border-purple-400 dark:hover:border-purple-600 transition-colors"
             >
               <div>
@@ -1084,7 +1076,7 @@ export function SuiteList() {
                 <div className="text-xs text-gray-400 font-mono mt-0.5">{s.suite_id}</div>
               </div>
               <span className="text-xs text-gray-400">{s.case_count ?? 0} cases →</span>
-            </a>
+            </Link>
           ))}
         </div>
       )}
