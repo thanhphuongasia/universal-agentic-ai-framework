@@ -15,6 +15,7 @@ import {
   groupByEntity,
   computeProgress,
   countPendingReview,
+  buildOmittedFieldRows,
 } from "./reviewModel.ts";
 
 const cell = (op: string, confidence: string, why = "because") => ({ op, confidence, why });
@@ -145,4 +146,34 @@ test("computeProgress: all high → 100%", () => {
 test("countPendingReview: counts only pending rows", () => {
   const rows = buildRows({ expected: TWO_LEVEL, review_items: [] }, []);
   assert.equal(countPendingReview(rows), 2); // total + email
+});
+
+test("buildOmittedFieldRows: compares input entity_fields against expected db columns", () => {
+  const expected = {
+    Order: {
+      id: cell("R", "high"),
+      total_price: cell("R", "high"),
+    },
+  };
+  const inputData = {
+    contexts: {
+      "GET /orders": {
+        entity_fields: {
+          Order: [
+            { name: "id", db_column: "id", annotations: ["@Id"] },
+            { name: "totalPrice", db_column: "total_price", annotations: ["@Column(name = \"total_price\")"] },
+            { name: "items", db_column: "items", annotations: ["@OneToMany(mappedBy = \"order\")"] },
+          ],
+        },
+      },
+    },
+  };
+
+  const omitted = buildOmittedFieldRows(expected, inputData);
+
+  assert.equal(omitted.length, 1);
+  assert.equal(omitted[0].entity, "Order");
+  assert.equal(omitted[0].field, "items");
+  assert.equal(omitted[0].dbColumn, "items");
+  assert.match(omitted[0].why, /Relationship collection/);
 });

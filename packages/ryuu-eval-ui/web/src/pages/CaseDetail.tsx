@@ -4,7 +4,7 @@ import { useRunResult, useCaseProvenance } from "@/api/hooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ScoreBar } from "@/components/ScoreBar";
 import { Skeleton } from "@/components/Skeleton";
-import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { DataView } from "@/components/DataView";
 import { ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, ArrowLeft, Terminal, ShieldCheck } from "lucide-react";
 import type { CaseResult, CaseStep, RunParams } from "@/api/types";
 
@@ -240,7 +240,6 @@ export function CaseDetail() {
   const navigate = useNavigate();
   const { data: run, isLoading } = useRunResult(runId);
   const review = useReview(runId, caseId);
-  const [viewMode, setViewMode] = useState<"table" | "json" | "diff">("table");
 
   const cases = run?.cases ?? [];
   const idx = cases.findIndex((c: CaseResult) => c.case_id === caseId);
@@ -280,25 +279,6 @@ export function CaseDetail() {
       </div>
     );
   }
-
-  // Try to parse actual/expected if they're JSON strings (LLM text output)
-  const parsedActual = (() => {
-    if (typeof current.actual !== "string") return current.actual;
-    try { return JSON.parse(current.actual); } catch {
-      console.warn("[CaseDetail] actual is not JSON, rendering as plain text", { caseId, actual: current.actual?.slice?.(0, 80) });
-      return current.actual;
-    }
-  })();
-  const parsedExpected = (() => {
-    if (typeof current.expected !== "string") return current.expected;
-    try { return JSON.parse(current.expected); } catch {
-      console.warn("[CaseDetail] expected is not JSON, rendering as plain text", { caseId });
-      return current.expected;
-    }
-  })();
-
-  const expectedStr = stringify(parsedExpected);
-  const actualStr = stringify(parsedActual);
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
@@ -363,14 +343,10 @@ export function CaseDetail() {
 
       {/* ── Input ── */}
       {current.input !== undefined && (
-        <details className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-          <summary className="px-4 py-3 cursor-pointer select-none text-xs font-medium text-gray-500 uppercase tracking-wide hover:bg-gray-50 dark:hover:bg-gray-800">
-            Input
-          </summary>
-          <pre className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-300 overflow-auto max-h-48 whitespace-pre-wrap break-words border-t border-gray-100 dark:border-gray-800">
-            {stringify(current.input)}
-          </pre>
-        </details>
+        <div className="space-y-2">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Input</span>
+          <DataView value={current.input} maxHeight="max-h-72" />
+        </div>
       )}
 
       {/* ── Scoring spec (per-case, drives build_scorers) ── */}
@@ -386,76 +362,14 @@ export function CaseDetail() {
       )}
 
       {/* ── Expected vs Actual ── */}
-      <div>
-        {/* View mode toggle */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Expected vs Actual</span>
-          <div className="flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden text-xs">
-            {(["table", "json", "diff"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                className={`px-3 py-1 font-mono transition-colors ${
-                  viewMode === mode
-                    ? "bg-purple-600 text-white"
-                    : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
-              >
-                {mode === "table" ? "⊞ Table" : mode === "json" ? "{ } JSON" : "~ Diff"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Table view — split JSON panels */}
-        {viewMode === "table" && (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-xs font-medium text-gray-500">
-                Expected
-              </div>
-              <pre className="px-3 py-3 text-xs overflow-auto max-h-72 font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                {expectedStr}
-              </pre>
-            </div>
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-xs font-medium text-gray-500">
-                Actual
-              </div>
-              <pre className="px-3 py-3 text-xs overflow-auto max-h-72 font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                {actualStr}
-              </pre>
-            </div>
-          </div>
-        )}
-
-        {/* JSON view */}
-        {viewMode === "json" && (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-xs font-medium text-gray-500">Expected</div>
-              <pre className="px-3 py-3 text-xs overflow-auto max-h-[60vh] font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{expectedStr}</pre>
-            </div>
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 text-xs font-medium text-gray-500">Actual</div>
-              <pre className="px-3 py-3 text-xs overflow-auto max-h-[60vh] font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{actualStr}</pre>
-            </div>
-          </div>
-        )}
-
-        {/* Diff view */}
-        {viewMode === "diff" && (
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden text-xs">
-            <ReactDiffViewer
-              oldValue={expectedStr}
-              newValue={actualStr}
-              splitView
-              compareMethod={DiffMethod.WORDS}
-              useDarkTheme={document.documentElement.classList.contains("dark")}
-              styles={{ variables: { dark: { diffViewerBackground: "#111" } } }}
-            />
-          </div>
-        )}
+      <div className="space-y-3">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Expected vs Actual</span>
+        <DataView
+          value={current.actual}
+          expected={current.expected}
+          defaultMode="table"
+          maxHeight="max-h-[60vh]"
+        />
       </div>
 
       {/* ── Steps / Trace ── */}

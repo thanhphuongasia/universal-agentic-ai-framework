@@ -11,6 +11,7 @@
  * required anywhere else.
  */
 
+import { useState } from "react";
 import type { FC } from "react";
 
 // ── Plugin contract ──────────────────────────────────────────────────────────
@@ -168,6 +169,136 @@ const FlatView: FC<{ cells: unknown }> = ({ cells }) => {
   );
 };
 
+/** Generic object/array shape: anything structured that isn't crud/list/flat.
+ *  Renders a recursive key/value table — nested objects become nested tables,
+ *  arrays of objects become columnar sub-tables — so a mixed payload like
+ *  `{total, contexts:{…}}` reads as a table instead of raw JSON. */
+function isObjectShape(cells: unknown): boolean {
+  return cells !== null && typeof cells === "object";
+}
+
+function _isPrimitive(v: unknown): boolean {
+  return v === null || typeof v !== "object";
+}
+
+function _primText(v: unknown): string {
+  if (v === null) return "null";
+  if (v === "") return '""';
+  return String(v);
+}
+
+/** One-line summary of a nested object/array, shown when collapsed. */
+function _summary(v: object): string {
+  if (Array.isArray(v)) return `[${v.length} item${v.length === 1 ? "" : "s"}]`;
+  const n = Object.keys(v).length;
+  return `{${n} field${n === 1 ? "" : "s"}}`;
+}
+
+/** Collapsible wrapper for a nested object/array — default CLOSED, click to
+ *  expand into a sub-table. Keeps deep payloads compact (no horizontal sprawl). */
+const Collapsible: FC<{ v: object }> = ({ v }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1 font-mono text-xs text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 select-none"
+      >
+        <span className="w-3 text-center">{open ? "▾" : "▸"}</span>
+        <span>{_summary(v)}</span>
+      </button>
+      {open && <div className="mt-1.5"><Inner v={v} /></div>}
+    </div>
+  );
+};
+
+/** Recursive value renderer used by the object/array tables.
+ *  Primitives + primitive arrays render inline; nested objects/arrays render
+ *  as a collapsible (closed by default). */
+const Value: FC<{ v: unknown }> = ({ v }) => {
+  if (_isPrimitive(v)) {
+    return <span className="font-mono text-gray-700 dark:text-gray-300 break-all">{_primText(v)}</span>;
+  }
+  if (Array.isArray(v)) {
+    if (v.length === 0) return <span className="text-gray-400">[]</span>;
+    if (v.every(_isPrimitive)) {
+      return <span className="font-mono text-gray-600 dark:text-gray-400 break-all">{v.map(_primText).join(", ")}</span>;
+    }
+    return <Collapsible v={v} />;
+  }
+  if (Object.keys(v as object).length === 0) return <span className="text-gray-400">{"{}"}</span>;
+  return <Collapsible v={v as object} />;
+};
+
+const KVTable: FC<{ obj: Record<string, unknown> }> = ({ obj }) => {
+  const rows = Object.entries(obj);
+  if (rows.length === 0) return <span className="text-gray-400">{"{}"}</span>;
+  return (
+    <table className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+      <tbody>
+        {rows.map(([k, val]) => (
+          <tr key={k} className="border-b border-gray-100 dark:border-gray-800 last:border-0 align-top">
+            <td className="px-2 py-1.5 font-mono font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap align-top">{k}</td>
+            <td className="px-2 py-1.5"><Value v={val} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+/** Array of objects → columnar table (union of keys across items). */
+const ArrayTable: FC<{ items: unknown[] }> = ({ items }) => {
+  const cols: string[] = (() => {
+    const seen = new Set<string>();
+    for (const it of items) {
+      if (it && typeof it === "object" && !Array.isArray(it)) {
+        for (const k of Object.keys(it as object)) seen.add(k);
+      }
+    }
+    return Array.from(seen);
+  })();
+  return (
+    <div className="overflow-auto">
+      <table className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded min-w-[320px]">
+        <thead>
+          <tr className="bg-gray-50 dark:bg-gray-800 text-left">
+            <th className="px-2 py-1.5 font-semibold text-gray-500 border-b border-gray-200 dark:border-gray-700">#</th>
+            {cols.map((c) => (
+              <th key={c} className="px-2 py-1.5 font-semibold text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 whitespace-nowrap">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={i} className="border-b border-gray-100 dark:border-gray-800 last:border-0 align-top">
+              <td className="px-2 py-1.5 font-mono text-gray-400">{i}</td>
+              {cols.map((c) => (
+                <td key={c} className="px-2 py-1.5 align-top"><Value v={(it as Record<string, unknown>)?.[c]} /></td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/** Render an expanded object/array, dispatching to the specialized renderer
+ *  when the value matches a known shape (crud → CrudView so op/confidence/why
+ *  show as columns; list → ListView; flat → FlatView), else generic tables. */
+const Inner: FC<{ v: object }> = ({ v }) => {
+  if (Array.isArray(v)) return <ArrayTable items={v} />;
+  if (isCrudShape(v)) return <CrudView cells={v} />;
+  if (isListShape(v)) return <ListView cells={v} />;
+  if (isFlatShape(v)) return <FlatView cells={v} />;
+  return <KVTable obj={v as Record<string, unknown>} />;
+};
+
+/** Top level renders EXPANDED (nested objects/arrays inside collapse on demand). */
+const ObjectView: FC<{ cells: unknown }> = ({ cells }) => <Inner v={cells as object} />;
+
 /** Final fallback: pretty-printed JSON. Always matches. */
 const JsonView: FC<{ cells: unknown }> = ({ cells }) => (
   <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-3">
@@ -183,7 +314,8 @@ export const RENDERERS: CellsRenderer[] = [
   { shape: "crud", detect: isCrudShape, Component: CrudView },
   { shape: "list", detect: isListShape, Component: ListView },
   { shape: "flat", detect: isFlatShape, Component: FlatView },
-  { shape: "json", detect: () => true, Component: JsonView }, // fallback — always last
+  { shape: "object", detect: isObjectShape, Component: ObjectView }, // recursive tables for mixed objects/arrays
+  { shape: "json", detect: () => true, Component: JsonView }, // fallback — always last (primitives)
 ];
 
 export function pickRenderer(cells: unknown): CellsRenderer {

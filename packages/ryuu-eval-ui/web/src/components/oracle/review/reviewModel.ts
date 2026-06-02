@@ -114,6 +114,13 @@ export interface Progress {
   pct: number;
 }
 
+export interface OmittedFieldVM {
+  entity: string;
+  field: string;
+  dbColumn: string;
+  why: string;
+}
+
 // ── Builders ──────────────────────────────────────────────────────────────────
 
 /**
@@ -133,6 +140,93 @@ function statusFor(action: ReviewAction | null, needsReview: boolean): RowStatus
 }
 
 const key = (entity: string, field: string) => `${entity}::${field}`;
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+function annotationText(v: unknown): string {
+  return Array.isArray(v) ? v.map(String).join(" ") : "";
+}
+
+function omittedWhy(field: Record<string, unknown>): string {
+  const annotations = annotationText(field.annotations).toLowerCase();
+  if ((annotations.includes("@onetomany") || annotations.includes("@manytomany")) && !annotations.includes("@joincolumn")) {
+    return "Relationship collection without @JoinColumn is not a column-level CRUD cell.";
+  }
+  if (annotations.includes("@transient")) {
+    return "Transient field is not persisted as a database column.";
+  }
+  if (annotations.includes("insertable = false") && annotations.includes("updatable = false")) {
+    return "Database-managed field; omitted unless the route explicitly reads it.";
+  }
+  if (annotations.includes("@createddate") || annotations.includes("@creationtimestamp")) {
+    return "Creation timestamp is database/framework-managed; omitted unless explicitly read.";
+  }
+  if (annotations.includes("@lastmodifieddate") || annotations.includes("@updatetimestamp")) {
+    return "Update timestamp is database/framework-managed; omitted unless explicitly read.";
+  }
+  return "No expected CRUD op was emitted for this input field.";
+}
+
+function collectInputEntityFields(inputData: unknown): OmittedFieldVM[] {
+  const input = asRecord(inputData);
+  if (!input) return [];
+  const seen = new Set<string>();
+  const rows: OmittedFieldVM[] = [];
+
+  function addFields(entity: string, fields: unknown) {
+    if (!Array.isArray(fields)) return;
+    for (const raw of fields) {
+      const field = asRecord(raw);
+      if (!field) continue;
+      const name = String(field.name ?? "");
+      if (!name) continue;
+      const dbColumn = String(field.db_column ?? field.column ?? name);
+      const k = key(entity, dbColumn);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      rows.push({ entity, field: name, dbColumn, why: omittedWhy(field) });
+    }
+  }
+
+  const contexts = asRecord(input.contexts);
+  if (contexts) {
+    for (const ctx of Object.values(contexts)) {
+      const entityFields = asRecord(asRecord(ctx)?.entity_fields);
+      if (!entityFields) continue;
+      for (const [entity, fields] of Object.entries(entityFields)) {
+        addFields(entity, fields);
+      }
+    }
+  }
+
+  const entities = Array.isArray(input.entities) ? input.entities : [];
+  for (const raw of entities) {
+    const entity = asRecord(raw);
+    if (!entity) continue;
+    const name = String(entity.short_name ?? entity.name ?? "");
+    if (name) addFields(name, entity.fields);
+  }
+
+  return rows;
+}
+
+export function buildOmittedFieldRows(expected: unknown, inputData: unknown): OmittedFieldVM[] {
+  const cells = unwrapCells(expected);
+  const expectedFields = new Set<string>();
+  for (const [entity, fields] of Object.entries(cells)) {
+    if (!fields || typeof fields !== "object") continue;
+    for (const field of Object.keys(fields)) {
+      expectedFields.add(key(entity, field));
+    }
+  }
+  return collectInputEntityFields(inputData).filter(
+    row => !expectedFields.has(key(row.entity, row.dbColumn)) && !expectedFields.has(key(row.entity, row.field)),
+  );
+}
 
 /** Flatten expected + overlay review state → one RowVM per cell. */
 export function buildRows(

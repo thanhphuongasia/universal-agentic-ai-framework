@@ -396,7 +396,7 @@ export function useRunOracle() {
 
 export function useGenerateOracle() {
   const qc = useQueryClient();
-  return useMutation<OracleFixtureDetail, Error, { case_id: string; suite_id?: string; input_data: Record<string, unknown> }>({
+  return useMutation<OracleFixtureDetail, Error, { case_id: string; suite_id?: string; input_data: Record<string, unknown>; oracle_model?: string }>({
     mutationFn: (payload) =>
       apiFetch("/oracle-review/generate", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: (_data, vars) => {

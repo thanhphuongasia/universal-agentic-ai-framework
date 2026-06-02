@@ -1,10 +1,12 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
+import { ExternalLink, Maximize2, X } from "lucide-react";
 import { CellsView, pickRenderer } from "@/components/oracle/CellsView";
+import { DataView } from "@/components/DataView";
 import { CrudReviewMatrix } from "@/components/oracle/review/CrudReviewMatrix";
 import { OracleRunHistory } from "@/components/oracle/OracleRunHistory";
 import { OraclePromoteHistory } from "@/components/oracle/OraclePromoteHistory";
-import { buildRows, countPendingReview, isCrudReviewable } from "@/components/oracle/review/reviewModel";
+import { buildOmittedFieldRows, buildRows, countPendingReview, isCrudReviewable } from "@/components/oracle/review/reviewModel";
 import {
   useSuites,
   usePromptVersions, useActivePromptVersion, useSavePromptVersion, usePromotePromptVersion,
@@ -13,7 +15,7 @@ import {
   useUpdateOracleReview,
   useGenerateOracle, useDeleteOracleFixture,
   useCreateSuite, useUpdateSuite, useDeleteSuite,
-  useLLMProviders, useMetaGenerateOraclePrompt,
+  useLLMProviders, useMetaGenerateOraclePrompt, useOracleSchema,
   useRunWithPrompt, useSaveStudioFixture, usePromoteToSuite,
   type ProviderInfo,
 } from "@/api/hooks";
@@ -181,6 +183,10 @@ const TABS: { id: TabId; label: string; group: "Preparation" | "Execution" | "Re
   { id: "expectation",   label: "3. Execution",     group: "Execution" },
   { id: "review",        label: "4. Review & Approve", group: "Review" },
 ];
+
+function isTabId(value: string | null): value is TabId {
+  return value === "input" || value === "oracle-prompt" || value === "expectation" || value === "review";
+}
 
 function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) {
   const nodes: ReactNode[] = [];
@@ -353,6 +359,16 @@ function ActualOutputEditor({ fixtureId }: { fixtureId: string }) {
   );
 }
 
+// Extract the system prompt text from a prompt-version's config. Shared by the
+// Input tab and the Oracle-Prompt tab so both read the SAME production prompt
+// source (the DB-backed active version), never the legacy file default.
+function systemPromptOf(
+  pv: { config?: { prompts?: Record<string, { system?: string }> } } | null | undefined,
+): string {
+  const p = pv?.config?.prompts ?? {};
+  return p.system?.system ?? p.extract?.system ?? Object.values(p)[0]?.system ?? "";
+}
+
 // ─── Tab 1: Input ─────────────────────────────────────────────────────────────
 
 function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteId: string }) {
@@ -373,11 +389,7 @@ function Tab1_Input({ fixture, suiteId }: { fixture: OracleFixtureDetail; suiteI
   const [promptDraft, setPromptDraft] = useState("");
   const [promptSaveError, setPromptSaveError] = useState<string | null>(null);
 
-  function _systemOf(pv: typeof activeVersion): string {
-    const p = pv?.config?.prompts ?? {};
-    return p.system?.system ?? p.extract?.system ?? Object.values(p)[0]?.system ?? "";
-  }
-  const productionPrompt = _systemOf(activeVersion);
+  const productionPrompt = systemPromptOf(activeVersion);
   const saving = createPromptVersion.isPending || savePromptVersion.isPending;
 
   function startEdit() {
@@ -1209,16 +1221,168 @@ function Tab3_Execution({
 
 // ─── Tab 4: Human Review ──────────────────────────────────────────────────────
 
+function ReviewComparePanel({
+  fixture, actualParsed, expanded = false,
+}: {
+  fixture: OracleFixtureDetail;
+  actualParsed: unknown | null;
+  expanded?: boolean;
+}) {
+  const maxHeight = expanded ? "max-h-[70vh]" : "max-h-96";
+  const omittedRows = buildOmittedFieldRows(fixture.expected, fixture.input_data);
+  const routeKeys = (() => {
+    const input = fixture.input_data;
+    if (!input || typeof input !== "object" || Array.isArray(input)) return [];
+    const contexts = (input as Record<string, unknown>).contexts;
+    return contexts && typeof contexts === "object" && !Array.isArray(contexts)
+      ? Object.keys(contexts as Record<string, unknown>)
+      : [];
+  })();
+  const aggregateExpected = routeKeys.length > 1 && isCrudReviewable(fixture.expected);
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+        <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="text-[10px] uppercase font-semibold tracking-wider text-gray-500 dark:text-gray-400">
+            Input
+          </div>
+          <div className="text-[11px] text-gray-400 mt-0.5">
+            {routeKeys.length > 0 ? `${routeKeys.length} route context${routeKeys.length === 1 ? "" : "s"} in this fixture.` : "Route context for this fixture."}
+          </div>
+        </div>
+        <div className="p-3">
+          <DataView value={fixture.input_data} defaultMode="table" maxHeight={maxHeight} />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+        <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="text-[10px] uppercase font-semibold tracking-wider text-gray-500 dark:text-gray-400">
+            Expected vs Actual
+          </div>
+          <div className="text-[11px] text-gray-400 mt-0.5">
+            {aggregateExpected
+              ? `Aggregate expectation across ${routeKeys.length} routes.`
+              : "Oracle expectation and optional saved model output."}
+          </div>
+        </div>
+        <div className="p-3">
+          {aggregateExpected && (
+            <div className="mb-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+              <div className="font-semibold">This fixture is multi-route but the expectation has no route key.</div>
+              <div className="mt-1 text-amber-800/80 dark:text-amber-200/80">
+                Expected cells are a union over: <span className="font-mono">{routeKeys.join(" · ")}</span>. For a true per-route CRUD eval, split this into one case per route or change the expected schema to include route → entity → field.
+              </div>
+            </div>
+          )}
+          {actualParsed == null ? (
+            <DataView value={fixture.expected} defaultMode="table" maxHeight={maxHeight} />
+          ) : (
+            <DataView
+              value={actualParsed}
+              expected={fixture.expected}
+              inputData={fixture.input_data}
+              defaultMode="table"
+              expectedLabel="Expectation"
+              valueLabel="Actual"
+              maxHeight={maxHeight}
+            />
+          )}
+          {omittedRows.length > 0 && (
+            <div className="mt-4 overflow-hidden rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20">
+              <div className="px-3 py-2 border-b border-amber-200 dark:border-amber-800">
+                <div className="text-[10px] uppercase font-semibold tracking-wider text-amber-700 dark:text-amber-300">
+                  Not expected
+                </div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  Input fields intentionally absent from the oracle expectation.
+                </div>
+              </div>
+              <div className="overflow-auto">
+                <table className="w-full min-w-[720px] text-xs">
+                  <thead>
+                    <tr className="text-left bg-white/70 dark:bg-gray-900/70">
+                      {["Entity", "Input field", "DB column", "Why omitted"].map(h => (
+                        <th key={h} className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-400 border-b border-amber-100 dark:border-amber-900">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {omittedRows.map(row => (
+                      <tr key={`${row.entity}:${row.dbColumn}`} className="border-b border-amber-100 dark:border-amber-900 last:border-0">
+                        <td className="px-3 py-2 font-mono font-medium text-gray-700 dark:text-gray-300">{row.entity}</td>
+                        <td className="px-3 py-2 font-mono text-gray-600 dark:text-gray-300">{row.field}</td>
+                        <td className="px-3 py-2 font-mono text-gray-500 dark:text-gray-400">{row.dbColumn}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.why}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewCompareModal({
+  fixture, actualParsed, onClose,
+}: {
+  fixture: OracleFixtureDetail;
+  actualParsed: unknown | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative z-10 w-[min(1500px,96vw)] max-h-[94vh] flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Review comparison</h2>
+            <p className="text-[11px] font-mono text-gray-400 mt-0.5">{fixture.fixture_id}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+            title="Close popup"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          <ReviewComparePanel fixture={fixture} actualParsed={actualParsed} expanded />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Tab4_Review({
   fixture, pendingActions, onAction, onSave, isSaving,
   reviewerName, onReviewerChange,
   onPromote, isPromoting,
+  compareHref, compareFocus = false,
 }: {
   fixture: OracleFixtureDetail; pendingActions: ReviewActionPayload[];
   onAction: (a: ReviewActionPayload) => void; onSave: () => void;
   isSaving: boolean; reviewerName: string; onReviewerChange: (s: string) => void;
   onPromote: () => void; isPromoting: boolean;
+  compareHref: string; compareFocus?: boolean;
 }) {
+  const [compareOpen, setCompareOpen] = useState(false);
   const hasExpectation = Object.keys(fixture.expected || {}).length > 0;
   const isCrud = isCrudReviewable(fixture.expected);
   // Source of truth = expected + per-cell confidence (review_items may be empty
@@ -1227,13 +1391,26 @@ function Tab4_Review({
   const pendingCount = isCrud ? countPendingReview(buildRows(fixture, pendingActions)) : 0;
 
   // Pull Actual Output from sessionStorage (saved in step 1)
+  const actualStorageKey = `oracle-actual::${fixture.fixture_id}`;
+  const compareStorageKey = `oracle-actual-compare::${fixture.fixture_id}`;
   const actualRaw = (() => {
-    try { return sessionStorage.getItem(`oracle-actual::${fixture.fixture_id}`) ?? ""; } catch { return ""; }
+    try {
+      return sessionStorage.getItem(actualStorageKey)
+        ?? (compareFocus ? localStorage.getItem(compareStorageKey) : null)
+        ?? "";
+    } catch { return ""; }
   })();
   const actualParsed = (() => {
     if (!actualRaw.trim()) return null;
     try { return JSON.parse(actualRaw); } catch { return actualRaw; }
   })();
+
+  function cacheActualForCompareTab() {
+    try {
+      if (actualRaw.trim()) localStorage.setItem(compareStorageKey, actualRaw);
+      else localStorage.removeItem(compareStorageKey);
+    } catch { /* ignore */ }
+  }
 
   function approveAllRemaining() {
     for (const row of buildRows(fixture, pendingActions)) {
@@ -1255,17 +1432,42 @@ function Tab4_Review({
 
   return (
     <div className="space-y-4">
-      {/* Compare actual vs expected */}
-      {actualParsed != null && (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="px-3 py-2 text-[10px] uppercase font-semibold tracking-wider text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-            Actual Output (from step 1)
+      {/* Input + expected/actual comparison */}
+      <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/30 dark:bg-indigo-950/10 overflow-hidden">
+        <div className="px-3 py-2 border-b border-indigo-100 dark:border-indigo-900 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-[10px] uppercase font-semibold tracking-wider text-indigo-700 dark:text-indigo-300">
+              Input & comparison
+            </div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              Fixture input, oracle expectation, and optional actual output.
+            </div>
           </div>
-          <pre className="text-xs font-mono p-3 max-h-48 overflow-auto whitespace-pre-wrap break-all bg-white dark:bg-gray-950">
-            {typeof actualParsed === "string" ? actualParsed : JSON.stringify(actualParsed, null, 2)}
-          </pre>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCompareOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors"
+              title="Open comparison in popup"
+            >
+              <Maximize2 size={13} /> Popup
+            </button>
+            <a
+              href={compareHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={cacheActualForCompareTab}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors"
+              title="Open comparison in a new browser tab"
+            >
+              <ExternalLink size={13} /> New tab
+            </a>
+          </div>
         </div>
-      )}
+        <div className="p-3">
+          <ReviewComparePanel fixture={fixture} actualParsed={actualParsed} expanded={compareFocus} />
+        </div>
+      </div>
 
       {/* Reviewer + actions row */}
       <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
@@ -1319,6 +1521,14 @@ function Tab4_Review({
 
       {/* Promote history — what landed in which suite, when, with detail */}
       <OraclePromoteHistory fixtureId={fixture.fixture_id} />
+
+      {compareOpen && (
+        <ReviewCompareModal
+          fixture={fixture}
+          actualParsed={actualParsed}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1652,13 +1862,27 @@ const INPUT_PLACEHOLDER = `{
 
 function FixtureModal({ suiteId, fixture, onClose, onGenerate, isGenerating }: {
   suiteId: string; fixture?: OracleFixtureDetail;
-  onClose: () => void; onGenerate: (caseId: string, inputData: Record<string, unknown>) => void;
+  onClose: () => void; onGenerate: (caseId: string, inputData: Record<string, unknown>, model?: string) => void;
   isGenerating: boolean;
 }) {
   const isEdit = !!fixture;
   const [caseId, setCaseId]     = useState(fixture?.fixture_id ?? "");
   const [inputJson, setInputJson] = useState(fixture ? JSON.stringify(fixture.input_data, null, 2) : "");
   const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // Oracle generation runs through the anthropic-backed strategy. List only
+  // that provider's models so the picked id is valid for the actual provider.
+  const { data: providers } = useLLMProviders();
+  const { data: schema } = useOracleSchema();
+  const anthropic = providers?.providers.find((p) => p.key === "anthropic");
+  const oracleModels = anthropic?.models ?? [];
+  const defaultModel = (schema?.meta?.default_model as string) || anthropic?.default_model || "";
+  const oraclePromptVersion = (schema?.meta?.prompt_version as string) || "";
+  const [model, setModel] = useState(fixture?.oracle_model || defaultModel);
+  // Adopt the resolved default once providers/schema load (only if untouched).
+  useEffect(() => {
+    if (!model && defaultModel) setModel(defaultModel);
+  }, [defaultModel, model]);
 
   function handleSubmit() {
     setJsonError(null);
@@ -1670,7 +1894,7 @@ function FixtureModal({ suiteId, fixture, onClose, onGenerate, isGenerating }: {
       setJsonError((e as Error).message);
       return;
     }
-    onGenerate(caseId, parsed);
+    onGenerate(caseId, parsed, model || undefined);
   }
 
   return (
@@ -1697,6 +1921,27 @@ function FixtureModal({ suiteId, fixture, onClose, onGenerate, isGenerating }: {
               onChange={e => setCaseId(e.target.value.replace(/\s+/g, "_"))}
               disabled={isEdit}
             />
+          </div>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Oracle Model</label>
+              <select
+                className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-mono focus:outline-none focus:border-indigo-400"
+                value={model}
+                onChange={e => setModel(e.target.value)}
+              >
+                {oracleModels.length === 0 && <option value="">{defaultModel || "(default)"}</option>}
+                {oracleModels.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Oracle Prompt</label>
+              <div className="text-sm border border-gray-100 dark:border-gray-700 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 font-mono truncate" title="Baked-in oracle prompt — not the production prompt under test">
+                {oraclePromptVersion || "—"}
+              </div>
+            </div>
           </div>
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -1768,16 +2013,25 @@ function GlobalPromoteHistory() {
 
 export function OracleReviewPage() {
   const { suiteId: urlSuiteId } = useParams<{ suiteId?: string }>();
+  const [searchParams] = useSearchParams();
   const { data: suites = [], isLoading: loadingSuites } = useSuites();
+  const queryFixtureId = searchParams.get("fixture") ?? "";
+  const queryTab = searchParams.get("tab");
+  const requestedTab = isTabId(queryTab) ? queryTab : null;
+  const compareFocus = searchParams.get("view") === "compare";
 
   const [expandedSuiteId, setExpandedSuiteId]       = useState(urlSuiteId ?? "");
+
+  // Active prompt version of the open suite — the production prompt that the
+  // Oracle-Prompt tab meta-generates from. DB-backed, NOT the file default.
+  const { data: activeOraclePv } = useActivePromptVersion(expandedSuiteId);
 
   // Sync URL suiteId → auto-expand on navigation
   useEffect(() => {
     if (urlSuiteId) setExpandedSuiteId(urlSuiteId);
   }, [urlSuiteId]);
-  const [selectedFixtureId, setSelectedFixtureId]   = useState("");
-  const [activeTab, setActiveTab]                   = useState<TabId>("input");
+  const [selectedFixtureId, setSelectedFixtureId]   = useState(queryFixtureId);
+  const [activeTab, setActiveTab]                   = useState<TabId>(requestedTab ?? "input");
   const [suiteModal, setSuiteModal]                 = useState<null | { mode: "create" } | { mode: "edit"; suite: Suite }>(null);
   const [fixtureModal, setFixtureModal]             = useState<null | { suiteId: string; fixture?: OracleFixtureDetail }>(null);
   const [pendingActions, setPendingActions]         = useState<ReviewActionPayload[]>([]);
@@ -1801,6 +2055,12 @@ export function OracleReviewPage() {
 
   const providers = providersResp?.providers ?? [];
 
+  // Deep-link support for "open comparison in new tab".
+  useEffect(() => {
+    if (queryFixtureId) setSelectedFixtureId(queryFixtureId);
+    if (requestedTab) setActiveTab(requestedTab);
+  }, [queryFixtureId, requestedTab]);
+
   // Initialize provider/model when the registry loads. Prefer anthropic
   // (meta-prompt + oracle are designed for Opus-class judges); fall back to
   // the first registered provider.
@@ -1818,7 +2078,7 @@ export function OracleReviewPage() {
     setLastFixtureId(selectedFixtureId);
     setPendingActions([]);
     setPreview(null);
-    setActiveTab("input");
+    setActiveTab(requestedTab ?? "input");
     setOraclePrompt("");
     setOraclePromptVersion("");
     setMetaPromptVersion("");
@@ -1977,9 +2237,9 @@ export function OracleReviewPage() {
     setModel(m);
   }
 
-  async function handleGenerate(caseId: string, inputData: Record<string, unknown>) {
+  async function handleGenerate(caseId: string, inputData: Record<string, unknown>, model?: string) {
     const suiteId = fixtureModal?.suiteId ?? expandedSuiteId;
-    await generateMutation.mutateAsync({ case_id: caseId, suite_id: suiteId, input_data: inputData });
+    await generateMutation.mutateAsync({ case_id: caseId, suite_id: suiteId, input_data: inputData, oracle_model: model });
     setFixtureModal(null);
     setExpandedSuiteId(suiteId);
     setSelectedFixtureId(caseId);
@@ -2007,6 +2267,9 @@ export function OracleReviewPage() {
         ? countPendingReview(buildRows(fixture, pendingActions))
         : fixture.review_items.filter(r => r.action == null).length)
     : 0;
+  const compareHref = fixture
+    ? `/#/suites/${encodeURIComponent(expandedSuiteId)}/oracle-review?fixture=${encodeURIComponent(fixture.fixture_id)}&tab=review&view=compare`
+    : "";
 
   return (
     <div className="h-[calc(100vh-56px)] flex bg-gray-50 dark:bg-gray-950">
@@ -2079,7 +2342,7 @@ export function OracleReviewPage() {
               ) : !fixture ? (
                 <div className="flex items-center justify-center h-32 text-sm text-gray-400">Fixture not found</div>
               ) : (
-                <div className="max-w-3xl mx-auto">
+                <div className={`${activeTab === "review" ? "max-w-7xl" : "max-w-3xl"} mx-auto`}>
                   {activeTab === "input" && (
                     <Tab1_Input fixture={fixture} suiteId={expandedSuiteId} />
                   )}
@@ -2087,9 +2350,10 @@ export function OracleReviewPage() {
                     <Tab2_OraclePrompt
                       fixture={fixture}
                       productionPrompt={
-                        suites.find(s => s.suite_id === expandedSuiteId)?.default_system_prompt
-                          ?? fixture.production_prompt
-                          ?? ""
+                        systemPromptOf(activeOraclePv)
+                          || suites.find(s => s.suite_id === expandedSuiteId)?.default_system_prompt
+                          || fixture.production_prompt
+                          || ""
                       }
                       oraclePrompt={oraclePrompt}
                       onOraclePromptChange={setOraclePrompt}
@@ -2132,6 +2396,8 @@ export function OracleReviewPage() {
                       onReviewerChange={setReviewerName}
                       onPromote={handlePromote}
                       isPromoting={promoteMut.isPending}
+                      compareHref={compareHref}
+                      compareFocus={compareFocus}
                     />
                   )}
                 </div>
