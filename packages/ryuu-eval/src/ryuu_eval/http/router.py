@@ -393,7 +393,12 @@ def build_eval_router(
             for s in await suite_store.list_suites():
                 sid = s["suite_id"]
                 tpls = [t for t in template_registry.values() if t.suite_id == sid]
-                out.append({**s, "templates": [_dataclass_dict(t) for t in tpls]})
+                cfg = _read_suite_config(sid)
+                out.append({
+                    **s,
+                    "templates": [_dataclass_dict(t) for t in tpls],
+                    "default_system_prompt": cfg.get("default_system_prompt"),
+                })
             return out
         suite_ids: set[str] = set()
         for tpl in template_registry.values():
@@ -422,11 +427,13 @@ def build_eval_router(
                 raise HTTPException(404, f"Suite not found: {suite_id}")
             tpls = [t for t in template_registry.values() if t.suite_id == suite_id]
             last_run = _read_last_run(suite_id)
+            cfg = _read_suite_config(suite_id)
             return {
                 **db_suite,
                 "templates": [_dataclass_dict(t) for t in tpls],
                 "datasets": [],
                 "model": (last_run or {}).get("model"),
+                "default_system_prompt": cfg.get("default_system_prompt"),
                 "last_run": (
                     {
                         "run_id": last_run.get("run_id"),
@@ -621,7 +628,17 @@ def build_eval_router(
                 suite_id, title=str(body.get("title") or suite_id),
                 domain_id=prompt_default_domain_id,
             )
-            return {"suite_id": suite_id, "title": body.get("title") or suite_id}
+            cfg: dict[str, Any] = {}
+            for key in ("description", "default_system_prompt", "template_id"):
+                if body.get(key) is not None:
+                    cfg[key] = body[key]
+            if cfg:
+                _write_suite_config(suite_id, cfg)
+            return {
+                "suite_id": suite_id,
+                "title": body.get("title") or suite_id,
+                "default_system_prompt": cfg.get("default_system_prompt"),
+            }
         suite_dir = _suite_dir(suite_id)
         suite_dir.mkdir(parents=True, exist_ok=True)
         cfg: dict[str, Any] = {}

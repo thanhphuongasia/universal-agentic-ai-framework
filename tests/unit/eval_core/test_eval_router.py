@@ -22,6 +22,7 @@ def _make_router(
     fixtures_dir: Path | None = None,
     cases_dir: Path | None = None,
     external_projects: list[ExternalProject] | None = None,
+    suite_store=None,
 ):
     tpl = EvalCaseTemplate(
         template_id="tpl_a",
@@ -48,6 +49,8 @@ def _make_router(
         kwargs["cases_dir"] = cases_dir
     if external_projects is not None:
         kwargs["external_projects"] = external_projects
+    if suite_store is not None:
+        kwargs["suite_store"] = suite_store
     return build_eval_router(**kwargs)
 
 
@@ -254,7 +257,50 @@ class TestListSuiteCasesIncludesFixtures:
 
 
 # ---------------------------------------------------------------------------
-# T05 — GET /projects — local project
+# T05 — DB-backed suites still expose file-backed prompt config
+# ---------------------------------------------------------------------------
+
+
+class _FakeSuiteStore:
+    async def list_suites(self):
+        return [{"suite_id": "suite_a", "title": "DB Suite A", "case_count": 0}]
+
+    async def get_suite(self, suite_id: str):
+        if suite_id != "suite_a":
+            return None
+        return {
+            "suite_id": suite_id,
+            "title": "DB Suite A",
+            "case_count": 0,
+            "active_prompt_version_id": None,
+        }
+
+
+class TestDbBackedSuitePromptConfig:
+    def test_default_prompt_appears_in_db_backed_suite_metadata(self, tmp_path):
+        router = _make_router(
+            cases_dir=tmp_path / "cases",
+            suite_store=_FakeSuiteStore(),
+        )
+        client = TestClient(_app(router))
+
+        save = client.put(
+            "/api/eval/suites/suite_a/default-prompt",
+            json={"default_system_prompt": "PROMPT FROM FILE CONFIG"},
+        )
+        assert save.status_code == 200
+
+        detail = client.get("/api/eval/suites/suite_a")
+        assert detail.status_code == 200
+        assert detail.json()["default_system_prompt"] == "PROMPT FROM FILE CONFIG"
+
+        listed = client.get("/api/eval/suites")
+        assert listed.status_code == 200
+        assert listed.json()[0]["default_system_prompt"] == "PROMPT FROM FILE CONFIG"
+
+
+# ---------------------------------------------------------------------------
+# T06 — GET /projects — local project
 # ---------------------------------------------------------------------------
 
 
@@ -297,7 +343,7 @@ class TestListProjectsLocal:
 
 
 # ---------------------------------------------------------------------------
-# T06 — GET /projects — external project (mocked httpx)
+# T07 — GET /projects — external project (mocked httpx)
 # ---------------------------------------------------------------------------
 
 
@@ -376,7 +422,7 @@ class TestExternalProject:
 
 
 # ---------------------------------------------------------------------------
-# T07 — GET /projects/{id} stale cache fallback
+# T08 — GET /projects/{id} stale cache fallback
 # ---------------------------------------------------------------------------
 
 
@@ -448,7 +494,7 @@ class TestExternalProjectCacheFallback:
 
 
 # ---------------------------------------------------------------------------
-# T08 — POST /projects/{id}/sync
+# T09 — POST /projects/{id}/sync
 # ---------------------------------------------------------------------------
 
 
