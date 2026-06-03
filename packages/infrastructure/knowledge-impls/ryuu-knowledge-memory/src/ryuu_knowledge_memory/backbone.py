@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import TYPE_CHECKING, Any
 
 from ryuu_knowledge_base.backbone import AssembledContext, BackboneType, QueryResult
 from ryuu_knowledge_memory.episodic import EpisodicMemoryStore
-from ryuu_knowledge_memory.store import IMemoryStore
+from ryuu_knowledge_memory.store import IMemoryStore, MemoryLayer
 from ryuu_knowledge_memory.working import WorkingMemoryStore
+
+if TYPE_CHECKING:
+    from ryuu_knowledge_memory.consolidator import DreamingConsolidator, ExtractionFilter
 
 
 def _token_count(text: str) -> int:
@@ -15,11 +19,18 @@ def _token_count(text: str) -> int:
 class MemoryBackbone:
     backbone_type = BackboneType.MEMORY
 
-    def __init__(self, layers: list[IMemoryStore] | None = None) -> None:
+    def __init__(
+        self,
+        layers: list[IMemoryStore] | None = None,
+        processor: ExtractionFilter | None = None,
+        dreaming_consolidator: DreamingConsolidator | None = None,
+    ) -> None:
         self._layers: list[IMemoryStore] = layers or [
             WorkingMemoryStore(),
             EpisodicMemoryStore(),
         ]
+        self._processor = processor
+        self._dreamer = dreaming_consolidator
 
     async def write(
         self,
@@ -27,8 +38,39 @@ class MemoryBackbone:
         scope_key: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        meta = metadata or {}
+
+        # Working memory: always sync, no filtering
         for layer in self._layers:
-            await layer.store(observation, scope_key, metadata)
+            if layer.layer == MemoryLayer.WORKING:
+                await layer.store(observation, scope_key, meta)
+
+        # Episodic: run through extraction filter async (non-blocking)
+        for layer in self._layers:
+            if layer.layer == MemoryLayer.EPISODIC:
+                if self._processor is not None:
+                    asyncio.ensure_future(
+                        self._filtered_episodic_write(layer, observation, scope_key, meta)
+                    )
+                else:
+                    await layer.store(observation, scope_key, meta)
+
+    async def _filtered_episodic_write(
+        self,
+        layer: IMemoryStore,
+        observation: str,
+        scope_key: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        assert self._processor is not None
+        should_store, content, importance = await self._processor.process(observation)
+        if should_store:
+            await layer.store(content, scope_key, {**metadata, "importance": importance})
+
+    async def end_session(self, scope_key: str) -> None:
+        """Call when a user session ends to trigger async dreaming + eviction."""
+        if self._dreamer is not None:
+            asyncio.ensure_future(self._dreamer.run_cycle(scope_key))
 
     async def query(
         self,
