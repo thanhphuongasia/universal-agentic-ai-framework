@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>UAAF — Framework Architecture</title>
+<style>
+:root{
+  --accent:#7c3aed;--accent-soft:#ede9fe;--accent2:#0ea5e9;--accent2-soft:#e0f2fe;
+  --ok:#16a34a;--ok-soft:#dcfce7;--warn:#d97706;--warn-soft:#fef3c7;
+  --bad:#dc2626;--bad-soft:#fee2e2;
+  --ink:#1f2937;--muted:#6b7280;--bg:#f8fafc;--card:#fff;--border:#e5e7eb;
+  --sidebar-w:252px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  line-height:1.75;font-size:16px}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────────────────── */
+#sidebar{
+  position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);
+  background:#18181b;color:#e4e4e7;overflow-y:auto;z-index:100;
+  display:flex;flex-direction:column;
+  scrollbar-width:thin;scrollbar-color:#3f3f46 transparent;
+}
+#sidebar::-webkit-scrollbar{width:4px}
+#sidebar::-webkit-scrollbar-thumb{background:#3f3f46;border-radius:4px}
+
+.sb-header{padding:18px 16px 12px;border-bottom:1px solid #3f3f46}
+.sb-header .logo{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.01em}
+.sb-header .sub{font-size:11px;color:#71717a;margin-top:2px}
+
+.sb-section{padding:10px 0 4px}
+.sb-section-title{
+  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:#52525b;padding:4px 16px 6px;
+}
+.sb-item{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 16px;cursor:pointer;border-radius:0;
+  transition:background .12s;text-decoration:none;color:#a1a1aa;
+  font-size:13px;
+}
+.sb-item:hover{background:#27272a;color:#e4e4e7}
+.sb-item.active{background:#4c1d95;color:#fff}
+.sb-item .icon{font-size:14px;flex:0 0 auto}
+.sb-item .label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-item .badge{
+  flex:0 0 auto;font-size:10px;font-weight:700;
+  padding:1px 6px;border-radius:999px;background:#3f3f46;color:#a1a1aa;
+}
+.sb-item.active .badge{background:#7c3aed;color:#fff}
+.sb-divider{height:1px;background:#27272a;margin:6px 16px}
+
+/* ── MAIN ─────────────────────────────────────────────────────────────────── */
+#main{margin-left:var(--sidebar-w);min-height:100vh}
+.content{max-width:900px;padding:40px 48px 100px}
+
+/* ── TOPBAR (mobile) ──────────────────────────────────────────────────────── */
+#topbar{
+  display:none;position:sticky;top:0;z-index:99;
+  background:#18181b;color:#fff;padding:12px 16px;
+  align-items:center;gap:12px;border-bottom:1px solid #3f3f46;
+}
+#topbar .title{font-size:14px;font-weight:700;flex:1}
+#menu-btn{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:2px 4px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:98}
+
+/* ── TYPOGRAPHY ──────────────────────────────────────────────────────────── */
+.section{padding-top:8px}
+h2{font-size:24px;font-weight:800;margin:0 0 8px;display:flex;align-items:center;gap:12px;letter-spacing:-.02em}
+h2 .icon{font-size:26px}
+h3{font-size:18px;font-weight:700;color:var(--accent);margin:32px 0 10px}
+h4{font-size:15px;font-weight:700;margin:16px 0 5px}
+p{font-size:15px;margin:8px 0;line-height:1.75}
+ul,ol{font-size:15px;padding-left:22px}
+li{margin:5px 0;line-height:1.7}
+a{color:var(--accent)}
+
+.lead{
+  font-size:16px;background:var(--accent-soft);border-left:5px solid var(--accent);
+  padding:16px 20px;border-radius:10px;margin:12px 0 24px;line-height:1.7;
+}
+.divider{height:1px;background:var(--border);margin:48px 0}
+
+/* ── CARDS ───────────────────────────────────────────────────────────────── */
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:640px){.g2,.g3,.g4{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 22px}
+.card .tag{
+  display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;padding:3px 10px;border-radius:999px;margin-bottom:8px;
+}
+.tag.purple{color:var(--accent);background:var(--accent-soft)}
+.tag.blue{color:#0369a1;background:var(--accent2-soft)}
+.tag.green{color:var(--ok);background:var(--ok-soft)}
+.tag.orange{color:var(--warn);background:var(--warn-soft)}
+.tag.red{color:var(--bad);background:var(--bad-soft)}
+.tag.gray{color:#374151;background:#f1f5f9}
+.card h4{margin:0 0 6px;font-size:15px}
+.card p{margin:0;font-size:14px;color:#374151;line-height:1.7}
+.card ul{margin:6px 0 0;padding-left:18px}
+.card ul li{font-size:14px;color:#374151;line-height:1.65}
+
+/* ── TABLE ───────────────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;background:var(--card);
+  border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:10px 0}
+th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px;vertical-align:top;line-height:1.6}
+th{background:#f1f5f9;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+tr:last-child td{border-bottom:none}
+td code{font-family:ui-monospace,monospace;font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px}
+
+/* ── CODE ────────────────────────────────────────────────────────────────── */
+pre{background:#1e1e2e;color:#cdd6f4;padding:18px 22px;border-radius:12px;
+  font-size:13.5px;overflow-x:auto;line-height:1.65;margin:14px 0}
+code{font-family:ui-monospace,"Cascadia Code","Fira Code",monospace}
+.ic{background:#f1f5f9;color:#4c1d95;padding:1px 5px;border-radius:4px;
+  font-size:12px;font-family:ui-monospace,monospace}
+
+/* ── CALLOUT ─────────────────────────────────────────────────────────────── */
+.callout{border-radius:10px;padding:14px 18px;margin:16px 0;font-size:14.5px;line-height:1.7}
+.callout.warn{background:var(--warn-soft);border-left:4px solid var(--warn)}
+.callout.ok{background:var(--ok-soft);border-left:4px solid var(--ok)}
+.callout.info{background:var(--accent-soft);border-left:4px solid var(--accent)}
+.callout strong{display:block;margin-bottom:3px;font-size:13px}
+
+/* ── LAYER STACK ─────────────────────────────────────────────────────────── */
+.layer-stack{display:flex;flex-direction:column;gap:6px;max-width:640px;margin:14px 0}
+.layer{display:flex;align-items:stretch;border-radius:9px;overflow:hidden;
+  border:2px solid var(--border)}
+.layer-label{width:110px;flex:0 0 auto;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:10px 6px;text-align:center;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.layer-body{flex:1;padding:10px 14px}
+.layer-body .title{font-weight:700;font-size:13px;margin:0 0 2px}
+.layer-body .desc{font-size:11px;color:var(--muted);margin:0 0 5px}
+.layer-body .meta{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.pill.purple{background:var(--accent-soft);color:var(--accent)}
+.pill.blue{background:var(--accent2-soft);color:#0369a1}
+.pill.green{background:var(--ok-soft);color:var(--ok)}
+.pill.orange{background:var(--warn-soft);color:var(--warn)}
+
+.layer.working .layer-label{background:#f0fdf4;color:#166534;border-right:2px solid #bbf7d0}
+.layer.episodic .layer-label{background:#eff6ff;color:#1e40af;border-right:2px solid #bfdbfe}
+.layer.semantic .layer-label{background:var(--accent-soft);color:#4c1d95;border-right:2px solid #c4b5fd}
+
+.flow-arrow-v{text-align:center;color:var(--muted);font-size:16px;padding:2px 0}
+
+/* ── PACKAGE BADGE ───────────────────────────────────────────────────────── */
+.pkg-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.pkg-header .pkg-name{font-family:ui-monospace,monospace;font-size:15px;font-weight:700;color:var(--accent)}
+.pkg-header .pkg-ver{font-size:11px;color:var(--muted);background:#f1f5f9;padding:2px 8px;border-radius:999px}
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%);transition:transform .25s}
+  #sidebar.open{transform:translateX(0)}
+  #topbar{display:flex}
+  #main{margin-left:0}
+  .content{padding:20px 16px 60px}
+  #overlay.show{display:block}
+}
+
+/* ── DOC STATUS BAR + CHANGELOG ──────────────────────────────────────────── */
+#docstatus{
+  position:sticky;top:0;z-index:90;background:#fff;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 48px;font-size:12.5px;
+}
+#docstatus .st-pill{
+  display:inline-flex;align-items:center;gap:5px;font-weight:600;
+  padding:3px 10px;border-radius:999px;background:#f1f5f9;color:#374151;
+}
+#docstatus .st-pill.ok{background:var(--ok-soft);color:var(--ok)}
+#docstatus .st-pill.ver{background:var(--accent-soft);color:var(--accent)}
+#docstatus .st-spacer{flex:1}
+#docstatus .st-btn{
+  cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--ink);
+  font-size:12px;font-weight:600;padding:5px 12px;border-radius:8px;transition:background .12s;
+}
+#docstatus .st-btn:hover{background:#f8fafc}
+#changelog-panel{
+  background:#fff;border-bottom:1px solid var(--border);
+  padding:14px 48px 18px;box-shadow:0 6px 14px rgba(0,0,0,.05);
+}
+#changelog-panel[hidden]{display:none}
+#changelog-panel h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.cl-item{display:flex;gap:12px;padding:7px 0;border-bottom:1px dashed var(--border)}
+.cl-item:last-child{border-bottom:none}
+.cl-date{flex:0 0 92px;font-family:ui-monospace,monospace;font-size:12px;color:var(--accent);font-weight:600}
+.cl-body{font-size:13px;line-height:1.6;color:var(--ink)}
+.cl-body .cl-tag{
+  display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;
+  background:var(--accent2-soft);color:#0369a1;margin-right:6px;
+}
+.cl-body .cl-tag.ux{background:var(--ok-soft);color:var(--ok)}
+@media(max-width:768px){
+  #docstatus{position:static;padding:10px 16px}
+  #changelog-panel{padding:14px 16px}
+}
+
+/* ── BOT ↔ MEMORY FLOWCHART ──────────────────────────────────────────────── */
+.fc-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;font-weight:700;margin:4px 0}
+.fc-legend .fc-lg.sync{color:var(--ok)}
+.fc-legend .fc-lg.async{color:var(--warn)}
+.flowchart{display:flex;align-items:stretch;gap:4px;flex-wrap:wrap;margin:10px 0 6px;
+  background:#fafafa;border:1px solid var(--border);border-radius:12px;padding:16px 14px}
+.fc-stage{flex:1 1 160px;min-width:148px;display:flex;flex-direction:column;gap:7px}
+.fc-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:center}
+.fc-box{background:#fff;border:2px solid var(--border);border-radius:10px;padding:9px 10px;
+  font-size:12.5px;font-weight:700;line-height:1.3;text-align:center}
+.fc-box small{display:block;font-weight:500;font-size:10px;color:var(--muted);margin-top:3px;line-height:1.35}
+.fc-box.green{border-color:#86efac;background:#f0fdf4}
+.fc-box.blue{border-color:#93c5fd;background:#eff6ff}
+.fc-box.purple{border-color:#c4b5fd;background:var(--accent-soft)}
+.fc-note{font-size:10px;color:var(--muted);text-align:center;font-style:italic;line-height:1.4}
+.fc-arrow{flex:0 0 50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.fc-glyph{font-size:18px;color:#cbd5e1;line-height:1}
+.fc-lbl{font-size:9.5px;color:#94a3b8;text-align:center;line-height:1.35;font-weight:700}
+.fc-lbl.sync{color:var(--ok)}
+.fc-lbl.async{color:var(--warn)}
+.fc-mode{display:inline-block;font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:5px;vertical-align:middle}
+.fc-mode.sync{background:var(--ok-soft);color:var(--ok)}
+.fc-mode.async{background:var(--warn-soft);color:var(--warn)}
+@media(max-width:720px){
+  .flowchart{flex-direction:column;padding:14px 12px}
+  .fc-arrow{flex-basis:auto;padding:3px 0}
+  .fc-glyph{transform:rotate(90deg)}
+}
+
+/* ── EXTRA MOBILE POLISH ─────────────────────────────────────────────────── */
+@media(max-width:768px){
+  h2{font-size:20px;gap:8px}
+  h2 .icon{font-size:22px}
+  h3{font-size:16px;margin:24px 0 8px}
+  h4{font-size:14px}
+  .lead{font-size:14.5px;padding:13px 15px;border-left-width:4px}
+  th,td{padding:8px 10px;font-size:12.5px}
+  td code{font-size:11px;padding:1px 4px}
+  .layer-label{width:78px;font-size:9px;padding:8px 4px}
+  .layer-body .title{font-size:12px}
+  .layer-body .desc{font-size:10.5px}
+  pre{font-size:12px;padding:14px 14px;border-radius:10px}
+  .card{padding:16px 16px}
+  .callout{font-size:13.5px;padding:13px 15px}
+  .grid{gap:10px}
+}
+/* Tables luôn scroll ngang khi tràn (mobile) thay vì vỡ layout */
+.table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0}
+.table-scroll table{margin:0;min-width:540px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sb-header">
+    <div class="logo">UAAF Framework</div>
+    <div class="sub">Universal Agent Architecture v0.3</div>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Tổng quan</div>
+    <a class="sb-item active" href="#overview" onclick="nav(this)">
+      <span class="icon">🗺️</span><span class="label">Overview</span>
+    </a>
+    <a class="sb-item" href="#architecture" onclick="nav(this)">
+      <span class="icon">📐</span><span class="label">Architecture Map</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Core</div>
+    <a class="sb-item" href="#ryuu-core" onclick="nav(this)">
+      <span class="icon">⚙️</span><span class="label">ryuu-core</span>
+      <span class="badge">types</span>
+    </a>
+    <a class="sb-item" href="#ryuu-runtime" onclick="nav(this)">
+      <span class="icon">🔄</span><span class="label">ryuu-runtime</span>
+      <span class="badge">routing</span>
+    </a>
+    <a class="sb-item" href="#ryuu-workflow" onclick="nav(this)">
+      <span class="icon">🔀</span><span class="label">ryuu-workflow</span>
+      <span class="badge">state</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Cognitive — AI Logic</div>
+    <a class="sb-item" href="#ryuu-cognitive" onclick="nav(this)">
+      <span class="icon">🧠</span><span class="label">ryuu-cognitive</span>
+      <span class="badge">strategy</span>
+    </a>
+    <a class="sb-item" href="#ryuu-intent" onclick="nav(this)">
+      <span class="icon">🎯</span><span class="label">ryuu-intent</span>
+      <span class="badge">classify</span>
+    </a>
+    <a class="sb-item" href="#ryuu-reasoning" onclick="nav(this)">
+      <span class="icon">⚖️</span><span class="label">ryuu-reasoning</span>
+      <span class="badge">rules</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Execution — Agent</div>
+    <a class="sb-item" href="#ryuu-execution" onclick="nav(this)">
+      <span class="icon">🤖</span><span class="label">ryuu-execution</span>
+      <span class="badge">agents</span>
+    </a>
+    <a class="sb-item" href="#ryuu-hooks" onclick="nav(this)">
+      <span class="icon">🪝</span><span class="label">ryuu-hooks</span>
+      <span class="badge">lifecycle</span>
+    </a>
+    <a class="sb-item" href="#ryuu-guardrail" onclick="nav(this)">
+      <span class="icon">🛡️</span><span class="label">ryuu-guardrail</span>
+      <span class="badge">safety</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">LLM Providers</div>
+    <a class="sb-item" href="#ryuu-providers-core" onclick="nav(this)">
+      <span class="icon">🔌</span><span class="label">providers-core</span>
+      <span class="badge">protocol</span>
+    </a>
+    <a class="sb-item" href="#ryuu-providers-anthropic" onclick="nav(this)">
+      <span class="icon">🟣</span><span class="label">Anthropic</span>
+    </a>
+    <a class="sb-item" href="#ryuu-providers-openai" onclick="nav(this)">
+      <span class="icon">🟢</span><span class="label">OpenAI</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Storage</div>
+    <a class="sb-item" href="#ryuu-storage-core" onclick="nav(this)">
+      <span class="icon">💾</span><span class="label">storage-core</span>
+      <span class="badge">protocol</span>
+    </a>
+    <a class="sb-item" href="#ryuu-storage-impls" onclick="nav(this)">
+      <span class="icon">🗃️</span><span class="label">Implementations</span>
+      <span class="badge">4 backends</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Knowledge — AI Context</div>
+    <a class="sb-item" href="#ryuu-knowledge-base" onclick="nav(this)">
+      <span class="icon">📚</span><span class="label">knowledge-base</span>
+      <span class="badge">protocol</span>
+    </a>
+    <a class="sb-item" href="#ryuu-knowledge-rag" onclick="nav(this)">
+      <span class="icon">🔍</span><span class="label">knowledge-rag</span>
+      <span class="badge">RAG</span>
+    </a>
+    <a class="sb-item" href="#ryuu-knowledge-memory" onclick="nav(this)">
+      <span class="icon">🧩</span><span class="label">knowledge-memory</span>
+      <span class="badge">v0.3</span>
+    </a>
+    <a class="sb-item" href="#ryuu-knowledge-graph" onclick="nav(this)">
+      <span class="icon">🕸️</span><span class="label">knowledge-graph</span>
+      <span class="badge">graph</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Prompts &amp; Skills</div>
+    <a class="sb-item" href="#ryuu-prompts" onclick="nav(this)">
+      <span class="icon">📝</span><span class="label">ryuu-prompts</span>
+      <span class="badge">YAML</span>
+    </a>
+    <a class="sb-item" href="#ryuu-system-tools" onclick="nav(this)">
+      <span class="icon">🔧</span><span class="label">system-tools</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Messaging</div>
+    <a class="sb-item" href="#ryuu-messaging-core" onclick="nav(this)">
+      <span class="icon">💬</span><span class="label">messaging-core</span>
+      <span class="badge">protocol</span>
+    </a>
+    <a class="sb-item" href="#ryuu-messaging-channels" onclick="nav(this)">
+      <span class="icon">📱</span><span class="label">Telegram / CLI</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">MCP</div>
+    <a class="sb-item" href="#ryuu-mcp" onclick="nav(this)">
+      <span class="icon">🔗</span><span class="label">mcp-core + client</span>
+      <span class="badge">tools</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Observability</div>
+    <a class="sb-item" href="#ryuu-observability" onclick="nav(this)">
+      <span class="icon">📊</span><span class="label">observability</span>
+      <span class="badge">cost/audit</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">Eval</div>
+    <a class="sb-item" href="#ryuu-eval-core" onclick="nav(this)">
+      <span class="icon">🧪</span><span class="label">eval-core</span>
+      <span class="badge">runner</span>
+    </a>
+    <a class="sb-item" href="#ryuu-eval-scorers" onclick="nav(this)">
+      <span class="icon">📏</span><span class="label">eval-scorers</span>
+      <span class="badge">metrics</span>
+    </a>
+    <a class="sb-item" href="#ryuu-eval-oracle" onclick="nav(this)">
+      <span class="icon">🏅</span><span class="label">eval-oracle</span>
+      <span class="badge">golden</span>
+    </a>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-title">So sánh</div>
+    <a class="sb-item" href="#evaluation" onclick="nav(this)">
+      <span class="icon">⚖️</span><span class="label">Tiêu chí & So sánh</span>
+      <span class="badge">vs 6</span>
+    </a>
+  </div>
+
+  <div style="height:24px"></div>
+</nav>
+
+<!-- MOBILE TOPBAR -->
+<div id="topbar">
+  <button id="menu-btn" onclick="toggleSidebar()">☰</button>
+  <span class="title">UAAF Framework</span>
+</div>
+<div id="overlay" onclick="closeSidebar()"></div>
+
+<!-- MAIN CONTENT -->
+<main id="main">
+
+<!-- DOC STATUS BAR -->
+<div id="docstatus">
+  <span class="st-pill ver">UAAF v0.3.0a2</span>
+  <span class="st-pill ok">✅ 93 tests green</span>
+  <span class="st-pill">📅 Cập nhật 2026-06-03</span>
+  <span class="st-pill">📄 Chế độ: 1 mục = 1 trang</span>
+  <span class="st-spacer"></span>
+  <button class="st-btn" onclick="toggleChangelog()">🕘 Lịch sử cập nhật</button>
+</div>
+
+<!-- CHANGELOG PANEL -->
+<div id="changelog-panel" hidden>
+  <h4>Lịch sử cập nhật nội dung</h4>
+  <div class="cl-item">
+    <div class="cl-date">2026-06-03</div>
+    <div class="cl-body">
+      <span class="cl-tag ux">UX</span>Thêm <b>sơ đồ Bot A / Bot B ↔ Memory ↔ Data store</b> (ký hiệu SYNC/ASYNC, messaging adapter, store backend). Tinh chỉnh <b>responsive mobile</b> toàn trang — bảng cuộn ngang, flowchart reflow dọc, font/padding co theo màn hình.
+    </div>
+  </div>
+  <div class="cl-item">
+    <div class="cl-date">2026-06-03</div>
+    <div class="cl-body">
+      <span class="cl-tag ux">UX</span>Chuyển doc sang chế độ <b>router</b> — bấm mục ở sidebar mở <b>trang chi tiết</b> riêng (không còn cuộn dài). Thêm thanh status + panel lịch sử cập nhật ở đầu trang.
+    </div>
+  </div>
+  <div class="cl-item">
+    <div class="cl-date">2026-06-03</div>
+    <div class="cl-body">
+      <span class="cl-tag">memory</span>Mục <code>knowledge-memory</code>: thêm bảng <b>mỗi tầng lưu vào store nào + sync/async</b>, callout <b>2 giới hạn WIP</b> (Semantic chưa persist; persist ⊕ consolidate loại trừ nhau), và hướng dẫn tích hợp <b>Bot A / Bot B</b>.
+    </div>
+  </div>
+  <div class="cl-item">
+    <div class="cl-date">2026-06-03</div>
+    <div class="cl-body">
+      <span class="cl-tag">memory</span>Thêm mục <code>ryuu-knowledge-memory</code> v0.3 — 3 tầng nhớ (Working → Episodic → Semantic), DreamingConsolidator, EvictionJob, MemoryToolset.
+    </div>
+  </div>
+  <div class="cl-item">
+    <div class="cl-date">2026-06-01</div>
+    <div class="cl-body">
+      <span class="cl-tag">init</span>Bản đồ kiến trúc đầy đủ: 24 packages, bảng so sánh với 6 framework (LangChain, LangGraph, CrewAI, Claude/OpenAI SDK, AutoGen).
+    </div>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ═══ OVERVIEW ══════════════════════════════════════════════════════════ -->
+<section class="section" id="overview">
+<h2><span class="icon">🗺️</span> UAAF Framework Overview</h2>
+<div class="lead">
+  <strong>Universal Agent Architecture Framework</strong> — monorepo của các packages Python để xây dựng AI agents production-ready. Mỗi package độc lập, implement một protocol rõ ràng, có thể swap implementation mà không đổi code business logic.
+</div>
+
+<div class="grid g3">
+  <div class="card">
+    <span class="tag purple">Design principle</span>
+    <h4>Protocol-first</h4>
+    <p>Mọi layer đều có <code>IXxx</code> protocol. Code của bạn phụ thuộc vào interface, không phải concrete class → swap backend không cần refactor.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">Design principle</span>
+    <h4>Open/Closed</h4>
+    <p>Extend bằng cách thêm (new registry entry, new class). Không bao giờ sửa existing logic để accommodate variant mới.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">Design principle</span>
+    <h4>Registry pattern</h4>
+    <p>Provider, backend, adapter đều qua registry. Thêm provider mới = 1 dòng trong list. Zero changes elsewhere.</p>
+  </div>
+</div>
+
+<h3>Luồng request production</h3>
+<pre><code>User message
+    ↓
+RequestHandler.handle()          ← ryuu-runtime: single entry point
+    ↓
+StrategySelector → strategy_id   ← ryuu-runtime: cognitive strategy selection
+    ↓
+LLMIntentAnalyzer → difficulty   ← ryuu-intent: classify query complexity
+    ↓
+HookRegistry.pre_execute()       ← ryuu-hooks: PII scrub, rate limit check
+    ↓
+LLMAgent._react_loop()           ← ryuu-execution: tool-calling loop (canonical)
+    ├── ILLMProvider.complete()  ← ryuu-providers-*: Anthropic / OpenAI
+    ├── MemoryToolset.recall()   ← ryuu-knowledge-memory: cross-session context
+    └── MCPTool.call()           ← ryuu-mcp-client: external tools
+    ↓
+HookRegistry.post_execute()      ← ryuu-hooks: cost tracking, audit log
+    ↓
+AgentResult → OutgoingMessage    ← ryuu-messaging-core: send to channel</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ ARCHITECTURE MAP ═══════════════════════════════════════════════════ -->
+<section class="section" id="architecture">
+<h2><span class="icon">📐</span> Architecture Map</h2>
+<div class="table-scroll">
+<table>
+  <tr><th>Layer</th><th>Package</th><th>Import</th><th>Vai trò</th></tr>
+  <tr><td>Core</td><td>ryuu-core</td><td><code>ryuu_core</code></td><td>Types, errors, protocols (không có dependency)</td></tr>
+  <tr><td>Core</td><td>ryuu-runtime</td><td><code>ryuu_runtime</code></td><td>RequestHandler — entry point duy nhất</td></tr>
+  <tr><td>Core</td><td>ryuu-workflow</td><td><code>ryuu_workflow</code></td><td>WorkflowEngine, StateMachine, Checkpoint</td></tr>
+  <tr><td>Cognitive</td><td>ryuu-cognitive</td><td><code>ryuu_cognitive</code></td><td>LLMCompactor, QueryDecomposer, IVerifier</td></tr>
+  <tr><td>Cognitive</td><td>ryuu-intent</td><td><code>ryuu_intent</code></td><td>LLMIntentAnalyzer — classify query difficulty</td></tr>
+  <tr><td>Cognitive</td><td>ryuu-reasoning</td><td><code>ryuu_reasoning</code></td><td>Z3Verifier, RuleVerifier — formal constraints</td></tr>
+  <tr><td>Execution</td><td>ryuu-execution</td><td><code>ryuu_execution</code></td><td>LLMAgent, AgentPool, ToolRegistry</td></tr>
+  <tr><td>Execution</td><td>ryuu-hooks</td><td><code>ryuu_hooks</code></td><td>HookRegistry — lifecycle injection</td></tr>
+  <tr><td>Execution</td><td>ryuu-guardrail</td><td><code>ryuu_guardrail</code></td><td>GuardrailPipeline — input/output safety</td></tr>
+  <tr><td>Providers</td><td>ryuu-providers-core</td><td><code>ryuu_providers_core</code></td><td>ILLMProvider, CompletionRequest, Embedding</td></tr>
+  <tr><td>Providers</td><td>ryuu-providers-anthropic</td><td><code>ryuu_providers_anthropic</code></td><td>AnthropicProvider</td></tr>
+  <tr><td>Providers</td><td>ryuu-providers-openai</td><td><code>ryuu_providers_openai</code></td><td>OpenAIProvider</td></tr>
+  <tr><td>Storage</td><td>ryuu-storage-core</td><td><code>ryuu_storage_core</code></td><td>IKVStore, ICollectionStore protocols</td></tr>
+  <tr><td>Storage</td><td>ryuu-storage-postgres</td><td><code>ryuu_storage_postgres</code></td><td>PostgresKVStore, PostgresCollectionStore</td></tr>
+  <tr><td>Knowledge</td><td>ryuu-knowledge-base</td><td><code>ryuu_knowledge_base</code></td><td>IKnowledgeBackbone, AssembledContext</td></tr>
+  <tr><td>Knowledge</td><td>ryuu-knowledge-memory</td><td><code>ryuu_knowledge_memory</code></td><td>MemoryBackbone — cross-session context</td></tr>
+  <tr><td>Knowledge</td><td>ryuu-knowledge-rag</td><td><code>ryuu_knowledge_rag</code></td><td>RAGBackbone — document retrieval</td></tr>
+  <tr><td>Knowledge</td><td>ryuu-knowledge-graph</td><td><code>ryuu_knowledge_graph</code></td><td>GraphBackbone — entity relationships</td></tr>
+  <tr><td>Prompts</td><td>ryuu-prompts</td><td><code>ryuu_prompts</code></td><td>PromptRegistry, PromptSkillRegistry (YAML)</td></tr>
+  <tr><td>Messaging</td><td>ryuu-messaging-core</td><td><code>ryuu_messaging_core</code></td><td>ConversationManager, Session, IChannelAdapter</td></tr>
+  <tr><td>Messaging</td><td>ryuu-messaging-telegram</td><td><code>ryuu_messaging_telegram</code></td><td>TelegramAdapter</td></tr>
+  <tr><td>MCP</td><td>ryuu-mcp-client</td><td><code>ryuu_mcp_client</code></td><td>MCPClient, MCPToolset, SkillManager</td></tr>
+  <tr><td>Observability</td><td>ryuu-observability-core</td><td><code>ryuu_observability_core</code></td><td>CostTracker, AuditLogger, RateLimiter</td></tr>
+  <tr><td>Eval</td><td>ryuu-eval-core</td><td><code>ryuu_eval_core</code></td><td>EvalRunner, EvalCase, Scorer protocol</td></tr>
+  <tr><td>Eval</td><td>ryuu-eval-scorers</td><td><code>ryuu_eval_scorers</code></td><td>ExactMatch, LLMJudge, SemanticSimilarity</td></tr>
+  <tr><td>Eval</td><td>ryuu-eval-oracle</td><td><code>ryuu_eval_oracle</code></td><td>IOracleStrategy, Golden Dataset workflow</td></tr>
+</table>
+</div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ CORE ═══════════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-core">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-core</span>
+  <span class="pkg-ver">v0.2.0a1</span>
+  <span class="tag gray">no dependencies</span>
+</div>
+<h2><span class="icon">⚙️</span> Core Types &amp; Protocols</h2>
+<div class="lead">Foundation của toàn bộ framework. Không có dependency nào khác — tất cả packages khác import từ đây. Định nghĩa types, error hierarchy, và Null implementations.</div>
+
+<div class="grid g3">
+  <div class="card">
+    <span class="tag purple">Context</span>
+    <h4>ExecutionContext</h4>
+    <p>Carry-along data qua toàn bộ request lifecycle: user_id, session_id, strategy_id, cost budget, correlation_id.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">Models</span>
+    <h4>Task, AgentResult, Cost</h4>
+    <p>Data classes chuẩn cho input/output của mọi agent call. Cost track input/output tokens + USD.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">Errors</span>
+    <h4>Error hierarchy</h4>
+    <p><code>FrameworkError</code> → <code>RetryableError</code>, <code>BudgetExceededError</code>, <code>DegradedError</code>. <code>classify_external_error()</code> maps provider exceptions.</p>
+  </div>
+</div>
+
+<h3>Null implementations</h3>
+<p>Tất cả observability protocols có Null version — dùng khi test hoặc khi không cần feature đó:</p>
+<pre><code>from ryuu_core import NullAuditLogger, NullCostTracker, NullRateLimiter, NullTracer
+
+# Dùng trong tests — không cần setup real infrastructure
+agent = LLMAgent(
+    audit_logger=NullAuditLogger(),
+    cost_tracker=NullCostTracker(),
+)</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-runtime">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-runtime</span>
+  <span class="tag gray">depends: ryuu-core</span>
+</div>
+<h2><span class="icon">🔄</span> Runtime — Request Routing</h2>
+<div class="lead"><code>RequestHandler.handle()</code> là <strong>entry point duy nhất</strong> cho mọi production request. Không gọi <code>agent.execute()</code> trực tiếp — nó bypass cognitive tier, không có strategy_id trong context.</div>
+
+<pre><code>from ryuu_runtime import RequestHandler, StrategySelector
+
+handler = RequestHandler(
+    strategy_selector=selector,
+    agent_pool=pool,
+    hooks=hook_registry,
+)
+
+result = await handler.handle(task)  # ← dùng cái này, không gọi agent trực tiếp</code></pre>
+
+<table>
+  <tr><th>Class</th><th>Vai trò</th></tr>
+  <tr><td><code>RequestHandler</code></td><td>Orchestrates: hooks → strategy selection → agent execution → hooks</td></tr>
+  <tr><td><code>StrategySelector</code></td><td>Maps intent → strategy_id (REACT, PARALLEL_FANOUT, EVALUATOR_OPTIMIZER...)</td></tr>
+  <tr><td><code>LLMIntentAnalyzer</code></td><td>LLM-based query classification → StructuredIntent với difficulty + topics</td></tr>
+</table>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-workflow">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-workflow</span>
+  <span class="pkg-ver">v0.2.0a1</span>
+</div>
+<h2><span class="icon">🔀</span> Workflow Engine</h2>
+<div class="lead">Multi-step workflow với state machine, checkpoint persistence (resume sau crash), và status tracking.</div>
+
+<div class="grid g2">
+  <div class="card">
+    <span class="tag purple">WorkflowEngine</span>
+    <h4>Run + resume workflows</h4>
+    <p>Chạy workflow từ đầu hoặc resume từ checkpoint. Track status: PENDING → RUNNING → COMPLETED / FAILED.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">StateMachine</span>
+    <h4>State transitions</h4>
+    <p>Định nghĩa states + transitions. Engine validate transition hợp lệ trước khi execute.</p>
+  </div>
+</div>
+<pre><code>from ryuu_workflow import WorkflowEngine, FileCheckpointStore, Workflow
+
+engine = WorkflowEngine(
+    checkpoint_store=FileCheckpointStore("~/.ryuu/checkpoints"),
+)
+
+workflow = Workflow(states=[...], transitions=[...])
+result = await engine.run(workflow, initial_state="start", context=ctx)
+# Nếu crash giữa chừng → engine.resume(workflow_id) tiếp tục từ checkpoint</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ COGNITIVE ═══════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-cognitive">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-cognitive</span>
+</div>
+<h2><span class="icon">🧠</span> Cognitive — AI Strategies</h2>
+<div class="lead">Các primitive để tăng chất lượng LLM output: compaction (shrink long history), query decomposition, expansion, và verifier.</div>
+
+<div class="grid g3">
+  <div class="card">
+    <span class="tag purple">LLMCompactor</span>
+    <h4>Conversation compaction</h4>
+    <p>Shrink conversation history khi quá dài. LLM summarize các turns cũ thành 1-2 paragraphs. Giữ nguyên N turns gần nhất.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">LLMQueryDecomposer</span>
+    <h4>Query decomposition</h4>
+    <p>Tách compound query thành sub-queries độc lập. Ví dụ: "so sánh A và B theo tiêu chí X" → 3 SubQuery objects.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">IVerifier</span>
+    <h4>Output verification</h4>
+    <p>Verify agent output trước khi return. <code>VerificationResult</code> có passed/failed + reason. Plug vào HookRegistry.</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <strong>Lưu ý quan trọng</strong>
+  Cognitive strategies (Plan-then-Execute, Best-of-N, Reflection) đều <em>wrap quanh</em> <code>_react_loop()</code>, không thay thế nó. ReAct là execution primitive — LLM gọi tools. Cognitive strategy là cách orchestrate nhiều ReAct calls.
+</div>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-intent">
+<div class="pkg-header"><span class="pkg-name">ryuu-intent</span></div>
+<h2><span class="icon">🎯</span> Intent Analysis</h2>
+<p><code>LLMIntentAnalyzer</code> classify query → <code>StructuredIntent</code>: difficulty (trivial/medium/hard), topics, và suggested strategy. StrategySelector dùng kết quả này để chọn model và cognitive strategy.</p>
+<pre><code>from ryuu_intent import LLMIntentAnalyzer, normalize_difficulty
+
+analyzer = LLMIntentAnalyzer(provider=anthropic_provider)
+intent = await analyzer.analyze("So sánh PostgreSQL và MongoDB cho OLAP workload")
+# intent.difficulty = "hard"
+# intent.topics = ["database", "analytics", "architecture"]</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-reasoning">
+<div class="pkg-header"><span class="pkg-name">ryuu-reasoning</span></div>
+<h2><span class="icon">⚖️</span> Reasoning — Formal Constraints</h2>
+<p><code>Z3Verifier</code> dùng SMT solver (Z3) để verify LLM output thỏa mãn formal constraints. <code>RuleVerifier</code> dùng Python rules đơn giản hơn.</p>
+<pre><code>from ryuu_reasoning import RuleVerifier, Rule
+
+verifier = RuleVerifier(rules=[
+    Rule("price_positive", lambda r: r["price"] > 0),
+    Rule("discount_valid",  lambda r: 0 <= r["discount"] <= 100),
+])
+result = await verifier.verify(agent_output)  # VerificationResult</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ EXECUTION ══════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-execution">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-execution</span>
+</div>
+<h2><span class="icon">🤖</span> Execution — Agents &amp; Tools</h2>
+<div class="lead"><code>LLMAgent._react_loop()</code> là implementation duy nhất cho production. Gọi provider với <code>tools=[...]</code>, loop trên <code>stop_reason=="tool_use"</code> cho đến <code>end_turn</code>.</div>
+
+<table>
+  <tr><th>Class</th><th>Dùng khi</th></tr>
+  <tr><td><code>LLMAgent</code></td><td>Single agent với tool-calling. Canonical implementation.</td></tr>
+  <tr><td><code>AgentPool</code></td><td>Fan-out nhiều agents song song (PARALLEL_FANOUT strategy).</td></tr>
+  <tr><td><code>ToolRegistry</code></td><td>Register tools để agent gọi. Validate input schema tự động.</td></tr>
+  <tr><td><code>BaseAgent</code></td><td>Extend khi cần custom agent không phải LLM.</td></tr>
+</table>
+
+<pre><code>from ryuu_execution import LLMAgent, ToolRegistry
+
+registry = ToolRegistry()
+registry.register(my_tool_fn)  # any async function với type annotations
+
+agent = LLMAgent(
+    provider=anthropic_provider,
+    tool_registry=registry,
+    max_iterations=8,
+)
+result = await agent.execute(task)  # AgentResult</code></pre>
+
+<div class="callout warn">
+  <strong>ReActStrategy là academic demo</strong>
+  <code>ReActStrategy</code> (text-parse DONE:/ACTION:) chỉ để minh họa paper ReAct 2022. Không dùng trong product code. Tool-calling JSON qua provider API là cách đúng.
+</div>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-hooks">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-hooks</span>
+  <span class="pkg-ver">v0.3.0a1</span>
+</div>
+<h2><span class="icon">🪝</span> Hooks — Lifecycle Injection</h2>
+<div class="lead">Inject behavior vào agent lifecycle mà không subclass. Pattern: register handler → framework gọi tại đúng lifecycle event.</div>
+
+<div class="grid g3">
+  <div class="card">
+    <span class="tag purple">Pre/Post Execute</span>
+    <h4>Request-level hooks</h4>
+    <p>Chạy trước/sau toàn bộ agent execution. Dùng cho: auth check, rate limit, cost budgeting.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">Pre/Post LLM</span>
+    <h4>LLM call hooks</h4>
+    <p>Wrap từng LLM call. Dùng cho: PII scrub trên prompt, response filtering, token counting.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">Pre/Post Tool</span>
+    <h4>Tool call hooks</h4>
+    <p>Wrap từng tool call. Dùng cho: approval gate (HITL), audit log, result caching.</p>
+  </div>
+</div>
+
+<pre><code>from ryuu_hooks import HookRegistry, HookEvent
+
+registry = HookRegistry()
+
+@registry.on(HookEvent.PRE_LLM)
+async def scrub_pii(ctx: PreLLMContext) -> None:
+    ctx.request.messages = [
+        replace(m, content=remove_pii(m.content))
+        for m in ctx.request.messages
+    ]
+
+@registry.on(HookEvent.ON_BUDGET_EXCEEDED)
+async def handle_budget(ctx: OnBudgetExceededContext) -> None:
+    await notify_admin(f"Budget exceeded: {ctx.scope_key}")</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-guardrail">
+<div class="pkg-header"><span class="pkg-name">ryuu-guardrail</span></div>
+<h2><span class="icon">🛡️</span> Guardrail — Safety Pipeline</h2>
+<p>Pipeline kiểm tra input/output của agent. Mỗi <code>IGuardrail</code> trả <code>GuardrailResult</code> với action: ALLOW / BLOCK / WARN.</p>
+<pre><code>from ryuu_guardrail import GuardrailPipeline, GuardrailAction
+
+pipeline = GuardrailPipeline(guardrails=[
+    ToxicityGuardrail(threshold=0.8),
+    PIIGuardrail(trust_level=TrustLevel.EXTERNAL),
+])
+
+result = await pipeline.check(user_input)
+if result.action == GuardrailAction.BLOCK:
+    return "Yêu cầu bị từ chối."</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ PROVIDERS ══════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-providers-core">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-providers-core</span>
+  <span class="tag gray">no LLM dependencies</span>
+</div>
+<h2><span class="icon">🔌</span> Providers Core — LLM Contract</h2>
+<div class="lead"><code>ILLMProvider</code> là protocol tất cả LLM adapters phải implement. Code của bạn chỉ phụ thuộc vào protocol này — swap Anthropic sang OpenAI không cần sửa business logic.</div>
+
+<table>
+  <tr><th>Type</th><th>Mô tả</th></tr>
+  <tr><td><code>ILLMProvider</code></td><td>Protocol: <code>complete()</code>, <code>stream()</code>, <code>embed()</code>, <code>estimate_cost()</code></td></tr>
+  <tr><td><code>CompletionRequest</code></td><td>Input: messages, model, max_tokens, temperature, tools, thinking_budget</td></tr>
+  <tr><td><code>Response</code></td><td>Output: content, model, usage (input/output tokens), tool_calls, thinking</td></tr>
+  <tr><td><code>Embedding</code></td><td>vector: list[float], model: str</td></tr>
+  <tr><td><code>ModelRouter</code></td><td>Route request tới provider khác nhau theo model name</td></tr>
+  <tr><td><code>ProviderFallbackChain</code></td><td>Try provider 1 → nếu fail → provider 2 → ...</td></tr>
+</table>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-providers-anthropic">
+<div class="pkg-header"><span class="pkg-name">ryuu-providers-anthropic</span></div>
+<h2><span class="icon">🟣</span> Anthropic Provider</h2>
+<pre><code>from ryuu_providers_anthropic import AnthropicProvider
+from ryuu_providers_core import CompletionRequest, Message
+
+provider = AnthropicProvider()  # reads ANTHROPIC_API_KEY from env
+
+response = await provider.complete(CompletionRequest(
+    model="claude-sonnet-4-6",
+    messages=[Message(role="user", content="Hello")],
+    max_tokens=1024,
+))
+# response.content, response.usage.input_tokens, response.usage.output_tokens
+
+# Embedding
+emb = await provider.embed("some text")
+# emb.vector: list[float]</code></pre>
+
+<p>Hỗ trợ native Extended Thinking (<code>thinking_budget</code>), streaming, và tool use.</p>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-providers-openai">
+<div class="pkg-header"><span class="pkg-name">ryuu-providers-openai</span></div>
+<h2><span class="icon">🟢</span> OpenAI Provider</h2>
+<pre><code>from ryuu_providers_openai import OpenAIProvider
+
+provider = OpenAIProvider()  # reads OPENAI_API_KEY from env
+# Same ILLMProvider interface — swap với AnthropicProvider không cần thay code</code></pre>
+<p>Hỗ trợ GPT-4o, o-series (reasoning), streaming, tool use, và embeddings.</p>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ STORAGE ════════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-storage-core">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-storage-core</span>
+  <span class="tag gray">no dependencies</span>
+</div>
+<h2><span class="icon">💾</span> Storage Core — Protocols</h2>
+<table>
+  <tr><th>Protocol</th><th>Operations</th><th>Dùng cho</th></tr>
+  <tr><td><code>IKVStore</code></td><td>get, put, delete, list</td><td>Settings, session state, config</td></tr>
+  <tr><td><code>IBlobStore</code></td><td>get, put, delete</td><td>File uploads, large binary</td></tr>
+  <tr><td><code>ICollectionStore</code></td><td>append, search, list, clear</td><td>Memory observations, chat history</td></tr>
+  <tr><td><code>IProfileStore</code></td><td>get, set, as_prompt_block</td><td>User profile → inject vào prompt</td></tr>
+</table>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-storage-impls">
+<h2><span class="icon">🗃️</span> Storage Implementations</h2>
+<div class="grid g2">
+  <div class="card">
+    <span class="tag gray">ryuu-storage-memory</span>
+    <h4>InMemoryKVStore / InMemoryCollectionStore</h4>
+    <p>Tests và prototyping. Không persist — mất sau process restart.</p>
+  </div>
+  <div class="card">
+    <span class="tag gray">ryuu-storage-sqlite</span>
+    <h4>SqliteKVStore / SqliteCollectionStore</h4>
+    <p>Single-user production. File-based, không cần server.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">ryuu-storage-jsonl</span>
+    <h4>JsonlCollectionStore</h4>
+    <p>Append-only log. Dùng cho episodic memory — human readable, dễ backup.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">ryuu-storage-postgres</span>
+    <h4>PostgresKVStore / Collection / Session / Profile</h4>
+    <p>Multi-tenant production. Connection pooling, full-text search.</p>
+  </div>
+</div>
+<pre><code>from ryuu_knowledge_memory import EpisodicMemoryStore
+from ryuu_storage_jsonl import JsonlCollectionStore
+from ryuu_storage_postgres import PostgresCollectionStore
+
+# Dev: JSONL file
+episodic = EpisodicMemoryStore(
+    collection=JsonlCollectionStore(path="~/.ryuu/memory/episodic")
+)
+
+# Production: Postgres
+episodic = EpisodicMemoryStore(
+    collection=PostgresCollectionStore(pool=db_pool, table="episodic_memory")
+)</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ KNOWLEDGE BASE ═════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-knowledge-base">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-knowledge-base</span>
+  <span class="tag gray">protocol only</span>
+</div>
+<h2><span class="icon">📚</span> Knowledge Base — Protocol</h2>
+<p><code>IKnowledgeBackbone</code> là interface chung cho tất cả knowledge backends. Mọi component nhận backbone đều dùng interface này.</p>
+<table>
+  <tr><th>Method</th><th>Mô tả</th></tr>
+  <tr><td><code>write(observation, scope_key, metadata)</code></td><td>Ghi thông tin mới vào backbone</td></tr>
+  <tr><td><code>query(query, scope_key, top_k)</code></td><td>Tìm kiếm → QueryResult(results, scores)</td></tr>
+  <tr><td><code>assemble_context(query, scope_key, budget_tokens)</code></td><td>Build context string cho prompt, capped by token budget</td></tr>
+</table>
+<p>Implementations: <code>MemoryBackbone</code>, <code>RAGBackbone</code>, <code>GraphBackbone</code>, <code>HybridBackbone</code>.</p>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-knowledge-rag">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-knowledge-rag</span>
+</div>
+<h2><span class="icon">🔍</span> Knowledge RAG — Document Retrieval</h2>
+<div class="lead">RAG pipeline đầy đủ: chunk documents → embed → store vector → retrieve by cosine similarity. Dùng cho knowledge base tĩnh (docs, FAQ, codebase).</div>
+
+<div class="grid g2">
+  <div class="card">
+    <span class="tag purple">Ingestion</span>
+    <h4>RAGPipeline</h4>
+    <p>Input: raw text → RecursiveChunker → embed via ILLMProvider → InMemoryVectorStore.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">Retrieval</span>
+    <h4>DenseRetriever</h4>
+    <p>Query embedding → cosine similarity → top-K chunks. RAGBackbone wrap lại thành IKnowledgeBackbone.</p>
+  </div>
+</div>
+
+<pre><code>from ryuu_knowledge_rag import RAGPipeline, RAGBackbone, InMemoryVectorStore
+
+pipeline = RAGPipeline(embedder=provider, vector_store=InMemoryVectorStore())
+await pipeline.ingest("Full documentation text here...")
+
+backbone = RAGBackbone(pipeline=pipeline, retriever=DenseRetriever(vector_store))
+ctx = await backbone.assemble_context("How to configure rate limiting?", scope_key="docs")</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ KNOWLEDGE MEMORY ════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-knowledge-memory">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-knowledge-memory</span>
+  <span class="pkg-ver">v0.3.0a2</span>
+  <span class="tag green">Quality layer mới</span>
+</div>
+<h2><span class="icon">🧩</span> Knowledge Memory — Cross-session Context</h2>
+<div class="lead">3-tier memory system: Working (session buffer) → Episodic (long-term observations) → Semantic (distilled facts). Tự động filter noise, consolidate qua LLM, và evict theo decay.</div>
+
+<h3>Ba tầng nhớ</h3>
+<div class="layer-stack">
+  <div class="layer working">
+    <div class="layer-label">Working</div>
+    <div class="layer-body">
+      <p class="title">WorkingMemoryStore</p>
+      <p class="desc">Session buffer. FIFO max 50. Sync write. Scope: session.</p>
+      <div class="meta">
+        <span class="pill green">Tốc độ cao</span>
+        <span class="pill green">In-memory hoặc ICollectionStore</span>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow-v">▼ promotes to</div>
+  <div class="layer episodic">
+    <div class="layer-label">Episodic</div>
+    <div class="layer-body">
+      <p class="title">EpisodicMemoryStore</p>
+      <p class="desc">Long-term observations. Max 500. Keyword overlap scoring. Async write qua ExtractionFilter.</p>
+      <div class="meta">
+        <span class="pill blue">active → consolidated → archived</span>
+        <span class="pill blue">JsonlCollectionStore / Postgres</span>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow-v">▼ consolidates to</div>
+  <div class="layer semantic">
+    <div class="layer-label">Semantic</div>
+    <div class="layer-body">
+      <p class="title">SemanticMemoryStore</p>
+      <p class="desc">Distilled facts. No limit. Cosine + keyword. Written by DreamingConsolidator post-session.</p>
+      <div class="meta">
+        <span class="pill purple">Không expire</span>
+        <span class="pill purple">Embedding dedup ≥ 0.92</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Mỗi tầng lưu vào đâu? Sync hay async?</h3>
+<div class="table-scroll">
+<table>
+  <tr>
+    <th>Tầng</th><th>Store mặc định</th><th>Store persistent</th><th>Write</th><th>Khi nào ghi</th>
+  </tr>
+  <tr>
+    <td><span class="pill green">Working</span></td>
+    <td>in-memory <code>deque</code> (FIFO 50)</td>
+    <td><code>ICollectionStore</code><br>(Sqlite / Jsonl)</td>
+    <td><span class="tag green">SYNC</span></td>
+    <td><code>await</code> inline trong <code>backbone.write()</code> — luôn ghi, không lọc</td>
+  </tr>
+  <tr>
+    <td><span class="pill blue">Episodic</span></td>
+    <td>in-memory <code>dict</code> (max 500)</td>
+    <td><code>JsonlCollectionStore</code><br>/ <code>PostgresCollectionStore</code></td>
+    <td><span class="tag orange">ASYNC</span> (có filter)<br><span class="tag gray">SYNC</span> (không filter)</td>
+    <td>Có <code>ExtractionFilter</code> → <code>ensure_future</code> (background, không block response). Không filter → <code>await</code> inline</td>
+  </tr>
+  <tr>
+    <td><span class="pill purple">Semantic</span></td>
+    <td>in-memory <code>dict</code><br><span class="tag red">chưa có collection</span></td>
+    <td>— <em>chưa persist</em></td>
+    <td><span class="tag orange">ASYNC</span></td>
+    <td>Post-session: <code>end_session()</code> → <code>ensure_future(run_cycle)</code> → <code>DreamingConsolidator</code> ghi</td>
+  </tr>
+</table>
+</div>
+
+<div class="callout warn">
+  <strong>2 giới hạn WIP — phải biết trước khi wire vào production</strong>
+  <strong style="font-weight:600;display:inline">①</strong> <code>SemanticMemoryStore</code> hiện <b>chỉ in-memory</b> (không nhận tham số <code>collection</code>). Facts đã distilled <b>mất khi restart process</b>.<br>
+  <strong style="font-weight:600;display:inline">②</strong> Lifecycle của episodic (<code>get_unconsolidated</code> / <code>mark_consolidated</code> / <code>archive</code> / eviction) <b>chỉ đọc in-memory <code>_store</code></b>. Khi truyền <code>collection=</code>, <code>store()</code> ghi thẳng vào collection và <u>không</u> populate <code>_store</code> → consolidation + eviction thấy 0 entry. Docstring ghi rõ: <em>"in-memory only; collection backend: subclass"</em>.<br>
+  → Nghĩa là <b>persist (collection)</b> và <b>consolidate (dreaming)</b> hiện <b>loại trừ nhau</b> trong cùng một episodic store. Bot phải chọn một, hoặc viết subclass collection-backed cho các method lifecycle.
+</div>
+
+<h3>Write flow (async)</h3>
+<pre><code># User gửi message → LLM gọi remember() tool
+await backbone.write("User thích dark mode", scope_key="user123")
+
+# Working: ghi SYNC ngay lập tức (không block response)
+# Episodic: ensure_future → background task:
+#   1. ExtractionFilter.process() → is_signal? importance?
+#   2. Nếu is_signal=True → EpisodicMemoryStore.store()
+#   3. Nếu is_signal=False → skip, không ghi</code></pre>
+
+<h3>Read flow</h3>
+<pre><code># Warm-start: inject vào mỗi prompt (RyuuHandler tự làm)
+result = await backbone.query("", scope_key="user123", top_k=3)
+# → ["User thích dark mode", "User dùng macOS", "Goal: launch tháng 8"]
+
+# Token-budget-aware context assembly
+ctx = await backbone.assemble_context(
+    query="UI preference",
+    scope_key="user123",
+    budget_tokens=300,  # capped
+)</code></pre>
+
+<h3>Quality Layer (optional)</h3>
+<pre><code>from ryuu_knowledge_memory import MemoryBackbone
+from ryuu_knowledge_memory.consolidator import (
+    ExtractionFilter, DreamingConsolidator, EvictionJob
+)
+
+backbone = MemoryBackbone(
+    layers=[WorkingMemoryStore(), episodic_store],
+    processor=ExtractionFilter(llm=provider),           # signal/noise filter
+    dreaming_consolidator=DreamingConsolidator(          # post-session consolidation
+        episodic=episodic, semantic=semantic, llm=provider, embedder=provider
+    ),
+)
+
+# Khi session kết thúc
+await backbone.end_session("user123:telegram")
+# → async: EvictionJob.run() + DreamingConsolidator.run_cycle()</code></pre>
+
+<h3>EvictionJob — importance-weighted decay</h3>
+<pre><code># score = importance_base × (0.95 ^ days_idle)
+# high=1.0 → không bao giờ evict
+# medium=0.6 → decay to 0.10 sau ~55 ngày
+# low=0.3 → decay to 0.10 sau ~37 ngày
+# score < 0.10 + status=consolidated → DELETE
+# score < 0.10 + status=active → ARCHIVE 30 ngày</code></pre>
+
+<h3>MemoryToolset — LLM tools</h3>
+<pre><code>from ryuu_knowledge_memory import MemoryToolset
+
+toolset = MemoryToolset(backbone=backbone)
+
+# Bind scope trước agent.run() — tool calls tự biết ghi vào đâu
+async with toolset.bind(scope_key="user123:telegram"):
+    result = await agent.run(message=user_input)
+
+# Tools: remember(fact), recall(query), list_memories()
+# opt-in: forget(query) — pass include_forget_tool=True</code></pre>
+
+<h3>Tích hợp vào bot — 2 công thức</h3>
+<div class="lead" style="font-size:14px">Framework ship <b>tools</b>; bot owns <b>policy</b> (ghi gì, scope nào, recall ở đâu). Mỗi bot tự dựng <code>MemoryBackbone</code> của nó. Cách ly bằng <code>scope_key</code> — không bao giờ đụng nhau.</div>
+
+<h4 style="margin:18px 0 4px;font-size:14px">Sơ đồ: Bot A / Bot B ↔ Memory ↔ Data store</h4>
+<div class="fc-legend">
+  <span class="fc-lg sync">▶ SYNC — await ngay, không block reply</span>
+  <span class="fc-lg async">⇢ ASYNC — ensure_future, chạy nền</span>
+</div>
+<div class="flowchart">
+  <div class="fc-stage">
+    <div class="fc-title">1 · Channel / Messaging</div>
+    <div class="fc-box green">Bot A<small>Telegram → TelegramAdapter</small></div>
+    <div class="fc-box blue">Bot B<small>CLI / Web → CLIAdapter</small></div>
+    <div class="fc-note">ConversationManager · ScopeDispatcher<br>tách user bằng <code>scope_key</code></div>
+  </div>
+
+  <div class="fc-arrow">
+    <span class="fc-glyph">→</span>
+    <span class="fc-lbl sync">remember()<br>recall()</span>
+  </div>
+
+  <div class="fc-stage">
+    <div class="fc-title">2 · Tool layer</div>
+    <div class="fc-box">MemoryToolset<small>bind(scope_key)</small></div>
+    <div class="fc-note">framework = tools<br>bot = policy</div>
+  </div>
+
+  <div class="fc-arrow">
+    <span class="fc-glyph">→</span>
+    <span class="fc-lbl">write()<br>query()</span>
+  </div>
+
+  <div class="fc-stage">
+    <div class="fc-title">3 · Backbone</div>
+    <div class="fc-box">MemoryBackbone</div>
+    <div class="fc-note">end_session()<br>⇢ DreamingConsolidator</div>
+  </div>
+
+  <div class="fc-arrow">
+    <span class="fc-glyph">→</span>
+    <span class="fc-lbl">ghi tầng</span>
+  </div>
+
+  <div class="fc-stage">
+    <div class="fc-title">4 · Tầng nhớ → Store</div>
+    <div class="fc-box green">Working <span class="fc-mode sync">▶ SYNC</span><small>deque · SqliteCollectionStore · JsonlCollectionStore</small></div>
+    <div class="fc-box blue">Episodic <span class="fc-mode async">⇢ ASYNC</span><small>JsonlCollectionStore · PostgresCollectionStore</small></div>
+    <div class="fc-box purple">Semantic <span class="fc-mode async">⇢ ASYNC</span><small>in-memory only — chưa persist</small></div>
+  </div>
+</div>
+<p style="font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.7">
+  <b>Ghi:</b> Working <b style="color:var(--ok)">SYNC</b> (await ngay) · Episodic <b style="color:var(--warn)">ASYNC</b> qua <code>ExtractionFilter.ensure_future()</code> · Semantic <b style="color:var(--warn)">ASYNC</b> sau <code>end_session()</code>.
+  <b>Đọc:</b> warm-start + <code>recall</code> dùng <b style="color:var(--ok)">SYNC</b> <code>backbone.query()</code>, gộp Working+Episodic+Semantic rồi chèn vào prompt.
+  Bot A và Bot B chạy <u>cùng pipeline</u>, chỉ khác store backend + prefix <code>scope_key</code>.
+</p>
+
+<h4 style="margin:18px 0 6px;font-size:14px;color:var(--ok)">Bot A — dev / demo (ephemeral, in-memory)</h4>
+<p style="font-size:13.5px;margin:0 0 6px">Zero config. Working + Episodic in-memory. Consolidation hoạt động. Mất hết khi restart — hợp test, notebook, hội thoại ngắn.</p>
+<pre><code>from ryuu_knowledge_memory import MemoryBackbone, MemoryToolset
+
+backbone = MemoryBackbone()              # Working + Episodic, in-memory
+toolset  = MemoryToolset(backbone=backbone)
+
+async with toolset.bind(scope_key="botA:user42"):
+    result = await agent.run(message=user_input)
+# Không persist. remember/recall/list_memories chạy ngay.</code></pre>
+
+<h4 style="margin:18px 0 6px;font-size:14px;color:#0369a1">Bot B — production (persistent + quality layer)</h4>
+<p style="font-size:13.5px;margin:0 0 6px">Persist qua JSONL/Postgres + ExtractionFilter lọc noise + DreamingConsolidator distill. Gọi <code>end_session()</code> khi turn/phiên kết thúc.</p>
+<pre><code>from ryuu_knowledge_memory import (
+    MemoryBackbone, WorkingMemoryStore, EpisodicMemoryStore,
+    SemanticMemoryStore, MemoryToolset,
+)
+from ryuu_knowledge_memory.consolidator import ExtractionFilter, DreamingConsolidator
+from ryuu_storage_jsonl import JsonlCollectionStore
+
+ROOT = "~/.ryuu/memory"
+episodic = EpisodicMemoryStore(max_entries=500)         # in-memory → dreaming chạy được
+semantic = SemanticMemoryStore()                        # in-memory (chưa persist)
+
+backbone = MemoryBackbone(
+    layers=[
+        WorkingMemoryStore(collection=JsonlCollectionStore(root_dir=ROOT, table="working")),
+        episodic,
+    ],
+    processor=ExtractionFilter(llm=provider),           # async signal/noise filter
+    dreaming_consolidator=DreamingConsolidator(
+        episodic=episodic, semantic=semantic,
+        llm=provider, embedder=provider,
+    ),
+)
+toolset = MemoryToolset(backbone=backbone)
+
+# mỗi turn — bind scope rồi chạy agent
+async with toolset.bind(scope_key="botB:user42:telegram"):
+    result = await agent.run(message=user_input)
+
+# khi session kết thúc → eviction + consolidation chạy background
+await backbone.end_session("botB:user42:telegram")</code></pre>
+
+<div class="callout info">
+  <strong>scope_key = ranh giới cách ly</strong>
+  Quy ước: <code>"&lt;bot&gt;:&lt;user&gt;:&lt;channel&gt;"</code>. Hai bot khác prefix → không bao giờ đọc trúng memory của nhau, dù dùng chung process hay chung storage backend. Cùng user trên 2 channel (Telegram vs CLI) cũng tách được nếu muốn, hoặc dùng chung <code>"&lt;bot&gt;:&lt;user&gt;"</code> để nhớ xuyên kênh.
+</div>
+
+<div class="callout warn">
+  <strong>Bot B muốn vừa persist episodic vừa dreaming?</strong>
+  Hiện chưa được trong cùng store (xem 2 giới hạn WIP ở trên). Nếu để <code>EpisodicMemoryStore(collection=...)</code>, consolidation/eviction sẽ no-op. Hai lối ra: (a) giữ episodic in-memory như ví dụ trên — accept mất khi restart; hoặc (b) viết subclass collection-backed override các method lifecycle. <code>ryuu_sensei</code> hiện đi hướng persist (collection) nên dreaming chưa kích hoạt.
+</div>
+
+<div class="callout ok">
+  <strong>93 tests green · v0.3.0a2</strong>
+  Quality layer mới implement 2026-06-03. ConflictResolver và SelfLearningStore intentionally omitted — conflict resolved at query time; SelfLearningStore deferred until correction signal exists.
+</div>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-knowledge-graph">
+<div class="pkg-header"><span class="pkg-name">ryuu-knowledge-graph</span></div>
+<h2><span class="icon">🕸️</span> Knowledge Graph</h2>
+<p>Graph-based knowledge backbone. Store entities (Node) và relationships (Edge), retrieve bằng graph traversal. Phù hợp cho domain có entity relationships rõ ràng (product catalog, org chart, code dependencies).</p>
+<pre><code>from ryuu_knowledge_graph import GraphBackbone, InMemoryGraphStore, Node, Edge
+
+store = InMemoryGraphStore()
+backbone = GraphBackbone(store=store)
+
+await store.add_node(Node(id="user_1", type="user", attributes={"name": "Phuong"}))
+await store.add_edge(Edge(source="user_1", target="project_42", type="owns"))
+
+# Neighbor traversal
+ctx = await backbone.assemble_context("user_1 projects", scope_key="...")</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ PROMPTS ════════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-prompts">
+<div class="pkg-header"><span class="pkg-name">ryuu-prompts</span></div>
+<h2><span class="icon">📝</span> Prompts &amp; Skills</h2>
+<div class="lead">Versioned YAML prompt management + Markdown prompt skills (Claude Code-style task templates).</div>
+
+<div class="grid g2">
+  <div class="card">
+    <span class="tag purple">PromptRegistry</span>
+    <h4>YAML-based versioned prompts</h4>
+    <p>Store prompts in YAML với version, model, tools config. Registry load và serve. Hot-reload khi file thay đổi.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">PromptSkillRegistry</span>
+    <h4>Markdown task templates</h4>
+    <p>Markdown files định nghĩa skills. Catalog inject vào system prompt. LLM auto-apply khi trigger match.</p>
+  </div>
+</div>
+
+<pre><code>from ryuu_prompts import PromptRegistry, make_framework_registry
+
+registry = make_framework_registry(prompts_dir="~/.ryuu/prompts")
+template = registry.get("summarize_v2")
+prompt = template.render({"text": document})</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-system-tools">
+<div class="pkg-header"><span class="pkg-name">ryuu-system-tools</span></div>
+<h2><span class="icon">🔧</span> System Tools</h2>
+<p><code>SystemToolset</code> cung cấp system-level tools cho agent: date/time, file operations, system info. Pre-built, ready to add vào agent tool list.</p>
+<pre><code>from ryuu_system_tools import SystemToolset
+toolset = SystemToolset()
+agent = Agent(tools=[...memory_tools, ...toolset.tools])</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ MESSAGING ══════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-messaging-core">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-messaging-core</span>
+</div>
+<h2><span class="icon">💬</span> Messaging Core</h2>
+<div class="lead">Channel-agnostic primitives: session management, message routing, scope resolution. Channel adapters (Telegram, CLI) implement <code>IChannelAdapter</code>.</div>
+
+<table>
+  <tr><th>Class</th><th>Vai trò</th></tr>
+  <tr><td><code>ConversationManager</code></td><td>Entry point: nhận message → route tới handler → send reply</td></tr>
+  <tr><td><code>Session</code></td><td>Conversation state: history turns, extra data, scope_key</td></tr>
+  <tr><td><code>IChannelAdapter</code></td><td>Protocol: Telegram / CLI / HTTP implement cái này</td></tr>
+  <tr><td><code>ScopeDispatcher</code></td><td>Route message tới đúng handler dựa trên scope_key</td></tr>
+  <tr><td><code>KVSessionStore</code></td><td>Persist sessions trong IKVStore (SQLite / Postgres)</td></tr>
+</table>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-messaging-channels">
+<h2><span class="icon">📱</span> Telegram &amp; CLI Adapters</h2>
+<div class="grid g2">
+  <div class="card">
+    <span class="tag blue">ryuu-messaging-telegram</span>
+    <h4>TelegramAdapter</h4>
+    <p>Wrap python-telegram-bot. Handle messages, commands, inline queries. <code>allowed_senders</code> để gate access cho single-tenant bots.</p>
+  </div>
+  <div class="card">
+    <span class="tag gray">ryuu-messaging-cli</span>
+    <h4>CLIAdapter</h4>
+    <p>Terminal-based conversation. Dùng cho local testing và development. Hỗ trợ streaming output.</p>
+  </div>
+</div>
+<pre><code>from ryuu_messaging_telegram import TelegramAdapter
+from ryuu_messaging_core import ConversationManager
+
+adapter = TelegramAdapter(
+    token=TELEGRAM_BOT_TOKEN,
+    allowed_senders={OWNER_TELEGRAM_ID},  # single-tenant gate
+)
+manager = ConversationManager(handler=ryuu_handler, session_store=session_store)
+await adapter.start(manager)</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ MCP ════════════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-mcp">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-mcp-core</span>
+  <span class="tag gray">+</span>
+  <span class="pkg-name">ryuu-mcp-client</span>
+</div>
+<h2><span class="icon">🔗</span> MCP — External Tools</h2>
+<div class="lead">Model Context Protocol client. Connect tới MCP servers (filesystem, GitHub, databases) và expose tools tới agent.</div>
+
+<div class="grid g2">
+  <div class="card">
+    <span class="tag purple">MCPToolset</span>
+    <h4>Auto-discover tools</h4>
+    <p>Connect MCP server → list available tools → wrap thành Python callables → pass vào Agent.</p>
+  </div>
+  <div class="card">
+    <span class="tag blue">SkillManager</span>
+    <h4>Install/uninstall via chat</h4>
+    <p>LLM có thể <code>install_skill("github")</code> hoặc <code>uninstall_skill("filesystem")</code> qua conversation.</p>
+  </div>
+</div>
+
+<pre><code>from ryuu_mcp_client import MCPClient, MCPToolset
+
+client = MCPClient(server_config={
+    "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "env": {"HOME": str(Path.home())}
+})
+toolset = MCPToolset(client=client)
+await toolset.connect()
+
+agent = Agent(tools=[*memory_tools, *toolset.tools])</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ OBSERVABILITY ═══════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-observability">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-observability-core</span>
+  <span class="tag gray">+</span>
+  <span class="pkg-name">ryuu-observability-otel</span>
+</div>
+<h2><span class="icon">📊</span> Observability</h2>
+
+<table>
+  <tr><th>Class</th><th>Vai trò</th><th>Null version</th></tr>
+  <tr><td><code>CostTracker</code></td><td>Track input/output tokens + USD per scope. Budget enforcement.</td><td><code>NullCostTracker</code></td></tr>
+  <tr><td><code>AuditLogger</code></td><td>Append-only audit log. Verify chain integrity (tamper detection).</td><td><code>NullAuditLogger</code></td></tr>
+  <tr><td><code>RateLimiter</code></td><td>Per-scope rate limiting (requests/minute, tokens/hour).</td><td><code>NullRateLimiter</code></td></tr>
+  <tr><td><code>Tracer</code> (otel)</td><td>OpenTelemetry distributed tracing. Span per LLM call + tool call.</td><td><code>NullTracer</code></td></tr>
+</table>
+
+<pre><code>from ryuu_observability_core import CostTracker, CostPolicy, AuditLogger
+
+tracker = CostTracker(
+    store=cost_store,
+    policy=CostPolicy(budget_usd_per_scope=1.0, alert_at_pct=0.8)
+)
+# Khi vượt budget → raise BudgetExceededError → OnBudgetExceeded hook fires</code></pre>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ EVAL ═══════════════════════════════════════════════════════════════ -->
+<section class="section" id="ryuu-eval-core">
+<div class="pkg-header">
+  <span class="pkg-name">ryuu-eval-core</span>
+</div>
+<h2><span class="icon">🧪</span> Eval Core — Runner &amp; Protocol</h2>
+<div class="lead">Framework để đánh giá LLM agents một cách có hệ thống. Định nghĩa EvalCase, chạy qua EvalRunner, score bằng Scorer protocol.</div>
+
+<table>
+  <tr><th>Class</th><th>Vai trò</th></tr>
+  <tr><td><code>EvalCase</code></td><td>1 test case: input + expected output + metadata</td></tr>
+  <tr><td><code>EvalRunner</code></td><td>Chạy list EvalCase qua EvalTarget, collect CaseResult</td></tr>
+  <tr><td><code>Scorer</code> protocol</td><td><code>score(actual, expected) → ScoreResult(passed, score, detail)</code></td></tr>
+  <tr><td><code>EvalTarget</code> protocol</td><td><code>call(input) → output</code> — wrap agent/LLM call</td></tr>
+  <tr><td><code>SuiteResult</code></td><td>Aggregate: pass rate, avg score, per-case breakdown</td></tr>
+</table>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-eval-scorers">
+<div class="pkg-header"><span class="pkg-name">ryuu-eval-scorers</span></div>
+<h2><span class="icon">📏</span> Eval Scorers</h2>
+<div class="grid g3">
+  <div class="card">
+    <span class="tag gray">Deterministic</span>
+    <ul>
+      <li><code>ExactMatch</code> — exact string</li>
+      <li><code>Contains</code> — substring check</li>
+      <li><code>Regex</code> — pattern match</li>
+      <li><code>Threshold</code> — numeric comparison</li>
+      <li><code>Composite</code> — combine scorers</li>
+    </ul>
+  </div>
+  <div class="card">
+    <span class="tag purple">LLM-based</span>
+    <ul>
+      <li><code>LLMJudge</code> — LLM đánh giá quality</li>
+      <li><code>SemanticSimilarity</code> — embedding cosine</li>
+    </ul>
+  </div>
+  <div class="card">
+    <span class="tag blue">Khi nào dùng</span>
+    <p style="margin-top:4px"><code>ExactMatch</code>: classification, IDs</p>
+    <p><code>LLMJudge</code>: open-ended text quality</p>
+    <p><code>SemanticSimilarity</code>: paraphrase / translation</p>
+  </div>
+</div>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="ryuu-eval-oracle">
+<div class="pkg-header"><span class="pkg-name">ryuu-eval-oracle</span></div>
+<h2><span class="icon">🏅</span> Eval Oracle — Golden Dataset</h2>
+<div class="lead">Generate và quản lý Golden Dataset: chạy production target → LLM oracle review → human approve → lưu làm ground truth cho future runs.</div>
+
+<div class="grid g2">
+  <div class="card">
+    <span class="tag purple">IOracleStrategy</span>
+    <h4>Pluggable oracle logic</h4>
+    <p>Implement strategy để generate expected output. Ví dụ: <code>CrudMatrixOracle</code> generate bảng CRUD từ schema.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">OracleWorkflow</span>
+    <h4>Generate → Review → Promote</h4>
+    <p>End-to-end workflow: run oracle → save fixture → UI review → promote to golden dataset → sử dụng trong EvalRunner.</p>
+  </div>
+</div>
+
+<p>UI review tại <code>ryuu-eval</code> package: Oracle Review page, Suite management, Run history, Score matrix.</p>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ EVALUATION ══════════════════════════════════════════════════════════ -->
+<section class="section" id="evaluation">
+<h2><span class="icon">⚖️</span> Tiêu chí đánh giá &amp; So sánh Framework</h2>
+<div class="lead">
+  Đánh giá UAAF theo 8 tiêu chí thực tế, so sánh với LangChain, LangGraph, CrewAI, Claude Agent SDK, OpenAI Agents SDK, và AutoGen.
+</div>
+
+<!-- SCORING MATRIX -->
+<h3>Bảng so sánh tổng quan</h3>
+<div style="overflow-x:auto">
+<table>
+  <tr>
+    <th>Tiêu chí</th>
+    <th>UAAF</th>
+    <th>LangChain</th>
+    <th>LangGraph</th>
+    <th>CrewAI</th>
+    <th>Claude<br>Agent SDK</th>
+    <th>OpenAI<br>Agents SDK</th>
+    <th>AutoGen</th>
+  </tr>
+  <tr>
+    <td><b>Nhỏ gọn</b><br><span style="color:var(--muted);font-size:11px">ít files, ít code</span></td>
+    <td>✅ Modular<br><span style="font-size:11px">install chỉ những gì cần</span></td>
+    <td>❌ Rất nặng<br><span style="font-size:11px">~200+ modules</span></td>
+    <td>⚠️ Trung bình<br><span style="font-size:11px">nhẹ hơn LangChain</span></td>
+    <td>⚠️ Trung bình</td>
+    <td>✅ Nhẹ<br><span style="font-size:11px">focused on Anthropic</span></td>
+    <td>✅ Nhẹ<br><span style="font-size:11px">focused on OpenAI</span></td>
+    <td>⚠️ Trung bình</td>
+  </tr>
+  <tr>
+    <td><b>Dependencies</b><br><span style="color:var(--muted);font-size:11px">không thừa</span></td>
+    <td>✅ Tối thiểu<br><span style="font-size:11px">ryuu-core = 0 deps<br>mỗi pkg opt-in</span></td>
+    <td>❌ Rất nhiều<br><span style="font-size:11px">pydantic, tiktoken, faiss, chromadb... bất kể dùng hay không</span></td>
+    <td>⚠️ Kế thừa LangChain<br><span style="font-size:11px">nếu cài full</span></td>
+    <td>⚠️ Vừa phải<br><span style="font-size:11px">pydantic required</span></td>
+    <td>✅ Minimal<br><span style="font-size:11px">chỉ anthropic SDK</span></td>
+    <td>✅ Minimal<br><span style="font-size:11px">chỉ openai SDK</span></td>
+    <td>⚠️ Nhiều<br><span style="font-size:11px">docker, pyzmq optional nhưng hay kéo theo</span></td>
+  </tr>
+  <tr>
+    <td><b>Dễ dùng (DX)</b><br><span style="color:var(--muted);font-size:11px">thời gian onboard</span></td>
+    <td>⚠️ Cần học protocol<br><span style="font-size:11px">nhưng consistent sau khi hiểu</span></td>
+    <td>⚠️ API thay đổi liên tục<br><span style="font-size:11px">v0.1→v0.3 breaking changes</span></td>
+    <td>⚠️ Khái niệm graph phức tạp<br><span style="font-size:11px">node/edge/state schema</span></td>
+    <td>✅ Dễ bắt đầu<br><span style="font-size:11px">Agent/Task/Crew abstraction rõ</span></td>
+    <td>✅ Rất đơn giản<br><span style="font-size:11px">query() là đủ</span></td>
+    <td>✅ Rất đơn giản<br><span style="font-size:11px">Runner.run() là đủ</span></td>
+    <td>⚠️ Trung bình<br><span style="font-size:11px">ConversableAgent concept lạ</span></td>
+  </tr>
+  <tr>
+    <td><b>Dễ mở rộng</b><br><span style="color:var(--muted);font-size:11px">thêm provider/backend</span></td>
+    <td>✅ Registry pattern<br><span style="font-size:11px">thêm 1 dòng, 0 sửa code khác</span></td>
+    <td>⚠️ Có thể nhưng phức tạp<br><span style="font-size:11px">nhiều abstract class phải kế thừa</span></td>
+    <td>✅ Node-based<br><span style="font-size:11px">thêm node mới dễ</span></td>
+    <td>⚠️ Override class<br><span style="font-size:11px">phải subclass Agent</span></td>
+    <td>❌ Vendor lock<br><span style="font-size:11px">chỉ Anthropic</span></td>
+    <td>❌ Vendor lock<br><span style="font-size:11px">chỉ OpenAI</span></td>
+    <td>✅ Flexible<br><span style="font-size:11px">pluggable LLM config</span></td>
+  </tr>
+  <tr>
+    <td><b>Type safety</b><br><span style="color:var(--muted);font-size:11px">mypy / pyright</span></td>
+    <td>✅ Protocols + dataclasses<br><span style="font-size:11px">mypy strict pass</span></td>
+    <td>❌ Any khắp nơi<br><span style="font-size:11px">Runnable[Any,Any]</span></td>
+    <td>⚠️ TypedDict state<br><span style="font-size:11px">partial</span></td>
+    <td>⚠️ Pydantic models<br><span style="font-size:11px">runtime validation tốt, static kém</span></td>
+    <td>✅ Typed<br><span style="font-size:11px">SDK có type stubs</span></td>
+    <td>✅ Typed<br><span style="font-size:11px">SDK có type stubs</span></td>
+    <td>⚠️ Partial</td>
+  </tr>
+  <tr>
+    <td><b>Testability</b><br><span style="color:var(--muted);font-size:11px">unit test dễ không</span></td>
+    <td>✅ Null implementations<br><span style="font-size:11px">NullCostTracker, NullTracer<br>Passthrough processor</span></td>
+    <td>❌ Khó mock<br><span style="font-size:11px">chain side effects khắp nơi</span></td>
+    <td>⚠️ Được<br><span style="font-size:11px">cần mock graph state</span></td>
+    <td>⚠️ Được<br><span style="font-size:11px">cần mock LLM calls</span></td>
+    <td>✅ Dễ mock<br><span style="font-size:11px">stateless query()</span></td>
+    <td>✅ Dễ mock<br><span style="font-size:11px">stateless Runner</span></td>
+    <td>⚠️ Trung bình</td>
+  </tr>
+  <tr>
+    <td><b>Multi-provider</b><br><span style="color:var(--muted);font-size:11px">không lock vendor</span></td>
+    <td>✅ Anthropic + OpenAI<br><span style="font-size:11px">ProviderFallbackChain<br>ModelRouter</span></td>
+    <td>✅ 50+ integrations<br><span style="font-size:11px">nhưng kèm theo bloat</span></td>
+    <td>✅ Via LangChain</td>
+    <td>✅ Nhiều provider<br><span style="font-size:11px">via litellm</span></td>
+    <td>❌ Anthropic only</td>
+    <td>❌ OpenAI only</td>
+    <td>✅ Nhiều provider</td>
+  </tr>
+  <tr>
+    <td><b>Production-ready</b><br><span style="color:var(--muted);font-size:11px">cost, audit, rate limit</span></td>
+    <td>✅ Built-in<br><span style="font-size:11px">CostTracker, AuditLogger<br>RateLimiter, CircuitBreaker</span></td>
+    <td>⚠️ LangSmith (paid)<br><span style="font-size:11px">observability ngoài framework</span></td>
+    <td>⚠️ LangSmith (paid)</td>
+    <td>⚠️ Basic logging<br><span style="font-size:11px">không có built-in cost control</span></td>
+    <td>⚠️ Basic usage<br><span style="font-size:11px">không có rate limit built-in</span></td>
+    <td>⚠️ Basic<br><span style="font-size:11px">token usage có, audit không</span></td>
+    <td>⚠️ Trung bình</td>
+  </tr>
+</table>
+</div>
+
+<!-- CRITERIA DETAIL CARDS -->
+<h3>Chi tiết từng tiêu chí</h3>
+
+<div class="grid g2">
+  <div class="card">
+    <span class="tag green">✅ Nhỏ gọn — Modular install</span>
+    <h4>Chỉ install những gì cần</h4>
+    <p>Mỗi package độc lập. Dùng memory không cần cài providers-anthropic. Dùng eval không cần cài messaging.</p>
+    <pre style="margin-top:8px;font-size:11px;padding:8px 10px">pip install ryuu-knowledge-memory  # chỉ memory
+pip install ryuu-eval-core          # chỉ eval runner
+# LangChain: pip install langchain → kéo 40+ transitive deps</pre>
+  </div>
+  <div class="card">
+    <span class="tag green">✅ Zero deps ở core</span>
+    <h4>ryuu-core không có dependency nào</h4>
+    <p>Foundation package hoàn toàn độc lập. Không pydantic, không numpy, không tiktoken. Chỉ Python stdlib.</p>
+    <p style="margin-top:6px;color:var(--muted);font-size:12px">So sánh: LangChain core kéo pydantic + tenacity + requests ngay cả khi không dùng HTTP.</p>
+  </div>
+  <div class="card">
+    <span class="tag purple">⚠️ DX — Cần học Protocol pattern</span>
+    <h4>Consistent nhưng có learning curve</h4>
+    <p>Sau khi hiểu <code>IKnowledgeBackbone</code>, <code>ILLMProvider</code>, <code>IMemoryStore</code> — tất cả components hoạt động theo cùng 1 pattern. Không có surprise.</p>
+    <p style="margin-top:6px;color:var(--muted);font-size:12px">LangChain: API thay đổi nhiều lần (v0.1 → v0.2 → v0.3), LCEL syntax mới, LangGraph tách riêng → context switch liên tục.</p>
+  </div>
+  <div class="card">
+    <span class="tag green">✅ Registry = mở rộng không đau</span>
+    <h4>Thêm provider/backend = 1 dòng</h4>
+    <pre style="margin-top:6px;font-size:11px;padding:8px 10px"># Thêm Gemini provider:
+_REGISTRY = [
+    ("ANTHROPIC_API_KEY", "...anthropic", "AnthropicProvider", {}),
+    ("OPENAI_API_KEY",    "...openai",    "OpenAIProvider",    {}),
+    ("GEMINI_API_KEY",    "...gemini",    "GeminiProvider",    {}),  # ← thêm 1 dòng
+]
+# Không sửa bất kỳ code nào khác</pre>
+  </div>
+  <div class="card">
+    <span class="tag green">✅ Null implementations</span>
+    <h4>Test không cần mock phức tạp</h4>
+    <p>Mọi protocol có <code>NullXxx</code> implementation: <code>NullCostTracker</code>, <code>NullAuditLogger</code>, <code>NullRateLimiter</code>, <code>NullTracer</code>. Unit test inject Null → không cần <code>unittest.mock.patch</code> khắp nơi.</p>
+  </div>
+  <div class="card">
+    <span class="tag orange">⚠️ Vendor lock của Agent SDKs</span>
+    <h4>Claude SDK &amp; OpenAI SDK: single provider</h4>
+    <p>Tốt cho simplicity, nhưng nếu cần switch provider (cost, latency, capability) phải rewrite toàn bộ integration layer. UAAF: swap <code>AnthropicProvider</code> → <code>OpenAIProvider</code> = 1 dòng config.</p>
+  </div>
+</div>
+
+<!-- USE CASE GUIDE -->
+<h3>Chọn framework nào?</h3>
+<table>
+  <tr><th>Nếu bạn cần...</th><th>Dùng</th><th>Lý do</th></tr>
+  <tr>
+    <td>Prototype nhanh, 1 provider, không cần production ops</td>
+    <td><b>Claude Agent SDK</b> hoặc <b>OpenAI Agents SDK</b></td>
+    <td>Đơn giản nhất. <code>query()</code> hoặc <code>Runner.run()</code> là đủ.</td>
+  </tr>
+  <tr>
+    <td>Multi-step workflow có state, conditional branching</td>
+    <td><b>LangGraph</b> hoặc <b>UAAF Workflow</b></td>
+    <td>LangGraph: graph mental model. UAAF: StateMachine + Checkpoint với type safety tốt hơn.</td>
+  </tr>
+  <tr>
+    <td>Multi-agent collaboration, role-based tasks</td>
+    <td><b>CrewAI</b> hoặc <b>AutoGen</b></td>
+    <td>Crew abstraction trực quan cho team-of-agents. AutoGen linh hoạt hơn nhưng phức tạp hơn.</td>
+  </tr>
+  <tr>
+    <td>Production bot: memory, cost control, audit, multi-provider</td>
+    <td><b>UAAF</b></td>
+    <td>Built-in CostTracker, AuditLogger, RateLimiter, cross-session memory, swap provider không đau.</td>
+  </tr>
+  <tr>
+    <td>Cần 50+ integrations (databases, APIs, tools) ngay lập tức</td>
+    <td><b>LangChain</b></td>
+    <td>Ecosystem lớn nhất. Chấp nhận trade-off: bloat, instability, Any types.</td>
+  </tr>
+  <tr>
+    <td>Học cách build framework từ đầu, hiểu internals</td>
+    <td><b>UAAF</b></td>
+    <td>Code rõ ràng, protocol-first, từng layer có mục đích rõ. Không có magic.</td>
+  </tr>
+</table>
+
+<!-- LANGCHAIN ANTI-PATTERNS -->
+<h3>Vết xe đổ của LangChain — UAAF tránh thế nào</h3>
+<div class="grid g2">
+  <div class="card">
+    <span class="tag red">❌ LangChain: Runnable[Any, Any]</span>
+    <h4>Type system bị phá vỡ</h4>
+    <p>Mọi component đều là <code>Runnable[Any, Any]</code>. IDE không biết output của bước trước là gì. Runtime error thay vì compile-time.</p>
+    <p style="margin-top:6px;color:var(--ok);font-size:12px">✅ UAAF: <code>CompletionRequest → Response</code>, <code>Task → AgentResult</code> — typed end-to-end.</p>
+  </div>
+  <div class="card">
+    <span class="tag red">❌ LangChain: SequentialChain cho mọi thứ</span>
+    <h4>Over-abstraction</h4>
+    <p>5 class để chain 3 functions. <code>CompositeProcessor</code>, <code>SequentialChain</code>, <code>RouterChain</code>... tất cả có thể thay bằng function calls đơn giản.</p>
+    <p style="margin-top:6px;color:var(--ok);font-size:12px">✅ UAAF: 3 cases tương tự mới abstract. Không abstract sớm.</p>
+  </div>
+  <div class="card">
+    <span class="tag red">❌ LangChain: ConflictResolver tại write-time</span>
+    <h4>LLM hallucinate conflict không có thật</h4>
+    <p>Detect conflict bằng LLM mỗi lần ghi = expensive và unreliable. LLM có thể quyết định sai.</p>
+    <p style="margin-top:6px;color:var(--ok);font-size:12px">✅ UAAF: conflict resolve tại query-time — <code>assemble_context()</code> trả cả hai, LLM tự xử lý với đầy đủ context.</p>
+  </div>
+  <div class="card">
+    <span class="tag red">❌ LangChain: breaking changes mỗi minor version</span>
+    <h4>Upgrade = rewrite</h4>
+    <p>v0.1 → v0.2 → v0.3: LCEL syntax mới, callback system mới, LangGraph tách riêng. Code cũ không chạy.</p>
+    <p style="margin-top:6px;color:var(--ok);font-size:12px">✅ UAAF: protocol-first. Implementation thay đổi không break consumer code. <code>ILLMProvider</code> stable.</p>
+  </div>
+</div>
+
+</section>
+
+<!-- FOOTER -->
+<div style="margin-top:48px;padding-top:18px;border-top:1px solid var(--border);color:var(--muted);font-size:11px">
+  <strong>UAAF Framework Architecture</strong> · 2026-06-03 · 24 packages · 93+ tests green
+</div>
+
+</div><!-- .content -->
+</main>
+
+<script>
+// ── Page router: 1 mục = 1 trang chi tiết ────────────────────────────────────
+function showPage(id) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  // Hiện đúng 1 section, ẩn các section + divider còn lại
+  document.querySelectorAll('#main > .content > section[id]').forEach(s => {
+    s.style.display = (s === target) ? '' : 'none';
+  });
+  document.querySelectorAll('#main > .content > .divider').forEach(d => {
+    d.style.display = 'none';
+  });
+  // Đồng bộ highlight sidebar
+  document.querySelectorAll('.sb-item').forEach(i => {
+    i.classList.toggle('active', i.getAttribute('href') === '#' + id);
+  });
+  if (history.replaceState) history.replaceState(null, '', '#' + id);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+function nav(el) {
+  showPage(el.getAttribute('href').slice(1));
+  if (window.innerWidth <= 768) closeSidebar();
+  return false;
+}
+
+// ── Changelog toggle ─────────────────────────────────────────────────────────
+function toggleChangelog() {
+  const p = document.getElementById('changelog-panel');
+  p.hidden = !p.hidden;
+}
+
+// ── Mobile sidebar ───────────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+// ── Init: mở trang theo hash, mặc định overview ──────────────────────────────
+(function () {
+  const id = (location.hash || '#overview').slice(1);
+  showPage(document.getElementById(id) ? id : 'overview');
+})();
+window.addEventListener('hashchange', () => {
+  const id = (location.hash || '#overview').slice(1);
+  if (document.getElementById(id)) showPage(id);
+});
+</script>
+</body>
+</html>
