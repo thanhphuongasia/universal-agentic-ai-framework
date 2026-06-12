@@ -5,6 +5,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `ConversationMemory` (ryuu-knowledge-memory)
+
+Generic short-term conversational continuity over `WorkingMemoryStore`. Captures
+the glue every chat app re-implemented: record each `(question, answer)` turn
+into a rolling buffer, and recall the last N exchanges as a prompt-ready block.
+
+- `ConversationMemory(store, fmt=..., top_k=...)` — `record(scope, q, a)` +
+  `recent_block(scope)`. Never raises (no-op / `""` on failure).
+- `TurnFormat` — injectable wording + truncation limits so each app keeps its
+  own voice (prefixes, max lengths, header) while sharing the mechanism.
+- App keeps policy (consolidation, semantic retrieval, MCP toolset); the helper
+  is only the turn buffer. First consumer: code-tutor-agent (records "Học viên
+  hỏi" / "Bot trả lời" for cross-session context).
+
 ### Added — Phase 8.10: MCP (Model Context Protocol) foundation
 
 Two new infrastructure packages enable **config-driven skill loading**.
