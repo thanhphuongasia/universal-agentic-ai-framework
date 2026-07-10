@@ -15,7 +15,9 @@ pricing:
   text-embedding-3-small:  [0.02,   0.00]
   text-embedding-3-large:  [0.13,   0.00]
   # Anthropic
-  claude-opus-4-7:        [15.00,  75.00]
+  claude-opus-4-8:         [5.00,  25.00]
+  claude-opus-4-7:         [5.00,  25.00]
+  claude-sonnet-5:         [3.00,  15.00]
   claude-sonnet-4-6:       [3.00,  15.00]
   claude-haiku-4-5:        [0.80,   4.00]
   # Generic fallback (used by FakeLLMProvider)
@@ -28,6 +30,8 @@ context_window:
   gpt-4-turbo:     128000
   gpt-3.5-turbo:    16385
   # Anthropic
-  claude-opus-4-7:   200000
+  claude-opus-4-8:   1000000
+  claude-opus-4-7:   1000000
+  claude-sonnet-5:   1000000
   claude-sonnet-4-6: 200000
   claude-haiku-4-5:  200000

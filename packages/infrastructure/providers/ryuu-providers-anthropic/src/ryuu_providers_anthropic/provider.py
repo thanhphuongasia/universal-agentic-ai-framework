@@ -51,6 +51,90 @@ def _is_thinking_unsupported(exc: Exception) -> bool:
     )
 
 
+def _is_temperature_rejected(exc: Exception) -> bool:
+    """True when the API rejected the temperature param.
+
+    Claude 5-family models (adaptive thinking always on) deprecate `temperature`
+    and 400 on it; older models accept it. Retry without rather than maintaining
+    a model list here.
+    """
+    msg = str(exc).lower()
+    return "temperature" in msg and ("deprecated" in msg or "not supported" in msg)
+
+
+def _to_anthropic_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """OpenAI function-calling schema → Anthropic tool schema.
+
+    The whole RYUU stack (tool introspection, react loop, ToolRegistry) speaks the
+    OpenAI wire format; translating HERE keeps the adapter the single place that
+    knows Anthropic's shape. Already-Anthropic-shaped dicts pass through untouched.
+    """
+    out: list[dict[str, Any]] = []
+    for t in tools or []:
+        fn = t.get("function") if t.get("type") == "function" else None
+        if fn:
+            out.append({
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters")
+                or {"type": "object", "properties": {}},
+            })
+        else:
+            out.append(t)
+    return out
+
+
+def _to_anthropic_messages(
+    messages: list[Any], system: str | None
+) -> tuple[list[dict[str, Any]], str]:
+    """RYUU Message list (OpenAI roles) → Anthropic messages + top-level system.
+
+    - role "system"                → hoisted into the returned system string
+      (Anthropic 400s on system-role messages: "use the top-level 'system' parameter")
+    - assistant with tool_calls    → content blocks [text?, tool_use...]
+    - role "tool"                  → user message with tool_result block; consecutive
+      tool results merge into ONE user message (Anthropic wants all results for an
+      assistant turn in the single following user message)
+    """
+    system_parts: list[str] = [system] if system else []
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "system":
+            system_parts.append(m.content)
+        elif m.role == "assistant" and getattr(m, "tool_calls", None):
+            blocks: list[dict[str, Any]] = []
+            if m.content:
+                blocks.append({"type": "text", "text": m.content})
+            for tc in m.tool_calls:
+                fn = tc.get("function") or {}
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args or "{}")
+                    except ValueError:
+                        args = {"_raw": args}
+                blocks.append({
+                    "type": "tool_use",
+                    "id": tc.get("id", ""),
+                    "name": fn.get("name", ""),
+                    "input": args or {},
+                })
+            out.append({"role": "assistant", "content": blocks})
+        elif m.role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": getattr(m, "tool_call_id", None) or "",
+                "content": m.content,
+            }
+            if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                out[-1]["content"].append(block)
+            else:
+                out.append({"role": "user", "content": [block]})
+        else:
+            out.append({"role": m.role, "content": m.content})
+    return out, "\n\n".join(p for p in system_parts if p)
+
+
 class AnthropicProvider:
     """ILLMProvider backed by the Anthropic API."""
 
@@ -70,13 +154,13 @@ class AnthropicProvider:
 
     async def complete(self, request: CompletionRequest) -> Response:
         model = request.model or self._default_model
-        messages = [{"role": m.role, "content": m.content} for m in request.messages]
-        system = request.system or ""
+        messages, system = _to_anthropic_messages(request.messages, request.system)
 
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
         }
         if system:
             kwargs["system"] = system
@@ -91,7 +175,7 @@ class AnthropicProvider:
             ]
             kwargs["tool_choice"] = {"type": "tool", "name": _STRUCTURED_TOOL_NAME}
         elif request.tools:
-            kwargs["tools"] = request.tools
+            kwargs["tools"] = _to_anthropic_tools(request.tools)
 
         used_native_thinking = False
         cot_injected = False
@@ -112,7 +196,14 @@ class AnthropicProvider:
             if request.thinking_budget:
                 used_native_thinking = True
         except Exception as exc:
-            if request.thinking_budget and _is_thinking_unsupported(exc):
+            if "temperature" in kwargs and _is_temperature_rejected(exc):
+                kwargs.pop("temperature", None)
+                log.debug("anthropic.complete temperature rejected by model=%s → retry without", model)
+                try:
+                    resp = await self._client.messages.create(**kwargs)
+                except Exception as exc2:
+                    raise classify_external_error(exc2) from exc2
+            elif request.thinking_budget and _is_thinking_unsupported(exc):
                 # Model doesn't support native thinking → fall back to CoT prompt.
                 log.warning(
                     "anthropic.complete thinking=native UNSUPPORTED model=%s "
@@ -182,14 +273,14 @@ class AnthropicProvider:
 
     async def stream(self, request: CompletionRequest) -> AsyncIterator[StreamChunk]:
         model = request.model or self._default_model
-        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        messages, system = _to_anthropic_messages(request.messages, request.system)
 
         try:
             async with self._client.messages.stream(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
                 max_tokens=request.max_tokens,
-                system=request.system or "",
+                system=system,
             ) as stream:
                 async for text in stream.text_stream:
                     yield StreamChunk(content=text, is_final=False)
