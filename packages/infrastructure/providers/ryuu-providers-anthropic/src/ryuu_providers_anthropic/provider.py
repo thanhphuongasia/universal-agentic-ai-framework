@@ -151,6 +151,9 @@ class AnthropicProvider:
 
         self._client = AsyncAnthropic(api_key=api_key, **client_kwargs)
         self._default_model = default_model
+        # Models that 400'd on `temperature` (Claude 5 family deprecates it) —
+        # remembered so subsequent calls skip the wasted request+retry roundtrip.
+        self._temp_rejected_models: set[str] = set()
 
     async def complete(self, request: CompletionRequest) -> Response:
         model = request.model or self._default_model
@@ -160,8 +163,9 @@ class AnthropicProvider:
             "model": model,
             "messages": messages,
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
         }
+        if model not in self._temp_rejected_models:
+            kwargs["temperature"] = request.temperature
         if system:
             kwargs["system"] = system
 
@@ -198,6 +202,7 @@ class AnthropicProvider:
         except Exception as exc:
             if "temperature" in kwargs and _is_temperature_rejected(exc):
                 kwargs.pop("temperature", None)
+                self._temp_rejected_models.add(model)
                 log.debug("anthropic.complete temperature rejected by model=%s → retry without", model)
                 try:
                     resp = await self._client.messages.create(**kwargs)
