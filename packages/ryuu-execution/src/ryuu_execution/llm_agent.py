@@ -195,8 +195,18 @@ class LLMAgent(BaseAgent):
                     tool_call_id=tc["id"],
                 ))
 
+        # Round budget exhausted mid-investigation. The closing prompt must demand the
+        # FINAL deliverable, not a recap: "Summarize your findings." made models that
+        # burn all rounds on tool calls (measured: claude-sonnet-5 on write routes)
+        # return markdown prose instead of the output format the instructions require —
+        # the caller's parser then sees no answer at all.
         synthesis_req = CompletionRequest(
-            messages=messages + [Message(role="user", content="Summarize your findings.")],
+            messages=messages + [Message(role="user", content=(
+                "You are out of tool-call rounds. Give your FINAL answer NOW, using the "
+                "evidence you already gathered, in EXACTLY the output format your "
+                "instructions require. Output only that final answer — no summary, no "
+                "further tool calls."
+            ))],
             model=request.model,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
