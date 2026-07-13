@@ -33,6 +33,48 @@ log = logging.getLogger(__name__)
 
 _STRUCTURED_TOOL_NAME = "structured_output"
 
+_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral"}
+
+
+def _int_attr(obj: Any, name: str) -> int:
+    """Attribute as int, 0 for missing/None/mocked values (MagicMock auto-attrs)."""
+    v = getattr(obj, name, 0)
+    return v if isinstance(v, int) else 0
+
+
+def _mark_prompt_cache(kwargs: dict[str, Any]) -> None:
+    """Add Anthropic prompt-cache breakpoints to an assembled request.
+
+    Anthropic caching is OPT-IN per request (OpenAI caches prefixes
+    automatically): without markers an agent loop re-bills its whole growing
+    prefix — system + task + every prior tool round — at the full input rate on
+    EVERY round. Measured on the same 95-route CRUD run: sonnet $20.72 vs
+    gpt-4.1 $5.59, most of the gap being exactly this.
+
+    Two breakpoints (limit is 4):
+      - system → cached once per run; tools hash into the same prefix
+      - last content block of the last message → each round re-reads the
+        previous round's prefix at 10% price and appends only the new tail
+    Marks are harmless below Anthropic's minimum cacheable length — the API
+    silently skips caching.
+    """
+    system = kwargs.get("system")
+    if isinstance(system, str) and system:
+        kwargs["system"] = [
+            {"type": "text", "text": system, "cache_control": dict(_CACHE_CONTROL)}
+        ]
+    messages = kwargs.get("messages") or []
+    if not messages:
+        return
+    last = messages[-1]
+    content = last.get("content")
+    if isinstance(content, str):
+        last["content"] = [
+            {"type": "text", "text": content, "cache_control": dict(_CACHE_CONTROL)}
+        ]
+    elif isinstance(content, list) and content and isinstance(content[-1], dict):
+        content[-1] = {**content[-1], "cache_control": dict(_CACHE_CONTROL)}
+
 # Injected into system prompt when native thinking is unavailable (haiku, etc.)
 _COT_SUFFIX = (
     "\n\nProduce your response in two parts:\n"
@@ -144,6 +186,7 @@ class AnthropicProvider:
         self,
         api_key: str | None = None,
         default_model: str = "claude-haiku-4-5",
+        prompt_caching: bool = True,
         **client_kwargs: Any,
     ) -> None:
         if AsyncAnthropic is None:  # pragma: no cover
@@ -151,6 +194,7 @@ class AnthropicProvider:
 
         self._client = AsyncAnthropic(api_key=api_key, **client_kwargs)
         self._default_model = default_model
+        self._prompt_caching = prompt_caching
         # Models that 400'd on `temperature` (Claude 5 family deprecates it) —
         # remembered so subsequent calls skip the wasted request+retry roundtrip.
         self._temp_rejected_models: set[str] = set()
@@ -180,6 +224,9 @@ class AnthropicProvider:
             kwargs["tool_choice"] = {"type": "tool", "name": _STRUCTURED_TOOL_NAME}
         elif request.tools:
             kwargs["tools"] = _to_anthropic_tools(request.tools)
+
+        if self._prompt_caching:
+            _mark_prompt_cache(kwargs)
 
         used_native_thinking = False
         cot_injected = False
@@ -216,7 +263,11 @@ class AnthropicProvider:
                     model, request.thinking_budget,
                 )
                 kwargs.pop("thinking", None)
-                kwargs["system"] = (kwargs.get("system") or "") + _COT_SUFFIX
+                sys_val = kwargs.get("system")
+                if isinstance(sys_val, list):  # cache-marked block form
+                    kwargs["system"] = sys_val + [{"type": "text", "text": _COT_SUFFIX}]
+                else:
+                    kwargs["system"] = (sys_val or "") + _COT_SUFFIX
                 try:
                     resp = await self._client.messages.create(**kwargs)
                     cot_injected = True
@@ -247,7 +298,15 @@ class AnthropicProvider:
                     })
 
         usage = resp.usage
-        thinking_tokens = getattr(usage, "cache_creation_input_tokens", 0)  # proxy when absent
+        cache_creation = _int_attr(usage, "cache_creation_input_tokens")
+        cache_read = _int_attr(usage, "cache_read_input_tokens")
+        input_billed = usage.input_tokens
+        if cache_creation or cache_read:
+            # Downstream cost paths multiply input_tokens by the flat input rate,
+            # so report the BILLED-EQUIVALENT input (cache write = 1.25×, cache
+            # read = 0.10×); the raw split stays in metadata.
+            input_billed = int(round(
+                usage.input_tokens + 1.25 * cache_creation + 0.10 * cache_read))
 
         log.debug(
             "anthropic.complete done model=%s input=%d output=%d "
@@ -264,7 +323,7 @@ class AnthropicProvider:
             content=content_text,
             model=model,
             usage=TokenUsage(
-                input_tokens=usage.input_tokens,
+                input_tokens=input_billed,
                 output_tokens=usage.output_tokens,
             ),
             finish_reason=resp.stop_reason or "end_turn",
@@ -273,6 +332,9 @@ class AnthropicProvider:
             metadata={
                 "thinking_native": used_native_thinking,
                 "thinking_cot_fallback": cot_injected,
+                "cache_creation_input_tokens": cache_creation,
+                "cache_read_input_tokens": cache_read,
+                "input_tokens_uncached": usage.input_tokens,
             },
         )
 

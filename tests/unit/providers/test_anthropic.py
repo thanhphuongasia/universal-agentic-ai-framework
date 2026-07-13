@@ -234,3 +234,104 @@ async def test_temperature_rejected_retries_without() -> None:
 
     assert response.content == "ok"
     assert "temperature" in calls[0] and "temperature" not in calls[1]
+
+
+# ---------------------------------------------------------------------------
+# prompt caching — measured on the same 95-route CRUD run: sonnet $20.72 vs
+# gpt-4.1 $5.59. Anthropic caching is OPT-IN per request; without cache_control
+# markers every ReAct round re-bills the whole growing prefix (system + task +
+# all prior tool rounds) at the full input rate. OpenAI caches automatically.
+# ---------------------------------------------------------------------------
+
+
+def _cache_mock_resp(input_tokens: int = 8, output_tokens: int = 4, **usage_attrs):
+    block = MagicMock()
+    block.type = "text"
+    block.text = "hi"
+    usage = MagicMock()
+    usage.input_tokens = input_tokens
+    usage.output_tokens = output_tokens
+    for k, v in usage_attrs.items():
+        setattr(usage, k, v)
+    resp = MagicMock()
+    resp.content = [block]
+    resp.usage = usage
+    resp.stop_reason = "end_turn"
+    return resp
+
+
+def _cache_request(system: str | None = "You are terse.") -> CompletionRequest:
+    return CompletionRequest(
+        messages=[Message(role="user", content="q")],
+        model="claude-sonnet-4-6",
+        max_tokens=100,
+        system=system,
+    )
+
+
+@pytest.mark.anyio
+async def test_prompt_caching_marks_system_and_conversation_tail() -> None:
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
+        mock_client = mock_cls.return_value
+        mock_client.messages.create = AsyncMock(return_value=_cache_mock_resp())
+        provider = AnthropicProvider(api_key="ak-test")
+        await provider.complete(_cache_request())
+        kwargs = mock_client.messages.create.call_args.kwargs
+
+    # system string → block list with a cache breakpoint (covers tools too)
+    assert isinstance(kwargs["system"], list)
+    assert kwargs["system"][0]["text"] == "You are terse."
+    assert kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
+    # last block of the last message → incremental per-round breakpoint
+    tail = kwargs["messages"][-1]["content"]
+    assert isinstance(tail, list)
+    assert tail[-1]["cache_control"] == {"type": "ephemeral"}
+    assert tail[-1]["text"] == "q"
+
+
+@pytest.mark.anyio
+async def test_prompt_caching_can_be_disabled() -> None:
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
+        mock_client = mock_cls.return_value
+        mock_client.messages.create = AsyncMock(return_value=_cache_mock_resp())
+        provider = AnthropicProvider(api_key="ak-test", prompt_caching=False)
+        await provider.complete(_cache_request())
+        kwargs = mock_client.messages.create.call_args.kwargs
+
+    assert kwargs["system"] == "You are terse."           # untouched string
+    assert kwargs["messages"][-1]["content"] == "q"        # untouched string
+
+
+@pytest.mark.anyio
+async def test_cache_usage_reported_as_billed_equivalent() -> None:
+    # Downstream cost = input_tokens × flat rate, so the provider reports the
+    # BILLED-EQUIVALENT input (uncached + 1.25×cache-write + 0.10×cache-read)
+    # and keeps the raw split in metadata.
+    resp = _cache_mock_resp(
+        input_tokens=50,
+        cache_creation_input_tokens=100,
+        cache_read_input_tokens=1000,
+    )
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
+        mock_client = mock_cls.return_value
+        mock_client.messages.create = AsyncMock(return_value=resp)
+        provider = AnthropicProvider(api_key="ak-test")
+        response = await provider.complete(_cache_request())
+
+    assert response.usage.input_tokens == 275              # 50 + 125 + 100
+    assert response.metadata["cache_read_input_tokens"] == 1000
+    assert response.metadata["cache_creation_input_tokens"] == 100
+    assert response.metadata["input_tokens_uncached"] == 50
+
+
+@pytest.mark.anyio
+async def test_mock_usage_without_cache_fields_unchanged() -> None:
+    # MagicMock auto-attrs (and providers that omit the fields) must not skew
+    # the billed-equivalent — non-int cache counters are treated as 0.
+    with patch("ryuu_providers_anthropic.provider.AsyncAnthropic") as mock_cls:
+        mock_client = mock_cls.return_value
+        mock_client.messages.create = AsyncMock(return_value=_cache_mock_resp())
+        provider = AnthropicProvider(api_key="ak-test")
+        response = await provider.complete(_cache_request())
+
+    assert response.usage.input_tokens == 8
