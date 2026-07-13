@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time as _time
+
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -9,6 +11,7 @@ from typing import Any, Protocol, runtime_checkable
 from ryuu_core.context import ExecutionContext
 from ryuu_core.models import ModelTier, AgentResult, Task
 from ryuu_execution.agent import BaseAgent
+from ryuu_execution.step_trace import StepTraceRecorder
 from ryuu_execution.tool_registry import ToolRegistry
 from ryuu_providers._pricing import CONTEXT_WINDOW
 from ryuu_providers.llm import (
@@ -102,6 +105,9 @@ class LLMAgent(BaseAgent):
     model_policy: ModelPolicy = field(default_factory=ModelPolicy)
     callbacks: ReActCallbacks = field(default_factory=SilentCallbacks)
     audit_token_usage: bool = True
+    # Bedrock-style structured trace (see step_trace.py). One recorder per run —
+    # same lifecycle as `callbacks`; None = no recording (zero overhead).
+    step_trace: "StepTraceRecorder | None" = None
 
     @abstractmethod
     async def _execute(self, task: Task, context: ExecutionContext) -> AgentResult: ...
@@ -137,11 +143,12 @@ class LLMAgent(BaseAgent):
     ) -> tuple[str, TokenUsage]:
         """Thought→Action→Observation loop. Returns (final_text, accumulated_usage)."""
         cb: ReActCallbacks = callbacks if callbacks is not None else self.callbacks
+        rec = self.step_trace
         messages = list(request.messages)
         total_input = 0
         total_output = 0
 
-        for _ in range(1, max_rounds + 1):
+        for _round in range(1, max_rounds + 1):
             current_req = CompletionRequest(
                 messages=messages,
                 model=request.model,
@@ -151,9 +158,21 @@ class LLMAgent(BaseAgent):
                 system=request.system,
                 response_schema=request.response_schema,
             )
+            _t0 = _time.time()
             response = await self.llm.complete(current_req)
             total_input += response.usage.input_tokens
             total_output += response.usage.output_tokens
+            if rec is not None:
+                rec.model_step(
+                    round_no=_round,
+                    request_head=str(messages[-1].content if messages else ""),
+                    content=response.content or "",
+                    thinking="\n".join(response.thinking or []),
+                    tool_calls=response.tool_calls or response.metadata.get("tool_calls", []),
+                    usage_in=response.usage.input_tokens,
+                    usage_out=response.usage.output_tokens,
+                    started_at=_t0,
+                )
 
             # Fire thinking blocks (extended thinking / CoT) before tool/final check
             for thinking_text in response.thinking:
@@ -176,12 +195,16 @@ class LLMAgent(BaseAgent):
                 await cb.on_final(response.content)
                 return response.content, TokenUsage(total_input, total_output)
 
+            _t_tools = _time.time()
             tool_results = await self.tool_registry.run_all(tool_calls, domain=domain)
 
             for tc, tr in zip(tool_calls, tool_results, strict=False):
                 fn = tc["function"]
                 await cb.on_action(fn["name"], fn["arguments"])
                 await cb.on_observation(fn["name"], tr["content"])
+                if rec is not None:
+                    rec.tool_step(tool=fn["name"], args=fn["arguments"],
+                                  result=str(tr["content"]), started_at=_t_tools)
 
             messages.append(Message(
                 role="assistant",
@@ -212,8 +235,14 @@ class LLMAgent(BaseAgent):
             max_tokens=request.max_tokens,
             tools=None,
         )
+        _t_syn = _time.time()
         final = await self.llm.complete(synthesis_req)
         total_input += final.usage.input_tokens
         total_output += final.usage.output_tokens
+        if rec is not None:
+            rec.model_step(round_no=max_rounds + 1, request_head="(out-of-rounds synthesis)",
+                           content=final.content or "", usage_in=final.usage.input_tokens,
+                           usage_out=final.usage.output_tokens, started_at=_t_syn,
+                           synthesis=True)
         await cb.on_final(final.content)
         return final.content, TokenUsage(total_input, total_output)

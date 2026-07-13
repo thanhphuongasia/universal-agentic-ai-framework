@@ -265,3 +265,49 @@ async def test_react_loop_domain_enforced_by_registry() -> None:
     # Wrong domain raises PermissionError
     with pytest.raises(PermissionError):
         await agent._react_loop(_make_request(), domain="stock")
+
+
+# ---------------------------------------------------------------------------
+# Step trace (Bedrock-style): model/tool/synthesis steps with io + usage
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_react_loop_records_step_trace() -> None:
+    from ryuu_execution.step_trace import StepTraceRecorder
+
+    async def echo(**kwargs: Any) -> str:
+        return "tool says hi"
+
+    registry = ToolRegistry()
+    registry.register("echo", echo)
+    llm = FakeLLMProvider(responses=[
+        _resp("thinking...", tool_calls=[_tool_call("echo", {"q": "x"})]),
+        _resp("final answer"),
+    ])
+    agent = _make_agent(llm, tool_registry=registry)
+    agent.step_trace = StepTraceRecorder()
+    text, usage = await agent._react_loop(_make_request("use the tool"))
+    assert text == "final answer"
+    steps = agent.step_trace.snapshot()
+    kinds = [s["type"] for s in steps]
+    assert kinds == ["model_invocation", "tool_invocation", "model_invocation"]
+    # model step: io + usage đầy đủ
+    m0 = steps[0]
+    assert m0["usage"] == {"input_tokens": 10, "output_tokens": 5}
+    assert m0["output"]["tool_calls"] == [{"tool": "echo", "args": "{'q': 'x'}"}]
+    assert m0["input"]["round"] == 1 and m0["duration_ms"] >= 0
+    # tool step: input args + output head
+    t1 = steps[1]
+    assert t1["input"]["tool"] == "echo" and "tool says hi" in t1["output"]["result_head"]
+    # json-safe
+    import json as _json
+    _json.dumps(steps)
+
+
+@pytest.mark.anyio
+async def test_react_loop_without_recorder_records_nothing() -> None:
+    llm = FakeLLMProvider(responses=[_resp("done")])
+    agent = _make_agent(llm)
+    assert agent.step_trace is None
+    text, _ = await agent._react_loop(_make_request("q"))
+    assert text == "done"

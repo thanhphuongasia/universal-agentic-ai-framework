@@ -449,7 +449,17 @@ class Agent:
             return await self._run_best_of_n(user_content, ctx)
 
         task = Task(task_id=str(uuid.uuid4()), payload={"user_content": user_content})
-        return await self._agent.execute(task, ctx)
+        # Bedrock-style step trace: one recorder per run, snapshot rides in
+        # result.metadata["step_trace"] (json-safe; AgentResult schema untouched).
+        from ryuu_execution.step_trace import StepTraceRecorder
+        self._agent.step_trace = StepTraceRecorder()
+        try:
+            result = await self._agent.execute(task, ctx)
+        finally:
+            rec, self._agent.step_trace = self._agent.step_trace, None
+        if result is not None and isinstance(getattr(result, "metadata", None), dict):
+            result.metadata["step_trace"] = rec.snapshot()
+        return result
 
     async def _inject_knowledge(
         self, user_content: str, scope: ContextScope
