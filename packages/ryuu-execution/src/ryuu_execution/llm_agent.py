@@ -187,8 +187,14 @@ class LLMAgent(BaseAgent):
 
             thought = response.content or ""
             if not thought.strip():
+                # HONEST placeholder: with native function-calling the model often
+                # returns EMPTY content next to tool_calls — there is no real
+                # rationale to show. The old fabricated first-person sentence
+                # ("I'll use X to gather the data I need") read as if the model
+                # said it (user-reported confusion 2026-07-13); label it as
+                # framework-generated instead.
                 names = [tc["function"]["name"] for tc in tool_calls]
-                thought = "I'll use " + " + ".join(names) + " to gather the data I need."
+                thought = "(model không kèm rationale — gọi tool: " + " + ".join(names) + ")"
             await cb.on_thought(thought)
 
             if self.tool_registry is None:
