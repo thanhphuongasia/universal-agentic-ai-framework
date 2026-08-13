@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Eval Framework &amp; Golden Dataset — Báo cáo 5W2H</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "base", themeVariables: {
+    primaryColor: "#ede9fe", primaryBorderColor: "#7c3aed", primaryTextColor: "#312e81",
+    lineColor: "#9ca3af", fontSize: "14px", fontFamily: "ui-monospace, monospace"
+  }});
+</script>
+<style>
+  :root {
+    --accent: #7c3aed; --accent-soft: #ede9fe; --ink: #1f2937; --muted: #6b7280;
+    --bg: #f8fafc; --card: #ffffff; --border: #e5e7eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+  header { border-bottom: 3px solid var(--accent); padding-bottom: 16px; margin-bottom: 8px; }
+  header h1 { margin: 0 0 4px; font-size: 28px; }
+  header p { margin: 0; color: var(--muted); }
+  h2 { margin: 40px 0 12px; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+  h2 .num { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: 0 0 auto; }
+  h3 { font-size: 16px; margin: 24px 0 8px; color: var(--accent); }
+  p, li { font-size: 15px; }
+  .lead { font-size: 16px; background: var(--accent-soft); border-left: 4px solid var(--accent);
+    padding: 14px 18px; border-radius: 8px; }
+  .grid { display: grid; gap: 16px; }
+  .cards5w { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .card .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-soft);
+    padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; }
+  .card h4 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; font-size: 14px; color: #374151; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+  th { background: #f1f5f9; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  .vs td:first-child { color: var(--muted); }
+  .vs td:nth-child(2) { color: var(--bad); }
+  .vs td:nth-child(3) { color: var(--ok); }
+  .diagram { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; margin: 14px 0; overflow-x: auto; }
+  .diagram .mermaid { display: flex; justify-content: center; }
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps li { counter-increment: step; position: relative; padding: 12px 12px 12px 52px; margin-bottom: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .steps li::before { content: counter(step); position: absolute; left: 12px; top: 12px;
+    width: 28px; height: 28px; background: var(--accent); color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+  .steps li b { color: var(--accent); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .pill.high { background:#dcfce7; color:#15803d; } .pill.low { background:#fef3c7; color:#b45309; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 13px; font-family: ui-monospace, monospace; }
+  pre { background: #f1f5f9; padding: 14px 16px; border-radius: 8px; overflow-x: auto;
+    font-size: 13px; font-family: ui-monospace, monospace; line-height: 1.55; margin: 12px 0; border: 1px solid var(--border); }
+  .note { font-size: 13px; color: var(--muted); }
+  .callout { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb;
+    border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .callout h4 { margin: 0 0 8px; font-size: 14px; color: #1d4ed8; text-transform: uppercase; letter-spacing: .03em; }
+  .callout ol { margin: 0; padding-left: 20px; } .callout li { margin-bottom: 6px; }
+  .callout .src { display:inline-block; font-size:11px; font-weight:700; background:#dbeafe; color:#1e40af;
+    padding:1px 8px; border-radius:999px; }
+  .warn-box { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b;
+    border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .warn-box h4 { margin: 0 0 8px; font-size: 14px; color: #92400e; text-transform: uppercase; letter-spacing: .03em; }
+  .decision-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .decision-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .decision-card h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+  .decision-card p { margin: 0; font-size: 13px; color: #374151; }
+  .src-table td:first-child { font-family: ui-monospace, monospace; font-size: 13px; color: #6d28d9; white-space: nowrap; }
+  .src-table td:nth-child(2) { color: #374151; font-size: 13px; }
+  footer { margin-top: 48px; border-top: 1px solid var(--border); padding-top: 14px; color: var(--muted); font-size: 13px; }
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+  .toc h4 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { font-size: 14px; margin-bottom: 2px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin-left:4px; }
+  .badge.new { background:#dcfce7; color:#15803d; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Eval Framework &amp; Golden Dataset</h1>
+  <p>Báo cáo theo khung <b>5W2H</b> — vì sao cần, là gì, ai/khi nào/ở đâu, và làm thế nào.
+     Nguồn kỹ thuật: <code>docs/eval-oracle-suite-case-architecture.md</code></p>
+</header>
+
+<div class="toc">
+  <h4>Nội dung</h4>
+  <ol>
+    <li><a href="#why">WHY — Vì sao cần Eval framework?</a></li>
+    <li><a href="#5w2h">5W2H — Nhìn nhanh toàn cảnh</a></li>
+    <li><a href="#eval-flow">HOW — Luồng Eval (chấm điểm)</a></li>
+    <li><a href="#golden-flow">HOW — Luồng Oracle Review / Golden Dataset (tạo expectation)</a></li>
+    <li><a href="#architecture">Kiến trúc &amp; Thuật ngữ — Domain hierarchy</a></li>
+    <li><a href="#file-format">File format — Fixture &amp; Review JSON</a></li>
+    <li><a href="#oracle-input">Oracle input contract — route_context_json</a></li>
+    <li><a href="#decisions">Key Design Decisions</a></li>
+    <li><a href="#source-map">Source Map</a></li>
+  </ol>
+</div>
+
+<p class="lead">
+  Tóm tắt 1 câu: với phần mềm truyền thống ta viết <b>unit/IT test</b> vì output cố định;
+  với <b>LLM</b> output biến thiên nên không assert được — phải <b>eval</b> (chấm điểm theo tiêu chí).
+  Mà eval cần <b>expectation</b> cho mỗi case; trong codebase lớn con người tự làm thì cực &amp; dễ sai,
+  nên có phase <b>Golden Dataset</b> dùng LLM mạnh sinh expectation → người chỉ <b>duyệt</b> → <b>promote</b> thành fixture cho eval dùng.
+</p>
+
+<!-- ─────────────────────────── WHY ─────────────────────────── -->
+<h2 id="why"><span class="num">W</span> WHY — Vì sao cần Eval framework?</h2>
+
+<h3>Phần mềm truyền thống: unit test / IT là đủ</h3>
+<p>Code thường <b>tất định (deterministic)</b>: cùng input → luôn cùng output. Nên test chỉ cần
+  <code>assertEquals(expected, actual)</code>. Pass/fail rõ ràng.</p>
+
+<h3>LLM: output biến thiên → assert "==" vô dụng</h3>
+<p>Cùng một input, LLM có thể trả lời khác nhau mỗi lần (nhiệt độ, sampling, đổi model, đổi prompt).
+  Không thể so khớp tuyệt đối. Phải chấm theo <b>tiêu chí mềm</b>: đúng cấu trúc, chứa thông tin cần,
+  vượt ngưỡng tương đồng, đúng op CRUD… → đó là việc của <b>eval</b>.</p>
+
+<table class="vs">
+  <thead><tr><th>Khía cạnh</th><th>Phần mềm truyền thống</th><th>Ứng dụng LLM</th></tr></thead>
+  <tbody>
+    <tr><td>Output</td><td>Tất định, 1 đáp án đúng</td><td>Biến thiên, nhiều cách diễn đạt đúng</td></tr>
+    <tr><td>Kiểm thử</td><td>unit test / IT: <code>== expected</code></td><td>eval: chấm điểm + ngưỡng + so khớp mềm</td></tr>
+    <tr><td>Khi đổi (model/prompt)</td><td>Logic giữ nguyên</td><td>Kết quả đổi → cần đo &amp; so sánh phiên bản</td></tr>
+    <tr><td>"Đáp án đúng" (expected)</td><td>Lập trình viên viết tay, ít</td><td>Rất nhiều &amp; khó tạo tay → cần Golden Dataset</td></tr>
+  </tbody>
+</table>
+
+<h3>Bối cảnh codebase lớn</h3>
+<p>Với hàng trăm route / entity / field, việc <b>tự tay tạo "đáp án đúng" cho từng field của từng entity</b>
+  là bất khả thi: con người dễ <b>miss</b>, <b>mệt mỏi</b>, <b>sai sót</b>, và không nhất quán.
+  Không thể nhìn từng dòng code để dựng golden dataset thủ công.</p>
+
+<h3>Vì sao không "chờ production rồi xem"?</h3>
+<p>Chờ chạy thật rất chậm &amp; rủi ro, và <b>không so sánh công bằng</b> được nhiều model / nhiều phiên bản prompt
+  cùng lúc. Eval cho phép thử <b>offline</b>, lặp nhanh, so sánh A/B trước khi ship.</p>
+
+<!-- ─────────────────────────── 5W2H ─────────────────────────── -->
+<h2 id="5w2h"><span class="num">5</span> Khung 5W2H — nhìn nhanh toàn cảnh</h2>
+<div class="grid cards5w">
+  <div class="card"><span class="tag">What</span><h4>Là cái gì</h4>
+    <p>Hệ chạy bộ <i>test case (input + expected)</i> qua model/prompt, rồi <b>chấm điểm</b> &amp; so sánh.
+       Tổ chức theo <b>System → Domain → Suite → Case / Prompt version / Run</b>.</p></div>
+  <div class="card"><span class="tag">Why</span><h4>Vì sao</h4>
+    <p>LLM output biến thiên → unit test không đủ. Cần đo chất lượng &amp; so sánh model / prompt version.</p></div>
+  <div class="card"><span class="tag">Who</span><h4>Ai</h4>
+    <p>Dev / prompt engineer chạy eval. <b>Reviewer (người)</b> duyệt Golden Dataset trong Oracle Review UI.</p></div>
+  <div class="card"><span class="tag">When</span><h4>Khi nào</h4>
+    <p>Trước khi đổi prompt/model, kiểm hồi quy, so sánh phiên bản — <b>không chờ production</b>.</p></div>
+  <div class="card"><span class="tag">Where</span><h4>Ở đâu</h4>
+    <p>Ryuu Eval: <i>Suite → Case → Prompt version → Run</i>. Expectation tạo ở <b>Oracle Review</b> (Golden Dataset).
+       Fixture lưu file; case/run lưu Postgres.</p></div>
+  <div class="card"><span class="tag">How</span><h4>Làm thế nào</h4>
+    <p>Oracle Review sinh expectation (6 bước) → người duyệt → promote thành <b>test_case trong DB</b>
+       → Run chấm điểm qua <b>Scorer</b>.</p></div>
+  <div class="card"><span class="tag">How much</span><h4>Bao nhiêu / chi phí</h4>
+    <p>Tự động hoá phần nặng (sinh expectation bằng LLM mạnh); người chỉ <b>review cell low/medium</b>
+       → tiết kiệm công, giảm sai sót.</p></div>
+</div>
+
+<!-- ─────────────────────────── HOW: EVAL FLOW ─────────────────────────── -->
+<h2 id="eval-flow"><span class="num">H</span> HOW — Luồng Eval (dùng expectation để chấm)</h2>
+<p>Mỗi case có <b>input</b> và <b>expected</b>. Eval chạy input qua nhiều model / nhiều prompt version,
+  lấy output thật rồi so với expected để ra điểm — và <b>so sánh</b> các phiên bản.
+  Khi <b>đạt ngưỡng &amp; review OK</b>, prompt được <b>promote lên Production</b> (có thể chạy A/B testing).</p>
+
+<div class="callout">
+  <h4>⮕ Đầu vào bắt buộc của eval (đến từ ngoài — eval KHÔNG tự sinh)</h4>
+  <ol>
+    <li><b>Production prompt</b> — prompt đang cần đánh giá (cái "dưới kính hiển vi").
+        Được lưu thành <b>Prompt version</b> của suite trong Postgres (<code>prompt_versions</code> table).
+        Suite luôn có 1 version được đánh dấu <i>active</i> thông qua con trỏ <code>suites.active_prompt_version_id</code>.</li>
+    <li><b>route_context_json</b> — input mô tả 1 route: <code>route</code> + <code>entities(fields)</code> +
+        <code>method_access(read/write)</code> + <code>call_chain</code>. Do
+        <span class="src">Code Analysis project</span> sinh ra (phân tích AST/graph từ source Java,
+        hàm <code>_build_route_context()</code>). Được nạp thành <code>input</code> của <b>Case</b>.</li>
+  </ol>
+  <p class="note" style="margin-top:8px">Eval chỉ <b>tiêu thụ</b> 2 thứ này — chất lượng route_context_json
+    (có đủ entities + method_access hay không) quyết định oracle/eval có grounded hay phải đoán.</p>
+</div>
+
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  INP["Input (route_context_json)<br/>từ Code Analysis project<br/>vd: GET /timesheets/monthly/:id<br/>route + entities + method_access"]
+  EXP["✦ EXPECTED — golden<br/>vd: MonthlyTimesheet<br/>id=R · status=R · month=R"]:::golden
+  PV["Prompt version<br/>vd: v1 'Extract CRUD. JSON'<br/>v2 (active) bản đầy đủ"]
+  MD["Model<br/>vd: claude-sonnet-4-6<br/>· gpt-4o"]
+  R["EvalRunner"]
+  O["Output thật của model<br/>vd: MonthlyTimesheet<br/>id=R · status=R · employeeId=R"]
+  S["Scorer (CRUDOpsMatch)<br/>so khớp output ↔ expected<br/>vd: 6/6 cell khớp"]
+  SC["Score · Pass/Fail<br/>vd: 1.0 ≥ ngưỡng 0.8 → PASS"]
+  CMP["So sánh model &amp; prompt version<br/>vd: v2=1.0 &gt; v1=0.6"]
+  GATE{"Đạt ngưỡng<br/>&amp; review OK?"}
+  PROD["✅ Promote prompt → PRODUCTION<br/>+ A/B testing (v1 vs v2 traffic)"]:::prod
+  BACK["Chưa đạt → sửa prompt /<br/>đổi model → chạy lại"]
+
+  INP --> R
+  PV --> R
+  MD --> R
+  R --> O
+  O --> S
+  EXP --> S
+  S --> SC
+  SC --> CMP
+  CMP --> GATE
+  GATE -->|đạt| PROD
+  GATE -->|chưa| BACK
+  BACK -.->|lặp| PV
+  classDef golden fill:#fef9c3,stroke:#ca8a04,color:#713f12,stroke-width:2px;
+  classDef prod fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px;
+</div></div>
+<p class="note">→ <b>EXPECTED</b> (ô vàng) là "đáp án đúng" — nhưng tự tay viết cho từng field thì cực.
+  Đó là lý do có phase <b>Oracle Review / Golden Dataset</b> bên dưới để sinh ra nó.</p>
+
+<h3>Cơ chế chấm điểm — "chấm điểm + ngưỡng + so khớp mềm"</h3>
+
+<p>Ba khái niệm này thay thế <code>assertEquals</code> của unit test. Lý do cần cả ba: LLM output
+   không bao giờ "giống hệt" expected về mặt ký tự, nhưng có thể <em>đúng về bản chất</em> —
+   cần đo theo bản chất, không đo theo chuỗi.</p>
+
+<div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(290px,1fr)); margin: 14px 0;">
+
+  <div class="card">
+    <span class="tag">1 — Chấm điểm (Scoring)</span>
+    <h4>Điểm số thay vì pass/fail nhị phân</h4>
+    <p>Unit test: đúng hết = PASS, sai 1 chỗ = FAIL. Nhưng "đúng 5/6 cell CRUD" là kết quả
+       rất tốt — bỏ đi uổng nếu dùng pass/fail. <b>Scorer</b> tính một điểm số 0.0–1.0:</p>
+    <pre style="margin:8px 0 0">score = matched_cells / total_cells
+# vd: 5/6 = 0.833</pre>
+  </div>
+
+  <div class="card">
+    <span class="tag">2 — Ngưỡng (Threshold)</span>
+    <h4>"Đủ tốt" thay vì "hoàn hảo"</h4>
+    <p>Có điểm rồi, cần quyết định bao nhiêu thì "đạt". Ngưỡng được đặt trong suite config
+       (không bắt buộc 1.0 vì LLM đôi khi đúng bản chất nhưng diễn đạt hơi khác):</p>
+    <pre style="margin:8px 0 0">threshold = 0.8
+passed = score >= threshold
+# 0.833 >= 0.8 → PASS</pre>
+  </div>
+
+  <div class="card">
+    <span class="tag">3 — So khớp mềm (Soft matching)</span>
+    <h4>Chuẩn hoá trước khi so — không cần giống từng ký tự</h4>
+    <p>Unit test: <code>"Order::customerId" != "order::customer_id"</code> → FAIL. Nhưng hai
+       cái đó có nghĩa giống nhau. Hàm <code>normalize_flat_ops</code> chuẩn hoá <em>cả hai phía</em>
+       trước khi compare:</p>
+    <pre style="margin:8px 0 0"># 1. camelCase → snake_case + lowercase
+"Order::customerId" → "order::customer_id"  ✓
+
+# 2. sắp xếp op alphabet
+"RC" → "CR"  ✓  (giống "CR")</pre>
+  </div>
+
+</div>
+
+<div class="callout" style="background:#f0fdf4; border-color:#bbf7d0; border-left-color:#16a34a;">
+  <h4 style="color:#15803d;">⮕ Ví dụ đầy đủ — 3 bước kết hợp</h4>
+  <p style="margin:0 0 8px"><b>Expected (golden):</b> <code>Order.status=U</code>, <code>Order.totalPrice=U</code>, <code>Order.id=R</code></p>
+  <p style="margin:0 0 8px"><b>Model trả về:</b> <code>Order.status=U</code>, <code>Order.totalPrice=U</code>, <code>Order.Id=R</code> (viết hoa I)</p>
+  <pre style="margin:8px 0">Bước 1 — normalize:  "Order.Id"  →  "order.id"  ✓ khớp với "Order.id"
+Bước 2 — score:      3/3 = 1.0
+Bước 3 — threshold:  1.0 >= 0.8  →  PASS</pre>
+  <p style="margin:8px 0 0" class="note">Nếu dùng <code>assertEquals</code>: <code>"Order.Id" != "Order.id"</code> → FAIL — sai, dù thực ra đúng.</p>
+</div>
+
+<p>Expected có thể ở 3 dạng — scorer <code>CRUDOpsMatch</code> xử lý cả 3 trước khi normalize:</p>
+<ul>
+  <li>Flat: <code>{"Order::status": "U"}</code></li>
+  <li>List: <code>{"cells": [{"entity":"Order","column":"status","op":"U"}]}</code></li>
+  <li>Nested (dạng fixture giàu metadata): <code>{"cells": {"Order": {"status": {"op":"U","confidence":"high","oracle_why":"…"}}}}</code></li>
+</ul>
+
+<!-- ─────────────────────────── HOW: GOLDEN DATASET FLOW ─────────────────────────── -->
+<h2 id="golden-flow"><span class="num">G</span> HOW — Luồng Oracle Review / Golden Dataset (tạo expectation)</h2>
+<p>Dùng <b>input có sẵn</b> (route context: route + entities + method_access) và <b>production prompt</b>
+  để cho một <b>model mạnh hơn (oracle)</b> sinh ra "đáp án đúng". Người chỉ ngồi <b>duyệt bảng</b>.</p>
+<div class="diagram"><div class="mermaid">
+flowchart TD
+  IN["Input có sẵn<br/>vd: PUT /api/orders/:id<br/>route · entities(fields) · method_access(read/write)"]
+  PP["Production prompt<br/>vd: 'You are a CRUD classifier… trả JSON cells'"]
+  PP --> META["① Meta-generate (optional)<br/>biến production prompt → oracle prompt<br/>POST /oracle-review/meta-generate"]
+  META --> OP["Oracle prompt<br/>vd: persona 'senior JPA expert' + chain-of-thought<br/>(người có thể chỉnh)"]
+  IN --> GEN
+  OP --> GEN["② Generate fixture<br/>Model MẠNH hơn (oracle) sinh expectation<br/>POST /oracle-review/generate"]
+  GEN --> CAND["Candidate cells<br/>vd: Order.status op=U confidence=high<br/>why='service.setStatus → write'"]
+  GEN --> RFILE["Lưu file .json + .review.json<br/>(cells confidence low/medium cần review)"]
+  CAND --> REFINE["③ Execute/Refine (optional)<br/>Chạy lại với oracle prompt khác<br/>POST /oracle-review/run-with-prompt"]
+  REFINE --> REV
+  CAND --> REV{"④ Human review bảng<br/>entity / field / op / confidence"}
+  REV -->|"confidence = high"| SKIP["Auto-approve<br/>vd: status=U (rõ ràng)"]
+  REV -->|"low / medium"| FIX["Approve · Fix op · Remove<br/>vd: lockedAt → Remove (DB-managed)<br/>POST /oracle-review/{id}/review"]
+  SKIP --> FIN
+  FIN["⑤ Finalize: gắn reviewed_by<br/>→ fixture được đánh dấu 'approved'"]
+  FIX --> FIN
+  FIN --> PROM["⑤ Promote to suite<br/>POST /oracle-review/{id}/promote-to-suite"]
+  PROM --> FX["⑥ Fixture → test_case trong DB<br/>input + expected (đã duyệt)<br/>kèm metadata: source_fixture, oracle_model, reviewed_by"]:::golden
+  FX -.->|eval dùng| USE["→ quay lại luồng Eval ở trên"]
+  classDef golden fill:#fef9c3,stroke:#ca8a04,color:#713f12,stroke-width:2px;
+</div></div>
+
+<h3>6 bước Oracle Review lifecycle</h3>
+<ol class="steps">
+  <li><b>Meta-generate (optional) — production prompt → oracle prompt.</b>
+      Một "meta-prompt" biến production prompt thành <b>oracle prompt</b> chuyên sinh ground truth
+      (thêm persona "senior JPA expert", chain-of-thought). Người có thể chỉnh tay trước khi chạy.
+      API: <code>POST /oracle-review/meta-generate</code>.</li>
+  <li><b>Generate fixture — model mạnh sinh expectation.</b>
+      Dùng model oracle (vd Opus) chạy oracle prompt trên input → ra các cell
+      <code>op + confidence + why</code>. Lưu <code>&lt;id&gt;.json</code> (fixture) và
+      <code>&lt;id&gt;.review.json</code> (chỉ cell cần review: confidence low/medium).
+      API: <code>POST /oracle-review/generate</code>.</li>
+  <li><b>Execute/Refine (optional, stateless) — thử oracle prompt.</b>
+      Chạy thêm lần nữa với oracle prompt khác để so sánh output trước khi chốt.
+      Không ghi đè fixture — lịch sử run được lưu riêng.
+      API: <code>POST /oracle-review/run-with-prompt</code>.</li>
+  <li><b>Review &amp; Approve — fixture là đơn vị duyệt.</b>
+      Người nhìn bảng entity/field/op:
+      cell <span class="pill high">high</span> có thể phớt lờ,
+      tập trung soi cell <span class="pill low">low/medium</span> —
+      <b>Approve</b> (tin → confidence = high) / <b>Fix</b> (sửa op) / <b>Remove</b> (xoá cell).
+      Khi gắn <code>reviewed_by</code> → <code>reviewed_at</code> được stamp → fixture chuyển trạng thái "approved".
+      API: <code>POST /oracle-review/{id}/review</code>.</li>
+  <li><b>Promote to suite → trở thành test_case.</b>
+      Flatten cells → insert vào <code>test_cases</code> DB (hoặc file <code>.yml</code> nếu file-backed).
+      Metadata <code>source_fixture</code> lưu truy xuất nguồn gốc.
+      API: <code>POST /oracle-review/{id}/promote-to-suite</code>.</li>
+  <li><b>Case tham gia eval bình thường.</b>
+      Test case đã promote được dùng trong run thông thường (luồng §3 ở trên).</li>
+</ol>
+
+<h3>Vì sao "confidence" + "why" quan trọng khi review</h3>
+<p>Oracle tự chấm độ tin cậy mỗi cell và kèm lý do. Reviewer nhờ đó <b>chỉ cần soi kỹ cái mơ hồ</b>
+  (low/medium), tin tưởng cái rõ ràng (high) → review nhanh, đỡ mệt, ít miss. Đây chính là cách
+  biến việc "tạo golden cho từng field" từ <b>thủ công &amp; dễ sai</b> thành <b>duyệt có hỗ trợ</b>.</p>
+
+<!-- ─────────────────────────── ARCHITECTURE ─────────────────────────── -->
+<h2 id="architecture"><span class="num">A</span> Kiến trúc &amp; Thuật ngữ — Domain hierarchy</h2>
+
+<p>Phân cấp dữ liệu của eval framework (đọc từ trên xuống):</p>
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  SYS["System<br/>vd: code-analysis"] --> DOM["Domain<br/>vd: diagrams"]
+  DOM --> SUITE["Suite<br/>vd: crud_matrix_llm"]
+  SUITE --> PVS["Prompt versions<br/>v1 · v2 (active)"]
+  SUITE --> CASES["Cases (test_cases)<br/>input + expected + scoring"]
+  SUITE --> RUNS["Runs → Results<br/>điểm mỗi lần chạy"]
+  classDef hl fill:#ede9fe,stroke:#7c3aed,color:#312e81,stroke-width:2px;
+  class SUITE hl;
+</div></div>
+
+<h3>Bảng entity đầy đủ</h3>
+<table>
+  <thead><tr><th>Entity</th><th>Table (Postgres)</th><th>Sở hữu</th><th>Ý nghĩa chính</th></tr></thead>
+  <tbody>
+    <tr><td><b>System</b></td><td><code>systems</code></td><td>domains</td><td>Nhóm cấp cao nhất, vd <code>code-analysis</code></td></tr>
+    <tr><td><b>Domain</b></td><td><code>domains</code></td><td>suites</td><td>Nhóm con, vd <code>diagrams</code></td></tr>
+    <tr><td><b>Suite</b></td><td><code>suites</code></td><td>prompts, cases, runs</td><td>Đơn vị đánh giá; có <code>active_prompt_version_id</code> trỏ vào version đang live</td></tr>
+    <tr><td><b>Prompt Version</b></td><td><code>prompt_versions</code></td><td>—</td><td>Versioned <code>PromptConfig</code> (JSONB) + lifecycle status (draft/staging/archived)</td></tr>
+    <tr><td><b>Case</b></td><td><code>test_cases</code></td><td>—</td><td><code>input</code> + <code>expected</code> + <code>scoring</code> riêng; PK = <code>(suite_id, id)</code></td></tr>
+    <tr><td><b>Run</b></td><td><code>eval_runs</code></td><td>results</td><td>Một lần chạy suite qua 1 model/prompt</td></tr>
+    <tr><td><b>Result</b></td><td><code>eval_results</code></td><td>—</td><td>Điểm của 1 case trong 1 run</td></tr>
+    <tr><td><b>Fixture</b></td><td>File JSON (chưa promote)</td><td>—</td><td>Oracle-generated golden answer (pre-promotion); trở thành <code>test_case</code> sau khi promote</td></tr>
+  </tbody>
+</table>
+
+<h3>Prompt version lifecycle</h3>
+<p>Một prompt version có 2 chiều độc lập:</p>
+<ul>
+  <li><b>Status</b> (<code>draft</code> → <code>staging</code> → <code>archived</code>): vòng đời của version, do người thao tác.</li>
+  <li><b>Active pointer</b> (<code>suites.active_prompt_version_id</code>): con trỏ suite trỏ vào version nào đang live.
+      Promote = cập nhật con trỏ này, <b>không thay đổi</b> status của version cũ.</li>
+</ul>
+<p class="note">⚠ "Promoted" ≠ "status=staging". Một version status=staging vẫn có thể là active (live).
+   Active pointer và status là 2 trục tách biệt.</p>
+
+<div class="grid cards5w" style="margin-top:16px">
+  <div class="card"><span class="tag">Suite</span><h4>Bộ đề thi</h4>
+    <p>Nhóm bài test cho cùng loại bài toán (vd "CRUD Matrix"). Sở hữu nhiều <b>Case</b>,
+       nhiều <b>Prompt version</b> (1 cái đang active) và lịch sử <b>Run</b>.</p></div>
+
+  <div class="card"><span class="tag">Case</span><h4>1 câu hỏi + đáp án</h4>
+    <p>Một test đơn lẻ = <code>input</code> + <code>expected</code> (+ <code>scoring</code> riêng nếu cần).
+       Vd: input = GET /timesheets/:id, expected = MonthlyTimesheet mọi field = R.</p></div>
+
+  <div class="card"><span class="tag">Golden Set</span><h4>Bảng đáp án chuẩn</h4>
+    <p>Tập expected đã được người duyệt — "chân lý" để chấm. Tạo qua Oracle Review:
+       oracle sinh → human approve → <b>promote</b> → <b>test_case trong DB</b>.</p></div>
+</div>
+
+<table style="margin-top:16px">
+  <thead><tr><th>Thuật ngữ</th><th>Là gì</th><th>Ví dụ</th></tr></thead>
+  <tbody>
+    <tr><td><b>Prompt version</b></td><td>Một phiên bản prompt của suite, có vòng đời (draft/staging/archived) + con trỏ <i>active</i> tách biệt</td><td>v1 sơ khai · v2 (active) đầy đủ</td></tr>
+    <tr><td><b>Run</b></td><td>Một lần chạy suite qua 1 model/prompt → ra <b>Results</b> (điểm từng case)</td><td>Run v2 × claude-sonnet-4-6 → score 1.0</td></tr>
+    <tr><td><b>Fixture</b></td><td>File <code>input + expectation</code> (+ audit trail) do Oracle Review sinh, lưu file JSON; chờ promote</td><td><code>case1_happy_path.json</code></td></tr>
+    <tr><td><b>Scorer</b></td><td>Luật chấm output ↔ expected, trả điểm + pass/fail; sống trong <code>ryuu-eval-scorers</code></td><td>CRUDOpsMatch: 6/6 cell khớp → 1.0</td></tr>
+    <tr><td><b>Oracle</b></td><td>LLM mạnh hơn (vd Opus) dùng để sinh expectation — <em>không</em> phải model đang được eval</td><td><code>claude-opus-4-8</code></td></tr>
+    <tr><td><b>Oracle prompt</b></td><td>Prompt chuyên sinh ground truth (YAML file trong eval_consumer); khác với production prompt</td><td><code>java_spring.yaml</code></td></tr>
+    <tr><td><b>active_prompt_version_id</b></td><td>Con trỏ trên bảng <code>suites</code> → version nào đang live; promote = cập nhật con trỏ này</td><td><code>suites.active_prompt_version_id = "v2_id"</code></td></tr>
+  </tbody>
+</table>
+
+<!-- ─────────────────────────── FILE FORMAT ─────────────────────────── -->
+<h2 id="file-format"><span class="num">F</span> File format — Fixture &amp; Review JSON</h2>
+
+<h3>Fixture — <code>artifacts/eval/oracle_fixtures/&lt;domain&gt;/&lt;id&gt;.json</code></h3>
+<p>Mỗi fixture là 1 file JSON lưu đầy đủ audit trail. Khi <code>reviewed_by</code> rỗng → trạng thái "pending" (chưa duyệt).</p>
+<pre>{
+  "fixture_id": "case1_happy_path",
+  "suite_id": "crud_matrix_llm",
+  "prompt_version": "crud_matrix_oracle.v1",
+  "oracle_model": "claude-opus-4-8",
+  "reviewed_by": "",          // rỗng = chưa approve
+  "reviewed_at": "",          // ISO date khi finalize
+  "input_data": { /* route_context_json — route + entities + method_access */ },
+  "expected": {
+    "cells": {
+      "Order": {
+        "status": { "op": "C", "confidence": "high", "oracle_why": "service.setStatus → write" },
+        "id":     { "op": "",  "confidence": "medium", "oracle_why": "@GeneratedValue → DB assigns" }
+      }
+    },
+    "valid_fields": { "Order": ["id", "status"] },
+    "framework": "java_spring"
+  },
+  // Studio audit trail (chỉ có khi sinh qua UI):
+  "production_prompt": "…",       // prompt đang được eval
+  "oracle_prompt": "…",           // YAML prompt sinh ground truth
+  "oracle_prompt_version": "…",
+  "meta_prompt_version": "…"
+}</pre>
+
+<h3>Companion review — <code>&lt;id&gt;.review.json</code></h3>
+<p>Chỉ chứa các cell cần người quyết định (confidence ∈ low/medium):</p>
+<pre>{
+  "fixture_id": "case1_happy_path",
+  "generated_at": "2026-05-26",
+  "needs_review": [
+    {
+      "entity": "Order", "field": "id", "op": "", "confidence": "medium",
+      "oracle_why": "@GeneratedValue → DB assigns id, app never writes it",
+      "action": "remove",      // null=chưa quyết · approve · fix · remove
+      "corrected_op": null     // set khi action="fix"
+    }
+  ]
+}</pre>
+
+<p><b>Semantics của action khi approve:</b></p>
+<ul>
+  <li><b>approve</b> → set confidence = <code>high</code></li>
+  <li><b>fix</b> → set <code>op = corrected_op</code>, confidence = <code>high</code></li>
+  <li><b>remove</b> → xoá cell khỏi fixture</li>
+</ul>
+<p class="note">Finalize (gắn <code>reviewed_by</code>) stamp <code>reviewed_at=today()</code> lên cả fixture → đây là thứ lật trạng thái từ "pending" sang "approved".</p>
+
+<!-- ─────────────────────────── ORACLE INPUT ─────────────────────────── -->
+<h2 id="oracle-input"><span class="num">I</span> Oracle input contract — <code>route_context_json</code></h2>
+
+<p>Oracle prompt được template bằng <code>{{ route_context_json }}</code>.
+   Khi input đúng chuẩn, oracle <b>không đoán</b> — mọi thứ được grounded từ input:</p>
+<ul>
+  <li><code>entities[].fields[].{name, db_column}</code> → ground field names + casing
+      (hàm <code>_extract_valid_fields</code> đọc chính xác field này, ưu tiên <code>db_column</code>)</li>
+  <li><code>method_access[].{read, write}</code> → ground op trực tiếp:
+      field trong <code>read</code> → <code>R</code>, trong <code>write</code> → <code>C</code>/<code>U</code></li>
+</ul>
+
+<pre>{
+  "route":       { "endpoint": "/api/orders/{id}", "http_method": "PUT",
+                   "use_case": "Update order status", "action": "update" },
+  "call_chain":  [ { "class": "OrderService", "method": "update", "method_key": "…" } ],
+  "entities":    [ { "short_name": "Order", "fqn": "…", "db_table": "orders",
+                     "annotations": ["@Entity","@Table(…)"],
+                     "fields": [ { "name": "totalPrice", "db_column": "total_price",
+                                   "annotations": ["@Column"] } ] } ],
+  "method_access": [ { "class": "OrderService", "method": "update",
+                        "read":  ["id","status"],        // → op R
+                        "write": ["status","totalPrice"], // → op C/U
+                        "annotations": ["@Transactional"] } ]
+}</pre>
+
+<div class="warn-box">
+  <h4>⚠ Fixture-shape caveat — non-conformant fixtures</h4>
+  <p>Một số fixture cũ (vd <code>studio_test_post_orders.json</code>) có shape khác:
+     <code>{project_id, total, contexts: {"&lt;route&gt;": {call_edges, call_classes, step_actions, route}}}</code>
+     — <b>không có</b> <code>entities</code> và <code>method_access</code>.
+     Với các fixture này, oracle phải <em>đoán</em> field từ call chain → reviewer phải soi kỹ hơn.</p>
+  <p style="margin:8px 0 0"><b>Đừng</b> hand-author block <code>entities</code> giả để vá — hãy
+     <b>regenerate fixture từ route_context_json đúng chuẩn</b>.</p>
+</div>
+
+<!-- ─────────────────────────── DECISIONS ─────────────────────────── -->
+<h2 id="decisions"><span class="num">D</span> Key Design Decisions</h2>
+
+<div class="decision-grid">
+  <div class="decision-card">
+    <h4>Protocols in core, impls in storage</h4>
+    <p>App code phụ thuộc vào <code>ISuiteStore</code>, <code>IPromptStore</code>… — blast radius nhỏ khi swap Postgres ↔ memory/sqlite. Wiring duy nhất ở <code>dev_server.py</code>.</p>
+  </div>
+  <div class="decision-card">
+    <h4>DB-only suites</h4>
+    <p>Suite/case/run chỉ đọc từ Postgres, không có file fallback → loại bỏ file-vs-DB ambiguity. Oracle <em>fixture</em> vẫn là file cho đến khi promote.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Active pointer ≠ status</h4>
+    <p>Promote → cập nhật <code>suites.active_prompt_version_id</code>. Status (draft/staging/archived) là vòng đời độc lập. Một version staging vẫn có thể là live.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Run resolves active prompt</h4>
+    <p><code>POST /run</code> không cần truyền prompt — tự resolve <code>get_active(suite).config</code> qua <code>_system_prompt_from_config</code>. Promote → lần run tiếp theo dùng version mới ngay.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Per-case scoring</h4>
+    <p>Case's <code>scoring</code> JSONB drive <code>build_scorers()</code> qua <code>EvalRunner.scorer_for</code>. Fallback về suite-level scorers khi case không có spec riêng.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Casing-insensitive CRUD compare</h4>
+    <p><code>normalize_flat_ops</code> collapse camelCase/snake_case và op order — chỉ genuine op difference mới fail một cell. Áp dụng nhất quán trong cả scorer lẫn target trace.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Fixture là file, case là DB row</h4>
+    <p>Fixture (chưa duyệt) → file JSON dễ edit/xoá/version. Sau khi promote → <code>test_cases</code> row trong DB, tham gia eval bình thường. Hai giai đoạn, hai storage khác nhau.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Oracle prompt tách khỏi production prompt</h4>
+    <p>Oracle prompt (sinh ground truth) lưu YAML file trong <code>eval_consumer/.../prompts/</code>. Production prompt (đang được eval) lưu trong <code>prompt_versions</code> DB. Hai mục đích, hai nơi.</p>
+  </div>
+</div>
+
+<!-- ─────────────────────────── SOURCE MAP ─────────────────────────── -->
+<h2 id="source-map"><span class="num">S</span> Source Map — Ai ở đâu</h2>
+
+<table class="src-table">
+  <thead><tr><th>Concern</th><th>File / Package</th></tr></thead>
+  <tbody>
+    <tr><td>Protocols</td><td><code>packages/ryuu-eval-core/src/ryuu_eval_core/protocols.py</code></td></tr>
+    <tr><td>EvalRunner</td><td><code>packages/ryuu-eval-core/src/ryuu_eval_core/runner.py</code></td></tr>
+    <tr><td>Prompt store (IPromptStore, PromptVersion)</td><td><code>packages/ryuu-prompts/src/ryuu_prompts/store.py</code></td></tr>
+    <tr><td>Postgres stores (suite, test_case, eval_run, prompt)</td><td><code>packages/infrastructure/storage/ryuu-storage-postgres/src/ryuu_storage_postgres/</code></td></tr>
+    <tr><td>Scorers factory (build_scorers, metadata_scorer_resolver)</td><td><code>packages/ryuu-eval-scorers/src/ryuu_eval_scorers/factory.py</code></td></tr>
+    <tr><td>Oracle core (OracleWorkflow, ReviewSchema, OracleFixture)</td><td><code>packages/ryuu-eval-oracle/src/ryuu_eval_oracle/</code></td></tr>
+    <tr><td>CRUD oracle strategy</td><td><code>eval_consumer/crud_matrix_oracle/</code> (CrudMatrixOracleStrategy, normalizer.py)</td></tr>
+    <tr><td>CRUD target &amp; scorer</td><td><code>eval_consumer/crud_matrix_llm/{target,scorer}.py</code></td></tr>
+    <tr><td>Suite wiring / runner_factory / _SUITE_BEHAVIOR</td><td><code>eval_suites.py</code></td></tr>
+    <tr><td>HTTP router (build_eval_router)</td><td><code>packages/ryuu-eval/src/ryuu_eval/http/router.py</code></td></tr>
+    <tr><td>Composition root</td><td><code>dev_server.py</code></td></tr>
+    <tr><td>Demo seed</td><td><code>scripts/seed_eval.py</code></td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Sinh bởi báo cáo nội bộ · khung 5W2H · sơ đồ render bằng Mermaid.
+  Nguồn kỹ thuật đầy đủ (class diagram, sequence diagram, HTTP API): <code>docs/eval-oracle-suite-case-architecture.md</code>.
+  Cập nhật: 2026-06-02.
+</footer>
+
+</div>
+</body>
+</html>

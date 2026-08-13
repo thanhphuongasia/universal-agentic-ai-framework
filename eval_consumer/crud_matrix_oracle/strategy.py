@@ -74,7 +74,14 @@ class CrudMatrixOracleStrategy:
             kind="table",
             columns=["ENTITY", "FIELD", "OP", "CONFIDENCE"],
             actions=["approve", "fix", "remove"],
-            meta={"domain": "crud_matrix", "framework": self._framework},
+            meta={
+                "domain": "crud_matrix",
+                "framework": self._framework,
+                # Oracle generation provenance — surfaced read-only in the UI so
+                # reviewers know which oracle prompt / default model produced cells.
+                "prompt_version": self.prompt_version,
+                "default_model": self._model,
+            },
         )
 
     async def generate_candidate(

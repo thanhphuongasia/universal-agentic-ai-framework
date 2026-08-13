@@ -1,0 +1,90 @@
+{
+  "fixture_id": "case1_happy_path",
+  "prompt_version": "crud_matrix_oracle.v1",
+  "oracle_model": "claude-opus-4-7",
+  "reviewed_by": "test-bot",
+  "reviewed_at": "2026-05-27",
+  "review_note": "",
+  "input_data": {
+    "route": {
+      "endpoint": "/orders",
+      "http_method": "POST",
+      "use_case": "POST /orders"
+    },
+    "entities": [
+      {
+        "short_name": "Order",
+        "fields": [
+          {
+            "name": "id",
+            "db_column": "id",
+            "type": "Long",
+            "annotations": [
+              "@Id",
+              "@GeneratedValue"
+            ]
+          },
+          {
+            "name": "total",
+            "db_column": "total",
+            "type": "BigDecimal",
+            "annotations": []
+          },
+          {
+            "name": "status",
+            "db_column": "status",
+            "type": "String",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "call_subgraph": {
+      "OrderController::createOrder": [
+        {
+          "from_class": "OrderController",
+          "to_class": "OrderService",
+          "to_method": "createOrder"
+        },
+        {
+          "from_class": "OrderService",
+          "to_class": "Order",
+          "to_method": "setStatus"
+        },
+        {
+          "from_class": "OrderService",
+          "to_class": "Order",
+          "to_method": "setTotal"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "Order": {
+      "status": {
+        "op": "C",
+        "confidence": "high",
+        "oracle_why": "POST route calls setStatus() on new Order → INSERT → C"
+      },
+      "total": {
+        "op": "C",
+        "confidence": "high",
+        "oracle_why": "setTotal() called on new Order → C"
+      },
+      "id": {
+        "op": "",
+        "confidence": "medium",
+        "oracle_why": "@GeneratedValue → DB assigns id, app never writes it"
+      }
+    }
+  },
+  "meta": {
+    "valid_fields": {
+      "Order": [
+        "id",
+        "total",
+        "status"
+      ]
+    }
+  }
+}

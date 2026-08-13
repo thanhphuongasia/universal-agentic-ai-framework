@@ -14,6 +14,8 @@ from typing import Any
 
 from ryuu_eval_core.models import EvalCase, ScoreResult
 
+from eval_consumer.crud_matrix_oracle.normalizer import normalize_flat_ops
+
 
 class CRUDOpsMatch:
     scorer_id = "crud-ops-match"
@@ -22,8 +24,11 @@ class CRUDOpsMatch:
         self._threshold = threshold
 
     async def score(self, case: EvalCase, output: str) -> ScoreResult:
-        expected = _to_flat_ops(case.expected)
-        actual = _to_flat_ops(output)
+        # Normalize both sides so casing/separator/op-order differences
+        # (Order::customerId vs order::customer_id, "RC" vs "CR") don't count
+        # as mismatches — only a genuinely different op fails a cell.
+        expected = normalize_flat_ops(_to_flat_ops(case.expected))
+        actual = normalize_flat_ops(_to_flat_ops(output))
 
         all_keys = set(expected) | set(actual)
         if not all_keys:
@@ -58,7 +63,7 @@ def _to_flat_ops(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
 
-    # Shape 2: legacy expected with cells
+    # Shape 2: legacy expected with cells as a flat list [{entity, column, op}]
     cells = value.get("cells")
     if isinstance(cells, list):
         flat: dict[str, str] = {}
@@ -67,6 +72,17 @@ def _to_flat_ops(value: Any) -> dict[str, str]:
                 e, col, op = c.get("entity", ""), c.get("column", ""), c.get("op", "")
                 if e and col and op:
                     flat[f"{e}::{col}"] = op
+        return flat
+
+    # Shape 2b: cells as a nested dict {entity: {field: {op, confidence, why}}}
+    # (the oracle fixture form — keeps confidence/why; we read only `op`).
+    if isinstance(cells, dict):
+        flat = {}
+        for entity, fields in cells.items():
+            if isinstance(fields, dict):
+                for field, cell in fields.items():
+                    if isinstance(cell, dict) and cell.get("op"):
+                        flat[f"{entity}::{field}"] = cell["op"]
         return flat
 
     # Shape 3: legacy actual with nested {Entity: {field: {op, ...}}}

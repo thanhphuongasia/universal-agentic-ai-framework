@@ -1,0 +1,15 @@
+{
+  "fixture_id": "case1_happy_path",
+  "generated_at": "2026-05-26",
+  "needs_review": [
+    {
+      "entity": "Order",
+      "field": "id",
+      "op": "",
+      "confidence": "medium",
+      "oracle_why": "@GeneratedValue → DB assigns id, app never writes it",
+      "action": "remove",
+      "corrected_op": null
+    }
+  ]
+}

@@ -142,7 +142,7 @@ def build_eval_router(
     ui_prefix: str = "/ui",
     kv_store: Any | None = None,
     oracle_fixtures_dir: Path | None = None,
-    oracle_strategy_factory: Callable[[], Any] | None = None,
+    oracle_strategy_factory: Callable[..., Any] | None = None,
     llm_providers: dict[str, Any] | None = None,
     model_catalog: dict[str, dict[str, Any]] | None = None,
     oracle_runs_store: Any | None = None,
@@ -2207,7 +2207,10 @@ def build_eval_router(
                         "No oracle_strategy_factory configured — pass expected_override "
                         "or inputs[] to skip strategy, or wire the factory at startup",
                     )
-                strategy = oracle_strategy_factory()
+                # Honor caller's model choice (optional). Factory accepts an
+                # optional model kwarg; falls back to its YAML default when blank.
+                requested_model = str(payload.get("oracle_model", "")).strip()
+                strategy = oracle_strategy_factory(model=requested_model or None)
                 candidate = await strategy.generate_candidate(input_data)
                 cells = candidate.get("cells", candidate)
                 valid_fields = candidate.get("valid_fields", {})

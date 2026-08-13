@@ -152,7 +152,7 @@ app.include_router(
         llm_providers=PROVIDERS,
         model_catalog=MODEL_CATALOG,
         oracle_strategy_factory=(
-            (lambda: CrudMatrixOracleStrategy(provider=PROVIDERS["anthropic"]))
+            (lambda model=None: CrudMatrixOracleStrategy(provider=PROVIDERS["anthropic"], model=model))
             if "anthropic" in PROVIDERS else None
         ),
         external_projects=[

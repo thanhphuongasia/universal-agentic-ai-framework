@@ -1,0 +1,33 @@
+{
+  "case_id": "sample-001",
+  "route_id": "POST /api/products",
+  "project_id": "spring-crud-demo",
+  "route_context_json": {
+    "route_id": "POST /api/products",
+    "call_chain": ["ProductController.createProduct", "ProductService.save"],
+    "entities": ["Product"],
+    "method_access": {
+      "ProductService.save": {
+        "Product": ["name", "price"]
+      }
+    }
+  },
+  "production_output": {
+    "cells": [
+      {"entity": "Product", "field": "name", "op": "C"},
+      {"entity": "Product", "field": "price", "op": "C"}
+    ]
+  },
+  "ground_truth": [
+    {"entity": "Product", "field": "name", "op": "C"},
+    {"entity": "Product", "field": "price", "op": "C"},
+    {"entity": "Product", "field": "sku", "op": "C"}
+  ],
+  "eval_diff": {
+    "missing_fields": [
+      {"entity": "Product", "field": "sku"}
+    ],
+    "hallucinated": [],
+    "wrong_op": []
+  }
+}

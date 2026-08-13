@@ -1,0 +1,91 @@
+{
+    "project_id": "timesheet_monthly_20260519_1050",
+    "total": 1,
+    "contexts": {
+        "GET /timesheets/monthly/{id}": {
+            "entry_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetController.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetController::getTimesheet::Long",
+            "call_classes": [
+                "MonthlyTimesheetController",
+                "MonthlyTimesheetNotFoundException",
+                "MonthlyTimesheetRepository",
+                "MonthlyTimesheetService",
+                "Optional",
+                "RuntimeException",
+                "original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetController"
+            ],
+            "call_edges": [
+                {
+                    "from_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetController.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetController::getTimesheet::Long",
+                    "from_class": "MonthlyTimesheetController",
+                    "from_method": "getTimesheet",
+                    "to_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetService.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetService::getTimesheet::Long",
+                    "to_class": "MonthlyTimesheetService",
+                    "to_method": "getTimesheet",
+                    "target_resolution": "exact",
+                    "target_resolution_reason": "deterministic_ast_projection",
+                    "target_synthetic": false,
+                    "line_number": 20
+                },
+                {
+                    "from_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetService.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetService::getTimesheet::Long",
+                    "from_class": "MonthlyTimesheetService",
+                    "from_method": "getTimesheet",
+                    "to_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetNotFoundException.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetNotFoundException::MonthlyTimesheetNotFoundException::()",
+                    "to_class": "MonthlyTimesheetNotFoundException",
+                    "to_method": "MonthlyTimesheetNotFoundException",
+                    "target_resolution": "exact",
+                    "target_resolution_reason": "deterministic_ast_projection",
+                    "target_synthetic": false,
+                    "line_number": 21
+                },
+                {
+                    "from_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetNotFoundException.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetNotFoundException::MonthlyTimesheetNotFoundException::()",
+                    "from_class": "MonthlyTimesheetNotFoundException",
+                    "from_method": "MonthlyTimesheetNotFoundException",
+                    "to_method_id": "timesheet_monthly_20260519_1050::<external>::RuntimeException::RuntimeException::()",
+                    "to_class": "RuntimeException",
+                    "to_method": "RuntimeException",
+                    "target_resolution": "external_stub",
+                    "target_resolution_reason": "allowlisted_external_class",
+                    "target_synthetic": true,
+                    "line_number": 5
+                },
+                {
+                    "from_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetService.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetService::getTimesheet::Long",
+                    "from_class": "MonthlyTimesheetService",
+                    "from_method": "getTimesheet",
+                    "to_method_id": "timesheet_monthly_20260519_1050::<external>::Optional::orElseThrow::()",
+                    "to_class": "Optional",
+                    "to_method": "orElseThrow",
+                    "target_resolution": "external_stub",
+                    "target_resolution_reason": "allowlisted_external_class",
+                    "target_synthetic": true,
+                    "line_number": 20
+                },
+                {
+                    "from_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetService.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetService::getTimesheet::Long",
+                    "from_class": "MonthlyTimesheetService",
+                    "from_method": "getTimesheet",
+                    "to_method_id": "timesheet_monthly_20260519_1050::original/test_data/timesheet-monthly/timesheets/MonthlyTimesheetRepository.java::com.example.monthlytimesheet.timesheets.MonthlyTimesheetRepository::findById::()",
+                    "to_class": "MonthlyTimesheetRepository",
+                    "to_method": "findById",
+                    "target_resolution": "interface",
+                    "target_resolution_reason": "deterministic_ast_projection",
+                    "target_synthetic": true,
+                    "line_number": 20
+                }
+            ],
+            "step_actions": [
+                "if",
+                "throw",
+                "return"
+            ],
+            "route": {
+                "endpoint": "/timesheets/monthly/{id}",
+                "http_method": "GET",
+                "use_case": "",
+                "action": ""
+            }
+        }
+    }
+}

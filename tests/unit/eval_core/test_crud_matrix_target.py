@@ -21,6 +21,8 @@ from eval_consumer.crud_matrix_llm.target import (
     _parse_actual,
     _unwrap_leaked,
 )
+from eval_consumer.crud_matrix_llm.scorer import CRUDOpsMatch
+from eval_consumer.crud_matrix_oracle.normalizer import normalize_flat_ops
 
 
 # ---------------------------------------------------------------------------
@@ -185,3 +187,54 @@ async def test_run_emits_detailed_trace_step():
     )
     labels = [s.get("label", "") for s in cr.steps]
     assert any("rationale" in lbl for lbl in labels)
+
+
+# ---------------------------------------------------------------------------
+# normalize_flat_ops — casing / separator / op-order canonicalization
+# ---------------------------------------------------------------------------
+
+class TestNormalizeFlatOps:
+    def test_camel_vs_snake_collapse_to_same_key(self):
+        assert normalize_flat_ops({"Order::customerId": "R"}) == {"order::customerid": "R"}
+        assert normalize_flat_ops({"order::customer_id": "R"}) == {"order::customerid": "R"}
+
+    def test_op_order_normalized(self):
+        assert normalize_flat_ops({"Order::total": "RC"}) == {"order::total": "CR"}
+
+    def test_key_without_separator_normalized_whole(self):
+        assert normalize_flat_ops({"customerId": "r"}) == {"customerid": "R"}
+
+
+# ---------------------------------------------------------------------------
+# CRUDOpsMatch — casing-insensitive scoring (the #3 fix)
+# ---------------------------------------------------------------------------
+
+class TestCrudOpsMatchCasing:
+    async def test_camelcase_actual_matches_snakecase_expected(self):
+        # expected fixture in snake_case db_column, model emits camelCase
+        expected = {"Order::customer_id": "R", "Order::total": "CR"}
+        actual = json.dumps({"Order": {"customerId": {"op": "R"}, "total": {"op": "RC"}}})
+        res = await CRUDOpsMatch().score(_case(expected), actual)
+        assert res.score == 1.0 and res.passed
+
+    async def test_genuine_op_difference_still_fails_a_cell(self):
+        expected = {"Order::total": "CR"}
+        actual = json.dumps({"Order": {"total": {"op": "D"}}})
+        res = await CRUDOpsMatch().score(_case(expected), actual)
+        assert res.score == 0.0 and not res.passed
+
+    async def test_nested_cells_dict_expected_with_confidence_and_why(self):
+        # Oracle fixture form: expected = {cells: {entity: {field: {op, confidence, why}}}}.
+        # Scorer must read `op` and ignore confidence/why noise.
+        expected = {
+            "cells": {
+                "MonthlyTimesheet": {
+                    "id": {"op": "R", "confidence": "high", "why": "findById reads pk"},
+                    "employeeId": {"op": "R", "confidence": "high", "why": "hydrated on GET"},
+                }
+            },
+            "valid_fields": {"MonthlyTimesheet": ["id", "employee_id"]},
+        }
+        actual = json.dumps({"MonthlyTimesheet": {"id": {"op": "R"}, "employee_id": {"op": "R"}}})
+        res = await CRUDOpsMatch().score(_case(expected), actual)
+        assert res.score == 1.0 and res.passed

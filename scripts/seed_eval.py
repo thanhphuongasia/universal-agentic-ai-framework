@@ -37,13 +37,76 @@ def _prompt(version: str, system: str) -> PromptConfig:
     )
 
 
+# ── Production prompts (the thing under test) ────────────────────────────────
+# v1 of each suite is a naive one-liner kept as a weak baseline so the demo
+# shows a real before/after contrast. v2 is a proper production prompt and is
+# the one promoted live — runs resolve the ACTIVE version's system prompt, so
+# this is what actually drives output quality.
+
+CRUD_PROD_V2 = """\
+You are a CRUD matrix classifier for backend code. Given the source for an HTTP
+route/controller and its data entities, determine the database-column-level CRUD
+operation the route performs on each (entity, field) pair.
+
+OUTPUT — strict JSON only, no prose, no markdown fences:
+{
+  "cells": {
+    "<EntityName>": {
+      "<fieldName>": { "op": "one or more of C R U D", "confidence": "low|medium|high",
+                       "why": "1-2 sentence justification" }
+    }
+  }
+}
+
+RULES:
+- Copy entity and field names EXACTLY as they appear in the input — never
+  rename, re-case, or convert between camelCase and snake_case. Verbatim only.
+- Never invent an entity, field, or column that is not present in the input.
+- Op letters in CRUD order: C=insert, R=read/select, U=update, D=delete
+  (combine when several apply, e.g. "CR", "RU").
+- Omit a field entirely if the route does not touch it.
+- Emit the JSON object and nothing else."""
+
+CLASS_PROD_V2 = """\
+You are a UML class-diagram extractor. From the given source, produce the
+classes, their fields and methods, and the relationships between them.
+
+OUTPUT — strict JSON only, no prose, no markdown fences:
+{
+  "classes": [ { "name": "<ClassName>", "fields": ["<name: type>"], "methods": ["<name()>"] } ],
+  "relationships": [ { "from": "<Class>", "to": "<Class>", "kind": "extends|implements|association" } ]
+}
+
+RULES:
+- Use class/field/method names EXACTLY as written in the source — verbatim.
+- Capture inheritance (extends), interface realization (implements), and
+  field-typed associations. Do not invent members not present in the source.
+- Emit the JSON object and nothing else."""
+
+SEQ_PROD_V2 = """\
+You are a UML sequence-diagram extractor. From the given source, list the
+participants and the ordered messages exchanged between them.
+
+OUTPUT — strict JSON only, no prose, no markdown fences:
+{
+  "participants": ["<Participant>"],
+  "messages": [ { "from": "<Participant>", "to": "<Participant>", "method": "<method>" } ]
+}
+
+RULES:
+- Preserve the exact call order in which messages occur.
+- Use participant and method names EXACTLY as written in the source — verbatim.
+- Do not invent participants or calls not present in the source.
+- Emit the JSON object and nothing else."""
+
+
 # Demo suites: each → (title, [(version, system_prompt)], [(case_id, name, input, expected, scoring)])
 SUITES: list[dict] = [
     {
         "id": "crud_matrix_llm", "title": "CRUD Matrix",
         "versions": [
             ("v1", "Extract the CRUD matrix. Return JSON."),
-            ("v2", "Extract the CRUD matrix per entity. Use only C/R/U/D. Strict JSON, no prose, no GraphQL."),
+            ("v2", CRUD_PROD_V2),
         ],
         "cases": [
             ("orders_happy", "Orders CRUD", {"code": "class OrderController {...}"},
@@ -60,8 +123,7 @@ SUITES: list[dict] = [
         "id": "class_diagram", "title": "Class Diagram",
         "versions": [
             ("v1", "Extract a UML class diagram from the code. Return JSON."),
-            ("v2", "Extract a UML class diagram: classes, fields, methods, and "
-                   "relationships (extends/implements/association). Strict JSON only."),
+            ("v2", CLASS_PROD_V2),
         ],
         "cases": [
             ("order_model", "Order aggregate", {"code": "class Order extends Base { Item[] items; }"},
@@ -78,8 +140,7 @@ SUITES: list[dict] = [
         "id": "sequence_diagram", "title": "Sequence Diagram",
         "versions": [
             ("v1", "Extract a UML sequence diagram from the code. Return JSON."),
-            ("v2", "Extract a UML sequence diagram: participants and ordered messages "
-                   "(caller → callee : method). Preserve call order. Strict JSON only."),
+            ("v2", SEQ_PROD_V2),
         ],
         "cases": [
             ("checkout_flow", "Checkout flow",

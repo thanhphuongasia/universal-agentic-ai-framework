@@ -1,0 +1,10 @@
+{
+  "route_id": "POST /api/products",
+  "call_chain": ["ProductController.createProduct", "ProductService.save"],
+  "entities": ["Product"],
+  "method_access": {
+    "ProductService.save": {
+      "Product": ["name", "price"]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ryuu-eval-frontend"
+version = "0.2.0"
+description = "DEPRECATED — meta-package. Use ryuu-eval-ui instead."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ryuu contributors" }]
+# Pulls in the real package; re-exports dist_dir for backward compat.
+dependencies = ["ryuu-eval-ui>=0.2.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

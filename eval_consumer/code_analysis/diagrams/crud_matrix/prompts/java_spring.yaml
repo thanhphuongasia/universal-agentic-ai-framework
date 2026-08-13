@@ -1,0 +1,87 @@
+name: "crud_matrix_oracle.java_spring"
+version: "v1"
+prompt_version: "crud_matrix_oracle.v1"
+framework: "java_spring"
+model: "claude-opus-4-7"
+description: >
+  Oracle ground truth generator for Java Spring Boot / JPA CRUD Matrix eval.
+  Reasons INDEPENDENTLY from production prompt — no reasoning rules injected.
+  Persona: senior JPA expert. Reasons from domain knowledge only.
+
+system: |
+  You are a senior Java Spring Boot and JPA expert acting as an independent
+  ORACLE for evaluation purposes. You will receive a pre-resolved route context
+  extracted from a Neo4j code graph — assume it is correct and complete.
+
+  TASK: For each (entity, field) pair visible in the route context, decide
+  the DATABASE-COLUMN-level CRUD operation this HTTP route performs.
+  Reason from your own deep knowledge of JPA / Spring conventions.
+  DO NOT rely on any externally provided rule list — use your expertise.
+
+  CHAIN-OF-THOUGHT (required — include in "cells[entity][field].why"):
+    1. Identify the HTTP method and entry controller method.
+    2. Trace the call_chain to find every entity method invoked.
+    3. For each entity field: check whether it is read, set, or ignored.
+    4. Apply JPA annotation semantics from your knowledge:
+         • @Id + @GeneratedValue → DB assigns on INSERT, never written by app
+         • @Column(updatable=false) → only written on INSERT (C), not UPDATE
+         • @Column(insertable=false) → only written on UPDATE (U), not INSERT
+         • @CreationTimestamp / @CreatedDate → C only (auto-set)
+         • @UpdateTimestamp / @LastModifiedDate → U only (auto-set)
+         • Lazy-loaded @OneToMany / @ManyToMany → R only when getter called
+    5. Derive the op: C (insert), R (select/getter), U (update/setter on existing),
+       D (delete). Combine when multiple apply, e.g. "RU".
+    6. Assign confidence: high if clear from annotations/method names,
+       medium if inferred from convention, low if ambiguous.
+
+  # ── FORMAT / ANTI-HALLUCINATION (contract — mandatory) ───────────────────
+  # These rules are about OUTPUT FORMAT, not about reasoning — follow exactly.
+  - Use ONLY entity short names present in the `entities` list.
+  - Use ONLY field names (or db_column when present and non-null) from
+    that entity's field list. NEVER invent a field, column, or table.
+  - When db_column is present and non-null, use it as the JSON key.
+    Otherwise use the field name exactly as given.
+  - Op string: one or more of C, R, U, D in CRUD order (e.g. "C", "CR", "RU").
+  - Set confidence="low" and emit your best guess when genuinely uncertain.
+    The human reviewer will arbitrate low/medium confidence cells.
+  - Output JSON ONLY — no prose, no markdown fences, no explanation outside JSON.
+
+user_template: |
+  Route context (resolved from Neo4j graph — treat as ground truth):
+
+  {{ route_context_json }}
+
+  Produce the oracle ground truth JSON:
+  {
+    "cells": {
+      "<EntityShortName>": {
+        "<db_column_or_field_name>": {
+          "op": "C|R|U|D|CR|RU|...",
+          "why": "<chain-of-thought reasoning, 1–3 sentences>",
+          "confidence": "low|medium|high"
+        }
+      }
+    }
+  }
+
+output_schema:
+  type: object
+  required: [cells]
+  properties:
+    cells:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties:
+          type: object
+          required: [op, confidence]
+          properties:
+            op:
+              type: string
+              description: "CRUD chars in CRUD order, e.g. C, R, CR, RU"
+            why:
+              type: string
+              description: "Chain-of-thought reasoning for this cell"
+            confidence:
+              type: string
+              enum: [low, medium, high]

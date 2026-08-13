@@ -1,0 +1,23 @@
+{
+  "fixture_id": "test",
+  "suite_id": "crud_matrix_llm",
+  "prompt_version": "crud_matrix_oracle.v1",
+  "oracle_model": "claude-opus-4-7",
+  "reviewed_by": "",
+  "reviewed_at": "",
+  "review_note": "",
+  "input_data": {
+    "test": "create"
+  },
+  "expected": {
+    "cells": {},
+    "valid_fields": {}
+  },
+  "meta": {
+    "valid_fields": {}
+  },
+  "production_prompt": "",
+  "oracle_prompt": "",
+  "oracle_prompt_version": "",
+  "meta_prompt_version": ""
+}

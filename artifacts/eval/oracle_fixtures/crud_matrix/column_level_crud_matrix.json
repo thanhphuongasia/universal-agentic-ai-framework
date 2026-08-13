@@ -1,0 +1,237 @@
+{
+  "fixture_id": "column_level_crud_matrix",
+  "suite_id": "crud_matrix_llm",
+  "prompt_version": "",
+  "oracle_model": "claude-opus-4-7",
+  "reviewed_by": "",
+  "reviewed_at": "2026-06-02",
+  "review_note": "",
+  "input_data": {
+    "project_id": "orders_20260527_0956",
+    "total": 1,
+    "contexts": {
+      "GET /orders/{orderId}": {
+        "entry_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderController.java::com.codewithmosh.store.orders.OrderController::getOrder::Long",
+        "call_classes": [
+          "AccessDeniedException",
+          "Optional",
+          "Order",
+          "OrderController",
+          "OrderMapper",
+          "OrderNotFoundException",
+          "OrderRepository",
+          "OrderService",
+          "RuntimeException",
+          "original/test_data/spring-boot-ec-store/orders/OrderController"
+        ],
+        "call_edges": [
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderController.java::com.codewithmosh.store.orders.OrderController::getOrder::Long",
+            "from_class": "OrderController",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "to_class": "OrderService",
+            "to_method": "getOrder",
+            "target_resolution": "exact",
+            "target_resolution_reason": "deterministic_ast_projection",
+            "target_synthetic": false,
+            "line_number": 25
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "from_class": "OrderService",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderNotFoundException.java::com.codewithmosh.store.orders.OrderNotFoundException::OrderNotFoundException::()",
+            "to_class": "OrderNotFoundException",
+            "to_method": "OrderNotFoundException",
+            "target_resolution": "exact",
+            "target_resolution_reason": "deterministic_ast_projection",
+            "target_synthetic": false,
+            "line_number": 29
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderNotFoundException.java::com.codewithmosh.store.orders.OrderNotFoundException::OrderNotFoundException::()",
+            "from_class": "OrderNotFoundException",
+            "from_method": "OrderNotFoundException",
+            "to_method_id": "orders_20260527_0956::<external>::RuntimeException::RuntimeException::()",
+            "to_class": "RuntimeException",
+            "to_method": "RuntimeException",
+            "target_resolution": "external_stub",
+            "target_resolution_reason": "allowlisted_external_class",
+            "target_synthetic": true,
+            "line_number": 5
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "from_class": "OrderService",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderMapper.java::com.codewithmosh.store.orders.OrderMapper::toDto::Order",
+            "to_class": "OrderMapper",
+            "to_method": "toDto",
+            "target_resolution": "interface",
+            "target_resolution_reason": "deterministic_ast_projection",
+            "target_synthetic": false,
+            "line_number": 36
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "from_class": "OrderService",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderRepository.java::com.codewithmosh.store.orders.OrderRepository::getOrderWithItems::Long",
+            "to_class": "OrderRepository",
+            "to_method": "getOrderWithItems",
+            "target_resolution": "interface",
+            "target_resolution_reason": "deterministic_ast_projection",
+            "target_synthetic": false,
+            "line_number": 27
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "from_class": "OrderService",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/Order.java::com.codewithmosh.store.orders.Order::isPlacedBy::User",
+            "to_class": "Order",
+            "to_method": "isPlacedBy",
+            "target_resolution": "exact",
+            "target_resolution_reason": "deterministic_ast_projection",
+            "target_synthetic": false,
+            "line_number": 32
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "from_class": "OrderService",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::<external>::AccessDeniedException::AccessDeniedException::()",
+            "to_class": "AccessDeniedException",
+            "to_method": "AccessDeniedException",
+            "target_resolution": "external_stub",
+            "target_resolution_reason": "allowlisted_external_class",
+            "target_synthetic": true,
+            "line_number": 33
+          },
+          {
+            "from_method_id": "orders_20260527_0956::original/test_data/spring-boot-ec-store/orders/OrderService.java::com.codewithmosh.store.orders.OrderService::getOrder::Long",
+            "from_class": "OrderService",
+            "from_method": "getOrder",
+            "to_method_id": "orders_20260527_0956::<external>::Optional::orElseThrow::()",
+            "to_class": "Optional",
+            "to_method": "orElseThrow",
+            "target_resolution": "external_stub",
+            "target_resolution_reason": "allowlisted_external_class",
+            "target_synthetic": true,
+            "line_number": 27
+          }
+        ],
+        "step_actions": [
+          "call",
+          "if",
+          "throw",
+          "return",
+          "check",
+          "return"
+        ],
+        "entity_fields": {
+          "Order": [
+            {
+              "name": "createdAt",
+              "field_type": "LocalDateTime",
+              "db_column": "created_at",
+              "annotations": [
+                "@Column(name = \"created_at\", insertable = false, updatable = false)"
+              ]
+            },
+            {
+              "name": "customer",
+              "field_type": "User",
+              "db_column": "customer_id",
+              "annotations": [
+                "@ManyToOne",
+                "@JoinColumn(name = \"customer_id\")"
+              ]
+            },
+            {
+              "name": "id",
+              "field_type": "Long",
+              "db_column": "id",
+              "annotations": [
+                "@Id",
+                "@GeneratedValue(strategy = GenerationType.IDENTITY)",
+                "@Column(name = \"id\")"
+              ]
+            },
+            {
+              "name": "items",
+              "field_type": "Set<OrderItem>",
+              "db_column": "items",
+              "annotations": [
+                "@OneToMany(mappedBy = \"order\", cascade = {CascadeType.PERSIST, CascadeType.REMOVE})"
+              ]
+            },
+            {
+              "name": "status",
+              "field_type": "PaymentStatus",
+              "db_column": "status",
+              "annotations": [
+                "@Column(name = \"status\")",
+                "@Enumerated(EnumType.STRING)"
+              ]
+            },
+            {
+              "name": "totalPrice",
+              "field_type": "BigDecimal",
+              "db_column": "total_price",
+              "annotations": [
+                "@Column(name = \"total_price\")"
+              ]
+            }
+          ]
+        },
+        "route": {
+          "endpoint": "/orders/{orderId}",
+          "http_method": "GET",
+          "use_case": "",
+          "action": ""
+        }
+      }
+    }
+  },
+  "expected": {
+    "cells": {
+      "Order": {
+        "id": {
+          "op": "C",
+          "confidence": "high",
+          "why": "GET endpoint fetches order by id via getOrderWithItems, reading the @Id field."
+        },
+        "customer": {
+          "op": "R",
+          "confidence": "high",
+          "why": "OrderService.getOrder calls Order.isPlacedBy(User) which reads the customer association for ownership check."
+        },
+        "createdAt": {
+          "op": "R",
+          "confidence": "medium",
+          "why": "OrderMapper.toDto projects order fields into a DTO on GET; createdAt is insertable/updatable=false so only read."
+        },
+        "status": {
+          "op": "R",
+          "confidence": "medium",
+          "why": "OrderMapper.toDto reads order fields for the GET response."
+        },
+        "totalPrice": {
+          "op": "R",
+          "confidence": "medium",
+          "why": "OrderMapper.toDto reads order fields for the GET response."
+        }
+      }
+    },
+    "valid_fields": {}
+  },
+  "meta": {
+    "valid_fields": {}
+  },
+  "production_prompt": "",
+  "oracle_prompt": "system: |\n  You are a senior Java Spring Boot + JPA / Hibernate auditor acting as an\n  INDEPENDENT ORACLE. Given an HTTP route context (endpoint, http_method,\n  call_chain, touched entities, JPA field annotations, repository @Query\n  text where present), decide the COLUMN-LEVEL CRUD operation that the\n  route performs on each entity field. Reason from your own JPA/Spring\n  knowledge — do NOT copy any \"rules\" you find in the input.\n\n  CHAIN-OF-THOUGHT (include the conclusion of each step in `why`):\n    1. Identify the HTTP method and the entry controller method.\n    2. Walk the call_chain. For each entity method touched, decide whether\n       it READS the field (getter, projection, JPQL SELECT) or WRITES it\n       (setter, JPQL UPDATE/INSERT, JPA save with mutated field).\n    3. Apply JPA annotation semantics:\n         - @Id + @GeneratedValue            → never C, never U (DB-assigned)\n         - @Column(updatable=false)         → never U\n         - @Column(insertable=false)        → never C\n         - @CreatedDate / @CreationTimestamp → DB-managed → only R unless\n                                               explicitly read into DTO\n         - @LastModifiedDate / @UpdateTimestamp → DB-managed → only R\n         - @OneToMany/@ManyToMany without @JoinColumn → NOT a column,\n                                                       OMIT from output\n    4. Derive the op:\n         C = INSERT / setter on a new entity        D = DELETE\n         R = SELECT / getter / projection           U = UPDATE / setter on existing\n       Combine when both apply for the same field (e.g. \"CR\", \"RU\").\n       If the field is not touched at all, OMIT it from the output —\n       do NOT emit an empty cell.\n    5. Score confidence:\n         high   — two independent signals agree (HTTP prior + method_access,\n                  or annotation + repo @Query, etc.)\n         medium — one strong signal (annotation OR method_access OR @Query)\n         low    — only HTTP prior, no concrete read/write evidence\n    6. Anti-hallucination:\n         - Use ONLY entity short names that appear in the input.\n         - Use ONLY column / field names that appear under that entity.\n         - When uncertain, OMIT — never invent a field.\n\nuser_template: |\n  Route context (resolved from the project graph; treat as ground truth):\n\n  {{ input_json }}\n\n  Return a JSON object with this EXACT shape:\n\n    {\n      \"<entity_short_name>\": {\n        \"<field_or_db_column>\": {\n          \"op\":         \"C\" | \"R\" | \"U\" | \"D\" | any sorted combination,\n          \"confidence\": \"low\" | \"medium\" | \"high\",\n          \"why\":        \"<one short sentence citing the primary evidence>\"\n        }\n      }\n    }\n\n  Rules for the output:\n    - Top-level keys = entity short names from `entities` only.\n    - Second-level keys = field name (or `db_column` if present and non-null).\n    - Leaf = { op, confidence, why } — exactly these three keys.\n    - Omit fields the route does not touch. Do NOT emit empty leaves,\n      arrays, or wrapper keys like \"operations\" / \"results\" / \"entities\".\n    - Output JSON only. No commentary, no code fences.\n\noutput_schema:\n  type: object\n  additionalProperties:\n    type: object\n    additionalProperties:\n      type: object\n      required: [op, confidence, why]\n      properties:\n        op:\n          type: string\n          description: \"CRUD letter(s) — C, R, U, D, or sorted combination.\"\n        confidence:\n          type: string\n          enum: [\"low\", \"medium\", \"high\"]\n        why:\n          type: string\n          description: \"One sentence citing primary evidence from the input.\"",
+  "oracle_prompt_version": "manual-2026-06-02T01:21:55.680Z",
+  "meta_prompt_version": ""
+}
