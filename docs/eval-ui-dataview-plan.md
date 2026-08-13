@@ -1,8 +1,9 @@
 # Plan — Generic `DataView` (JSON / Table / Call chain) across eval UI
 
-> Status: PLANNED (next session). Goal: wherever the UI shows input/output JSON,
-> offer JSON + Table + Call-chain views from one shared component, with
-> CRUD-specific rendering when the data is a CRUD matrix.
+> Status: ✅ DONE (2026-06-01). `DataView` shipped and applied to CaseDetail,
+> SuiteDetail (CasePreviewModal "Views" toggle), and RunResults (inline peek).
+> Detection logic lives in `dataViewModel.ts` with 10 unit tests; tsc + vite
+> build clean. See "Outcome" at the bottom.
 
 ## Why
 
@@ -73,3 +74,27 @@ else plain.
 - One `<DataView>` used by CaseDetail, SuiteDetail, RunResults.
 - CRUD suite → cells table; diagram suites → call chain; generic → key/value table.
 - JSON always available; Diff only when expected present. No regression in CaseDetail.
+
+## Outcome (2026-06-01)
+
+- **New files**
+  - `src/components/DataView.tsx` — the component. Tabs auto-derived: Table +
+    JSON always; Call chain when a `call_subgraph`-shape is detected; Diff when
+    `expected` is provided. Composes `CellsView`, `CallSequenceDiagram`,
+    `ReactDiffViewer` — no renderer rebuilt.
+  - `src/components/dataViewModel.ts` — pure `coerce()` + `detectCallSubgraph()`
+    (no React/JSX/`@/`), testable under `node --experimental-strip-types`.
+  - `src/components/dataViewModel.test.ts` — 10 tests (coerce + detection edge
+    cases). `npm run test:model` → 26 pass total.
+- **Applied**
+  - `CaseDetail` — replaced the bespoke Table/JSON/Diff switcher (~70 lines) with
+    `<DataView value={actual} expected={expected} defaultMode="table"/>`; Input
+    section now uses `<DataView/>` too (gains Call chain tab for diagram suites).
+  - `SuiteDetail` — `CasePreviewModal`'s raw-JSON toggle is now a `<DataView/>`
+    multi-view ("⊞ Views" ⇄ "★ Rich"); the specialized code/CRUD preview stays
+    the default so java source highlighting isn't lost.
+  - `RunResults` — each case row expands inline (chevron) to a `<DataView/>` peek
+    of actual-vs-expected without leaving the page.
+- **Verify** — `tsc --noEmit` clean; `vite build` clean; new files lint-clean.
+  Pre-existing lint findings (SortIcon static-component, toggleCase ternary,
+  Date.now in defaultValues, navTo dep) were left untouched (out of scope).

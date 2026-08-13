@@ -1,0 +1,36 @@
+{
+  "fixture_id": "column_level_crud_matrix",
+  "generated_at": "2026-06-02T11:27:57.564570",
+  "needs_review": [
+    {
+      "input_name": "default",
+      "entity": "Order",
+      "field": "createdAt",
+      "op": "R",
+      "confidence": "medium",
+      "oracle_why": "",
+      "action": null,
+      "corrected_op": null
+    },
+    {
+      "input_name": "default",
+      "entity": "Order",
+      "field": "status",
+      "op": "R",
+      "confidence": "medium",
+      "oracle_why": "",
+      "action": null,
+      "corrected_op": null
+    },
+    {
+      "input_name": "default",
+      "entity": "Order",
+      "field": "totalPrice",
+      "op": "R",
+      "confidence": "medium",
+      "oracle_why": "",
+      "action": null,
+      "corrected_op": null
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+name: code_analysis_crud_matrix_rules
+version: 1
+description: >
+  Domain-specific classification rules for CRUD-matrix ingestion bugs.
+  Used by code_analysis_investigator plugin. Injected into the generic
+  base prompt via the {domain_rules} slot.
+
+# Issue type taxonomy — specific to Spring + Neo4j + Phase 1c ingestion pipeline
+issue_types:
+  REASONING_ERROR:
+    description: route_context_json had the field; LLM ignored it
+  MISSING_FIELD_ACCESS:
+    description: method in call_chain but method_access empty for this field
+  MISSING_CALLS_EDGE:
+    description: method not in call_chain; CALLS edge missing in graph
+  MISSING_ENTITY:
+    description: entity absent from ingestion entirely
+  TRUNCATION:
+    description: relevant statement is past the ~400-char body snippet limit
+  SUSPECT_FIXTURE:
+    description: source code has NO evidence supporting the ground truth claim
+  UNKNOWN:
+    description: inconclusive within tool budget
+
+# Investigation order — agent follows this decision tree per field
+investigation_order: |
+  1. Check production_output: did LLM output this field? If yes → eval scoring error.
+  2. Check route_context_json: field + write access present? → REASONING_ERROR.
+  3. Use Grep to find where the field is written in source.
+     Nothing found → SUSPECT_FIXTURE.
+  4. Check if that method is in route_context.call_chain.
+     Absent → MISSING_CALLS_EDGE.
+     Present but method_access empty → MISSING_FIELD_ACCESS.
+  5. Entity absent from route_context.entities → MISSING_ENTITY.
+  6. Read source for the method: relevant statement > ~400 chars in → TRUNCATION.
+
+tool_cap_per_field: 6

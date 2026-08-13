@@ -1,0 +1,15 @@
+{
+  "fixture_id": "mock_get_users_by_id",
+  "generated_at": "2026-05-28T11:35:51.392319",
+  "needs_review": [
+    {
+      "entity": "User",
+      "field": "created_at",
+      "op": "R",
+      "confidence": "medium",
+      "oracle_why": "@CreatedDate audit column, returned in GET response.",
+      "action": null,
+      "corrected_op": null
+    }
+  ]
+}

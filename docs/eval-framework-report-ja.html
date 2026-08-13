@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>評価フレームワーク &amp; ゴールデンデータセット — 5W2H レポート</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "base", themeVariables: {
+    primaryColor: "#ede9fe", primaryBorderColor: "#7c3aed", primaryTextColor: "#312e81",
+    lineColor: "#9ca3af", fontSize: "14px", fontFamily: "ui-monospace, monospace"
+  }});
+</script>
+<style>
+  :root {
+    --accent: #7c3aed; --accent-soft: #ede9fe; --ink: #1f2937; --muted: #6b7280;
+    --bg: #f8fafc; --card: #ffffff; --border: #e5e7eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+    line-height: 1.7; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+  header { border-bottom: 3px solid var(--accent); padding-bottom: 16px; margin-bottom: 8px; }
+  header h1 { margin: 0 0 4px; font-size: 28px; }
+  header p { margin: 0; color: var(--muted); }
+  h2 { margin: 40px 0 12px; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+  h2 .num { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: 0 0 auto; }
+  h3 { font-size: 16px; margin: 24px 0 8px; color: var(--accent); }
+  p, li { font-size: 15px; }
+  .lead { font-size: 16px; background: var(--accent-soft); border-left: 4px solid var(--accent);
+    padding: 14px 18px; border-radius: 8px; }
+  .grid { display: grid; gap: 16px; }
+  .cards5w { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .card .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-soft);
+    padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; }
+  .card h4 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; font-size: 14px; color: #374151; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+  th { background: #f1f5f9; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  .vs td:first-child { color: var(--muted); }
+  .vs td:nth-child(2) { color: var(--bad); }
+  .vs td:nth-child(3) { color: var(--ok); }
+  .diagram { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; margin: 14px 0; overflow-x: auto; }
+  .diagram .mermaid { display: flex; justify-content: center; }
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps li { counter-increment: step; position: relative; padding: 12px 12px 12px 52px; margin-bottom: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .steps li::before { content: counter(step); position: absolute; left: 12px; top: 12px;
+    width: 28px; height: 28px; background: var(--accent); color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+  .steps li b { color: var(--accent); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .pill.high { background:#dcfce7; color:#15803d; } .pill.low { background:#fef3c7; color:#b45309; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 13px; font-family: ui-monospace, monospace; }
+  pre { background: #f1f5f9; padding: 14px 16px; border-radius: 8px; overflow-x: auto;
+    font-size: 13px; font-family: ui-monospace, monospace; line-height: 1.55; margin: 12px 0; border: 1px solid var(--border); }
+  .note { font-size: 13px; color: var(--muted); }
+  .callout { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb;
+    border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .callout h4 { margin: 0 0 8px; font-size: 14px; color: #1d4ed8; text-transform: uppercase; letter-spacing: .03em; }
+  .callout ol { margin: 0; padding-left: 20px; } .callout li { margin-bottom: 6px; }
+  .callout .src { display:inline-block; font-size:11px; font-weight:700; background:#dbeafe; color:#1e40af;
+    padding:1px 8px; border-radius:999px; }
+  .warn-box { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b;
+    border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .warn-box h4 { margin: 0 0 8px; font-size: 14px; color: #92400e; text-transform: uppercase; letter-spacing: .03em; }
+  .decision-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .decision-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .decision-card h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+  .decision-card p { margin: 0; font-size: 13px; color: #374151; }
+  .src-table td:first-child { font-family: ui-monospace, monospace; font-size: 13px; color: #6d28d9; white-space: nowrap; }
+  .src-table td:nth-child(2) { color: #374151; font-size: 13px; }
+  footer { margin-top: 48px; border-top: 1px solid var(--border); padding-top: 14px; color: var(--muted); font-size: 13px; }
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+  .toc h4 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { font-size: 14px; margin-bottom: 2px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>評価フレームワーク &amp; ゴールデンデータセット</h1>
+  <p><b>5W2H</b> フレームで整理したレポート — なぜ必要か・何か・誰が/いつ/どこで・どのように。
+     技術詳細: <code>docs/eval-oracle-suite-case-architecture.md</code></p>
+</header>
+
+<div class="toc">
+  <h4>目次</h4>
+  <ol>
+    <li><a href="#why">WHY — なぜ評価フレームワークが必要か</a></li>
+    <li><a href="#5w2h">5W2H — 全体像を一覧で</a></li>
+    <li><a href="#eval-flow">HOW — 評価フロー（採点）</a></li>
+    <li><a href="#golden-flow">HOW — Oracle Review / ゴールデンデータセット（期待値生成）</a></li>
+    <li><a href="#architecture">アーキテクチャ &amp; 用語 — ドメイン階層</a></li>
+    <li><a href="#file-format">ファイルフォーマット — Fixture &amp; Review JSON</a></li>
+    <li><a href="#oracle-input">Oracle 入力コントラクト — route_context_json</a></li>
+    <li><a href="#decisions">主要設計判断</a></li>
+    <li><a href="#source-map">ソースマップ</a></li>
+  </ol>
+</div>
+
+<p class="lead">
+  1 文で要約すると: 従来のソフトウェアでは出力が固定なので <b>ユニット/ITテスト</b> で十分だったが、
+  <b>LLM</b> の出力は毎回変わるため <code>==</code> でアサートできない — <b>eval（評価基準に基づく採点）</b> が必要になる。
+  eval には各ケースの <b>期待値（expected）</b> が要る。大規模コードベースで人手で作るのは非現実的なため、
+  <b>ゴールデンデータセット</b> フェーズで強力な LLM が期待値を生成し、人間は <b>レビューするだけ</b> → <b>プロモート</b> して eval が使う fixture になる。
+</p>
+
+<!-- ─────────────────────────── WHY ─────────────────────────── -->
+<h2 id="why"><span class="num">W</span> WHY — なぜ評価フレームワークが必要か</h2>
+
+<h3>従来のソフトウェア: ユニットテスト / IT で十分</h3>
+<p>通常のコードは <b>決定論的（deterministic）</b>: 同じ入力 → 常に同じ出力。
+  だから <code>assertEquals(expected, actual)</code> だけでテストできる。合否が明確。</p>
+
+<h3>LLM: 出力が変わる → <code>==</code> アサートが無意味</h3>
+<p>同じ入力でも、LLM は温度・サンプリング・モデル変更・プロンプト変更により毎回異なる出力を返す。
+  完全一致では比較できない。<b>柔軟な基準</b> で採点する必要がある:
+  構造が正しいか・必要な情報を含むか・類似度が閾値を超えるか・CRUD op が正しいか…
+  — これが <b>eval</b> の役割。</p>
+
+<table class="vs">
+  <thead><tr><th>観点</th><th>従来のソフトウェア</th><th>LLM アプリケーション</th></tr></thead>
+  <tbody>
+    <tr><td>出力</td><td>決定論的、正解は 1 つ</td><td>変動する、正しい表現が複数ある</td></tr>
+    <tr><td>テスト方法</td><td>ユニットテスト / IT: <code>== expected</code></td><td>eval: 採点 + 閾値 + ソフトマッチング</td></tr>
+    <tr><td>モデル/プロンプト変更時</td><td>ロジックは変わらない</td><td>結果が変わる → 測定・バージョン比較が必要</td></tr>
+    <tr><td>「正解」(expected) の作成</td><td>開発者が少量を手書き</td><td>大量 &amp; 手作りが困難 → ゴールデンデータセットが必要</td></tr>
+  </tbody>
+</table>
+
+<h3>大規模コードベースの文脈</h3>
+<p>何百ものルート / エンティティ / フィールドに対して <b>フィールドごとに「正解」を手作業で作る</b> のは非現実的:
+  人間は <b>見落とし</b>、<b>疲労</b>、<b>ミス</b>、一貫性の欠如が生じる。
+  コードを 1 行ずつ読んでゴールデンデータセットを手動で構築することはできない。</p>
+
+<h3>「本番環境で動かして結果を見る」ではダメなのか</h3>
+<p>本番で確認するのは遅く、リスクが高い。また、複数モデル / 複数プロンプトバージョンを
+  <b>公平に同時比較</b> できない。eval は <b>オフライン</b> で高速に反復でき、リリース前に A/B 比較が可能。</p>
+
+<!-- ─────────────────────────── 5W2H ─────────────────────────── -->
+<h2 id="5w2h"><span class="num">5</span> 5W2H — 全体像を一覧で</h2>
+<div class="grid cards5w">
+  <div class="card"><span class="tag">What</span><h4>何か</h4>
+    <p><i>テストケース（入力 + 期待値）</i> のセットをモデル/プロンプトで実行し、<b>採点</b> して比較するシステム。
+       <b>System → Domain → Suite → Case / Prompt version / Run</b> で構成される。</p></div>
+  <div class="card"><span class="tag">Why</span><h4>なぜ</h4>
+    <p>LLM 出力が変動する → ユニットテストでは不十分。品質を測定し、モデル / プロンプトバージョンを比較する必要がある。</p></div>
+  <div class="card"><span class="tag">Who</span><h4>誰が</h4>
+    <p>開発者 / プロンプトエンジニアが eval を実行。<b>レビュアー（人間）</b> が Oracle Review UI でゴールデンデータセットを承認。</p></div>
+  <div class="card"><span class="tag">When</span><h4>いつ</h4>
+    <p>プロンプト/モデル変更前、回帰チェック、バージョン比較時 — <b>本番環境を待たずに</b> 実施。</p></div>
+  <div class="card"><span class="tag">Where</span><h4>どこで</h4>
+    <p>Ryuu Eval: <i>Suite → Case → Prompt version → Run</i>。期待値は <b>Oracle Review</b> で生成。
+       Fixture はファイル保存、Case/Run は Postgres 保存。</p></div>
+  <div class="card"><span class="tag">How</span><h4>どのように</h4>
+    <p>Oracle Review で期待値を生成（6 ステップ）→ 人間がレビュー → <b>DB の test_case にプロモート</b>
+       → Run が <b>Scorer</b> で採点。</p></div>
+  <div class="card"><span class="tag">How much</span><h4>コスト</h4>
+    <p>重い部分（期待値生成）は強力な LLM が自動化。人間は <b>low/medium confidence のセルだけ</b> レビュー
+       → 工数削減・ミス低減。</p></div>
+</div>
+
+<!-- ─────────────────────────── HOW: EVAL FLOW ─────────────────────────── -->
+<h2 id="eval-flow"><span class="num">H</span> HOW — 評価フロー（採点）</h2>
+<p>各ケースには <b>入力</b> と <b>期待値</b> がある。eval は入力を複数のモデル / プロンプトバージョンで実行し、
+  実際の出力を期待値と比較してスコアを算出 — バージョン間を <b>比較</b> する。
+  <b>閾値達成 &amp; レビュー OK</b> になったらプロンプトを <b>本番環境にプロモート</b>（A/B テストも可能）。</p>
+
+<div class="callout">
+  <h4>⮕ eval に必須の入力（外部から来る — eval 自身は生成しない）</h4>
+  <ol>
+    <li><b>本番プロンプト（Production prompt）</b> — 評価対象のプロンプト（「顕微鏡下」のもの）。
+        Suite の <b>Prompt version</b> として Postgres (<code>prompt_versions</code> テーブル) に保存される。
+        Suite は常に 1 つのバージョンを <i>active</i> としてポインタ <code>suites.active_prompt_version_id</code> で管理。</li>
+    <li><b>route_context_json</b> — 1 ルートを記述する入力: <code>route</code> + <code>entities（フィールド）</code> +
+        <code>method_access（read/write）</code> + <code>call_chain</code>。
+        <span class="src">Code Analysis プロジェクト</span> が Java ソースの AST/グラフ解析で生成
+        （<code>_build_route_context()</code>）。Case の <code>input</code> として格納。</li>
+  </ol>
+  <p class="note" style="margin-top:8px">eval はこの 2 つを <b>消費するだけ</b> — route_context_json の品質
+    （entities + method_access が揃っているか）が oracle/eval のグラウンディングを左右する。</p>
+</div>
+
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  INP["入力 (route_context_json)<br/>Code Analysis プロジェクトから<br/>例: GET /timesheets/monthly/:id<br/>route + entities + method_access"]
+  EXP["✦ 期待値 — ゴールデン<br/>例: MonthlyTimesheet<br/>id=R · status=R · month=R"]:::golden
+  PV["プロンプトバージョン<br/>例: v1 '抽出CRUD. JSON'<br/>v2 (active) 完全版"]
+  MD["モデル<br/>例: claude-sonnet-4-6<br/>· gpt-4o"]
+  R["EvalRunner"]
+  O["モデルの実際の出力<br/>例: MonthlyTimesheet<br/>id=R · status=R · employeeId=R"]
+  S["Scorer (CRUDOpsMatch)<br/>出力 ↔ 期待値を照合<br/>例: 6/6 セル一致"]
+  SC["スコア · 合否<br/>例: 1.0 ≥ 閾値 0.8 → PASS"]
+  CMP["モデル&amp;プロンプトバージョンを比較<br/>例: v2=1.0 &gt; v1=0.6"]
+  GATE{"閾値達成<br/>&amp; レビュー OK?"}
+  PROD["✅ プロンプトを本番にプロモート<br/>+ A/B テスト (v1 vs v2 トラフィック)"]:::prod
+  BACK["未達成 → プロンプト修正 /<br/>モデル変更 → 再実行"]
+
+  INP --> R
+  PV --> R
+  MD --> R
+  R --> O
+  O --> S
+  EXP --> S
+  S --> SC
+  SC --> CMP
+  CMP --> GATE
+  GATE -->|達成| PROD
+  GATE -->|未達成| BACK
+  BACK -.->|繰り返し| PV
+  classDef golden fill:#fef9c3,stroke:#ca8a04,color:#713f12,stroke-width:2px;
+  classDef prod fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px;
+</div></div>
+<p class="note">→ <b>期待値</b>（黄色のボックス）は「正解」— しかしフィールドごとに手書きするのは非現実的。
+  だから下記の <b>Oracle Review / ゴールデンデータセット</b> フェーズで生成する。</p>
+
+<h3>採点の仕組み — 「スコアリング + 閾値 + ソフトマッチング」</h3>
+
+<p>この 3 つは <code>assertEquals</code> の代替。LLM 出力は文字列として「完全一致」することはないが、
+   <em>意味的には正しい</em> 場合がある — 文字列ではなく意味で測定する必要がある。</p>
+
+<div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(290px,1fr)); margin: 14px 0;">
+
+  <div class="card">
+    <span class="tag">1 — スコアリング (Scoring)</span>
+    <h4>合否の 2 値判定ではなくスコアで評価</h4>
+    <p>ユニットテスト: 全部正解 = PASS、1 箇所ミス = FAIL。しかし「6 セル中 5 セル正解」は
+       非常に良い結果 — 2 値判定では FAIL になってしまい、もったいない。<b>Scorer</b> は 0.0〜1.0 のスコアを算出:</p>
+    <pre style="margin:8px 0 0">score = matched_cells / total_cells
+# 例: 5/6 = 0.833</pre>
+  </div>
+
+  <div class="card">
+    <span class="tag">2 — 閾値 (Threshold)</span>
+    <h4>「完璧」ではなく「十分に良い」で判定</h4>
+    <p>スコアが出たら「何点以上で合格か」を決める必要がある。閾値は Suite の設定で指定
+       （LLM は意味的に正しくても表現が微妙に異なる場合があるため 1.0 は要求しない）:</p>
+    <pre style="margin:8px 0 0">threshold = 0.8
+passed = score >= threshold
+# 0.833 >= 0.8 → PASS</pre>
+  </div>
+
+  <div class="card">
+    <span class="tag">3 — ソフトマッチング (Soft matching)</span>
+    <h4>文字単位ではなく正規化してから比較</h4>
+    <p>ユニットテスト: <code>"Order::customerId" != "order::customer_id"</code> → FAIL。
+       しかし両者は同じ意味。<code>normalize_flat_ops</code> は比較前に<em>両側を</em>正規化する:</p>
+    <pre style="margin:8px 0 0"># 1. camelCase → snake_case + 小文字化
+"Order::customerId" → "order::customer_id"  ✓
+
+# 2. op をアルファベット順にソート
+"RC" → "CR"  ✓  ("CR" と一致)</pre>
+  </div>
+
+</div>
+
+<div class="callout" style="background:#f0fdf4; border-color:#bbf7d0; border-left-color:#16a34a;">
+  <h4 style="color:#15803d;">⮕ 完全な例 — 3 ステップを組み合わせる</h4>
+  <p style="margin:0 0 8px"><b>期待値（ゴールデン）:</b> <code>Order.status=U</code>, <code>Order.totalPrice=U</code>, <code>Order.id=R</code></p>
+  <p style="margin:0 0 8px"><b>モデルの出力:</b> <code>Order.status=U</code>, <code>Order.totalPrice=U</code>, <code>Order.Id=R</code>（I が大文字）</p>
+  <pre style="margin:8px 0">ステップ 1 — 正規化:  "Order.Id"  →  "order.id"  ✓ "Order.id" と一致
+ステップ 2 — スコア:  3/3 = 1.0
+ステップ 3 — 閾値:    1.0 >= 0.8  →  PASS</pre>
+  <p style="margin:8px 0 0" class="note"><code>assertEquals</code> なら: <code>"Order.Id" != "Order.id"</code> → FAIL — 実際には正解なのに。</p>
+</div>
+
+<p>期待値は 3 つの形式を受け付ける — <code>CRUDOpsMatch</code> は正規化前にすべてを処理する:</p>
+<ul>
+  <li>フラット: <code>{"Order::status": "U"}</code></li>
+  <li>リスト: <code>{"cells": [{"entity":"Order","column":"status","op":"U"}]}</code></li>
+  <li>ネスト形式（メタデータ付き fixture）: <code>{"cells": {"Order": {"status": {"op":"U","confidence":"high","oracle_why":"…"}}}}</code></li>
+</ul>
+
+<!-- ─────────────────────────── HOW: GOLDEN DATASET FLOW ─────────────────────────── -->
+<h2 id="golden-flow"><span class="num">G</span> HOW — Oracle Review / ゴールデンデータセット（期待値生成）</h2>
+<p><b>既存の入力</b>（route context: route + entities + method_access）と <b>本番プロンプト</b> を使い、
+  <b>より強力なモデル（oracle）</b> に「正解」を生成させる。人間は <b>テーブルをレビューするだけ</b>。</p>
+<div class="diagram"><div class="mermaid">
+flowchart TD
+  IN["既存の入力<br/>例: PUT /api/orders/:id<br/>route · entities(フィールド) · method_access(read/write)"]
+  PP["本番プロンプト<br/>例: 'あなたはCRUD分類器… JSON cellsを返す'"]
+  PP --> META["① メタ生成 (任意)<br/>本番プロンプト → oracle プロンプトに変換<br/>POST /oracle-review/meta-generate"]
+  META --> OP["Oracle プロンプト<br/>例: 'シニアJPAエキスパート'ペルソナ + CoT<br/>（人間が編集可能）"]
+  IN --> GEN
+  OP --> GEN["② Fixture 生成<br/>強力なモデル (oracle) が期待値を生成<br/>POST /oracle-review/generate"]
+  GEN --> CAND["候補セル<br/>例: Order.status op=U confidence=high<br/>why='service.setStatus → 書き込み'"]
+  GEN --> RFILE["ファイル保存: .json + .review.json<br/>(low/medium confidence のセルのみ)"]
+  CAND --> REFINE["③ 実行/精緻化 (任意・ステートレス)<br/>別の oracle プロンプトで再実行して比較<br/>POST /oracle-review/run-with-prompt"]
+  REFINE --> REV
+  CAND --> REV{"④ 人間レビュー<br/>entity / field / op / confidence テーブル"}
+  REV -->|"confidence = high"| SKIP["自動承認<br/>例: status=U（明確）"]
+  REV -->|"low / medium"| FIX["承認 · op 修正 · 削除<br/>例: lockedAt → 削除（DB管理）<br/>POST /oracle-review/{id}/review"]
+  SKIP --> FIN
+  FIN["⑤ 確定: reviewed_by を設定<br/>→ fixture が 'approved' 状態になる"]
+  FIX --> FIN
+  FIN --> PROM["⑤ Suite にプロモート<br/>POST /oracle-review/{id}/promote-to-suite"]
+  PROM --> FX["⑥ Fixture → DB の test_case<br/>入力 + 期待値（承認済み）<br/>メタデータ: source_fixture, oracle_model, reviewed_by"]:::golden
+  FX -.->|eval で使用| USE["→ 上記の評価フローへ"]
+  classDef golden fill:#fef9c3,stroke:#ca8a04,color:#713f12,stroke-width:2px;
+</div></div>
+
+<h3>Oracle Review ライフサイクル — 6 ステップ</h3>
+<ol class="steps">
+  <li><b>メタ生成（任意）— 本番プロンプト → oracle プロンプト。</b>
+      「メタプロンプト」が本番プロンプトを <b>oracle プロンプト</b>（グラウンドトゥルースを生成する専用プロンプト）に変換する
+      （「シニア JPA エキスパート」ペルソナ、chain-of-thought を追加）。実行前に人間が編集可能。
+      API: <code>POST /oracle-review/meta-generate</code></li>
+  <li><b>Fixture 生成 — 強力なモデルが期待値を生成。</b>
+      oracle モデル（例: Opus）が oracle プロンプトを入力で実行 → 各セルの
+      <code>op + confidence + why</code> を出力。<code>&lt;id&gt;.json</code>（fixture）と
+      <code>&lt;id&gt;.review.json</code>（レビュー要: confidence が low/medium のセルのみ）を保存。
+      API: <code>POST /oracle-review/generate</code></li>
+  <li><b>実行/精緻化（任意・ステートレス）— oracle プロンプトを試す。</b>
+      別の oracle プロンプトで追加実行して出力を比較し、確定前に検証できる。
+      Fixture を上書きしない — 実行履歴は別途保存。
+      API: <code>POST /oracle-review/run-with-prompt</code></li>
+  <li><b>レビュー &amp; 承認 — fixture が承認の単位。</b>
+      人間がテーブル（entity / field / op / confidence）を確認:
+      <span class="pill high">high</span> セルはスキップ可、
+      <span class="pill low">low/medium</span> セルに集中して
+      <b>Approve</b>（信頼 → confidence = high）/ <b>Fix</b>（op を修正）/ <b>Remove</b>（セルを削除）。
+      <code>reviewed_by</code> を設定すると <code>reviewed_at</code> がスタンプされ → fixture が「approved」に変わる。
+      API: <code>POST /oracle-review/{id}/review</code></li>
+  <li><b>Suite にプロモート → test_case になる。</b>
+      セルをフラット化 → <code>test_cases</code> DB に insert（またはファイルバックの場合は <code>.yml</code> ファイル）。
+      メタデータ <code>source_fixture</code> でトレーサビリティを確保。
+      API: <code>POST /oracle-review/{id}/promote-to-suite</code></li>
+  <li><b>ケースが通常の eval に参加。</b>
+      プロモートされた test_case が通常の Run で使用される（ステップ 3 の評価フロー参照）。</li>
+</ol>
+
+<h3>なぜ "confidence" と "why" がレビューで重要か</h3>
+<p>Oracle は各セルの信頼度と理由を自己評価する。レビュアーはこれにより <b>曖昧なものだけを精査</b>
+  （low/medium）し、明確なもの（high）は信頼できる → レビューが速く、疲労が少なく、見落としが少ない。
+  これがフィールドごとの「ゴールデン作成」を <b>手作業で誤りが多い作業</b> から <b>支援付きレビュー</b> に変える仕組み。</p>
+
+<!-- ─────────────────────────── ARCHITECTURE ─────────────────────────── -->
+<h2 id="architecture"><span class="num">A</span> アーキテクチャ &amp; 用語 — ドメイン階層</h2>
+
+<p>評価フレームワークのデータ階層（上から下へ）:</p>
+<div class="diagram"><div class="mermaid">
+flowchart LR
+  SYS["System<br/>例: code-analysis"] --> DOM["Domain<br/>例: diagrams"]
+  DOM --> SUITE["Suite<br/>例: crud_matrix_llm"]
+  SUITE --> PVS["Prompt versions<br/>v1 · v2 (active)"]
+  SUITE --> CASES["Cases (test_cases)<br/>入力 + 期待値 + scoring"]
+  SUITE --> RUNS["Runs → Results<br/>実行ごとのスコア"]
+  classDef hl fill:#ede9fe,stroke:#7c3aed,color:#312e81,stroke-width:2px;
+  class SUITE hl;
+</div></div>
+
+<h3>エンティティ一覧</h3>
+<table>
+  <thead><tr><th>エンティティ</th><th>テーブル (Postgres)</th><th>所有</th><th>概要</th></tr></thead>
+  <tbody>
+    <tr><td><b>System</b></td><td><code>systems</code></td><td>domains</td><td>最上位グループ、例: <code>code-analysis</code></td></tr>
+    <tr><td><b>Domain</b></td><td><code>domains</code></td><td>suites</td><td>サブグループ、例: <code>diagrams</code></td></tr>
+    <tr><td><b>Suite</b></td><td><code>suites</code></td><td>prompts, cases, runs</td><td>評価の単位。<code>active_prompt_version_id</code> でライブ版を指す</td></tr>
+    <tr><td><b>Prompt Version</b></td><td><code>prompt_versions</code></td><td>—</td><td>バージョン管理された <code>PromptConfig</code>（JSONB）+ ライフサイクルステータス</td></tr>
+    <tr><td><b>Case</b></td><td><code>test_cases</code></td><td>—</td><td><code>input</code> + <code>expected</code> + ケース固有の <code>scoring</code>; PK = <code>(suite_id, id)</code></td></tr>
+    <tr><td><b>Run</b></td><td><code>eval_runs</code></td><td>results</td><td>1 モデル/プロンプトで Suite を 1 回実行</td></tr>
+    <tr><td><b>Result</b></td><td><code>eval_results</code></td><td>—</td><td>1 Run における 1 ケースのスコア</td></tr>
+    <tr><td><b>Fixture</b></td><td>JSON ファイル（プロモート前）</td><td>—</td><td>Oracle が生成したゴールデンアンサー。プロモート後は <code>test_case</code> になる</td></tr>
+  </tbody>
+</table>
+
+<h3>Prompt version のライフサイクル</h3>
+<p>Prompt version には独立した 2 つの軸がある:</p>
+<ul>
+  <li><b>ステータス</b>（<code>draft</code> → <code>staging</code> → <code>archived</code>）: バージョンのライフサイクル。人間が操作する。</li>
+  <li><b>Active ポインタ</b>（<code>suites.active_prompt_version_id</code>）: Suite がどのバージョンをライブとして指すか。
+      プロモート = このポインタを更新するだけ。古いバージョンのステータスは <b>変わらない</b>。</li>
+</ul>
+<p class="note">⚠ "Promoted" ≠ "status=staging"。<code>staging</code> ステータスのバージョンが active（ライブ）になりえる。
+   Active ポインタとステータスは完全に独立した 2 軸。</p>
+
+<div class="grid cards5w" style="margin-top:16px">
+  <div class="card"><span class="tag">Suite</span><h4>テストセット</h4>
+    <p>同種の問題をまとめたテストグループ（例: "CRUD Matrix"）。複数の <b>Case</b>、
+       複数の <b>Prompt version</b>（1 つが active）、<b>Run</b> 履歴を所有する。</p></div>
+
+  <div class="card"><span class="tag">Case</span><h4>1 問 + 正解</h4>
+    <p>単一のテスト = <code>input</code> + <code>expected</code>（+ 必要なら <code>scoring</code> も個別指定）。
+       例: 入力 = GET /timesheets/:id、期待値 = MonthlyTimesheet の全フィールド = R。</p></div>
+
+  <div class="card"><span class="tag">Golden Set</span><h4>標準正解セット</h4>
+    <p>人間が承認した expected の集合 — 採点の「真実」。Oracle Review で作成:
+       oracle 生成 → 人間承認 → <b>プロモート</b> → <b>DB の test_case</b>。</p></div>
+</div>
+
+<table style="margin-top:16px">
+  <thead><tr><th>用語</th><th>意味</th><th>例</th></tr></thead>
+  <tbody>
+    <tr><td><b>Prompt version</b></td><td>Suite のプロンプトの 1 バージョン。ライフサイクル（draft/staging/archived）と active ポインタは独立</td><td>v1 初期版 · v2（active）完全版</td></tr>
+    <tr><td><b>Run</b></td><td>1 モデル/プロンプトで Suite を実行 → ケースごとのスコアを含む <b>Results</b> を生成</td><td>Run v2 × claude-sonnet-4-6 → スコア 1.0</td></tr>
+    <tr><td><b>Fixture</b></td><td>Oracle Review が生成する <code>input + expectation</code>（+ 監査証跡）の JSON ファイル。プロモート待ち</td><td><code>case1_happy_path.json</code></td></tr>
+    <tr><td><b>Scorer</b></td><td>出力 ↔ 期待値を採点してスコアと合否を返す。<code>ryuu-eval-scorers</code> に格納</td><td>CRUDOpsMatch: 6/6 セル一致 → 1.0</td></tr>
+    <tr><td><b>Oracle</b></td><td>期待値を生成するために使う強力な LLM（例: Opus）— eval 対象のモデルとは <em>別物</em></td><td><code>claude-opus-4-8</code></td></tr>
+    <tr><td><b>Oracle プロンプト</b></td><td>グラウンドトゥルースを生成する専用プロンプト（YAML ファイル）。本番プロンプトとは別</td><td><code>java_spring.yaml</code></td></tr>
+    <tr><td><b>active_prompt_version_id</b></td><td><code>suites</code> テーブルのポインタ → どのバージョンがライブか。プロモート = このポインタを更新</td><td><code>suites.active_prompt_version_id = "v2_id"</code></td></tr>
+  </tbody>
+</table>
+
+<!-- ─────────────────────────── FILE FORMAT ─────────────────────────── -->
+<h2 id="file-format"><span class="num">F</span> ファイルフォーマット — Fixture &amp; Review JSON</h2>
+
+<h3>Fixture — <code>artifacts/eval/oracle_fixtures/&lt;domain&gt;/&lt;id&gt;.json</code></h3>
+<p>各 fixture は完全な監査証跡を持つ JSON ファイル。<code>reviewed_by</code> が空 → 「pending」（未承認）状態。</p>
+<pre>{
+  "fixture_id": "case1_happy_path",
+  "suite_id": "crud_matrix_llm",
+  "prompt_version": "crud_matrix_oracle.v1",
+  "oracle_model": "claude-opus-4-8",
+  "reviewed_by": "",          // 空 = 未承認
+  "reviewed_at": "",          // 確定時の ISO 日付
+  "input_data": { /* route_context_json — route + entities + method_access */ },
+  "expected": {
+    "cells": {
+      "Order": {
+        "status": { "op": "C", "confidence": "high", "oracle_why": "service.setStatus → 書き込み" },
+        "id":     { "op": "",  "confidence": "medium", "oracle_why": "@GeneratedValue → DB が割り当て" }
+      }
+    },
+    "valid_fields": { "Order": ["id", "status"] },
+    "framework": "java_spring"
+  },
+  // Studio 監査証跡（UI 経由で生成した場合のみ）:
+  "production_prompt": "…",       // 評価対象のプロンプト
+  "oracle_prompt": "…",           // グラウンドトゥルース生成用の YAML プロンプト
+  "oracle_prompt_version": "…",
+  "meta_prompt_version": "…"
+}</pre>
+
+<h3>Companion review — <code>&lt;id&gt;.review.json</code></h3>
+<p>人間の判断が必要なセルのみ（confidence ∈ low/medium）を格納:</p>
+<pre>{
+  "fixture_id": "case1_happy_path",
+  "generated_at": "2026-05-26",
+  "needs_review": [
+    {
+      "entity": "Order", "field": "id", "op": "", "confidence": "medium",
+      "oracle_why": "@GeneratedValue → DB が id を割り当て、アプリは書き込まない",
+      "action": "remove",      // null=未決定 · approve · fix · remove
+      "corrected_op": null     // action="fix" の場合に設定
+    }
+  ]
+}</pre>
+
+<p><b>承認時の action のセマンティクス:</b></p>
+<ul>
+  <li><b>approve</b> → confidence を <code>high</code> に設定</li>
+  <li><b>fix</b> → <code>op = corrected_op</code> に設定、confidence を <code>high</code> に設定</li>
+  <li><b>remove</b> → fixture からセルを削除</li>
+</ul>
+<p class="note">確定（<code>reviewed_by</code> を設定）すると fixture 全体に <code>reviewed_at=today()</code> がスタンプされる
+→ これが「pending」から「approved」への状態遷移のトリガー。</p>
+
+<!-- ─────────────────────────── ORACLE INPUT ─────────────────────────── -->
+<h2 id="oracle-input"><span class="num">I</span> Oracle 入力コントラクト — <code>route_context_json</code></h2>
+
+<p>Oracle プロンプトは <code>{{ route_context_json }}</code> でテンプレート化される。
+   入力が正しい形式なら oracle は <b>推測しない</b> — すべてが入力からグラウンディングされる:</p>
+<ul>
+  <li><code>entities[].fields[].{name, db_column}</code> → フィールド名とケーシングをグラウンディング
+      （<code>_extract_valid_fields</code> がこのフィールドを読み取り、<code>db_column</code> を優先）</li>
+  <li><code>method_access[].{read, write}</code> → op を直接グラウンディング:
+      <code>read</code> のフィールド → <code>R</code>、<code>write</code> のフィールド → <code>C</code>/<code>U</code></li>
+</ul>
+
+<pre>{
+  "route":       { "endpoint": "/api/orders/{id}", "http_method": "PUT",
+                   "use_case": "注文ステータス更新", "action": "update" },
+  "call_chain":  [ { "class": "OrderService", "method": "update", "method_key": "…" } ],
+  "entities":    [ { "short_name": "Order", "fqn": "…", "db_table": "orders",
+                     "annotations": ["@Entity","@Table(…)"],
+                     "fields": [ { "name": "totalPrice", "db_column": "total_price",
+                                   "annotations": ["@Column"] } ] } ],
+  "method_access": [ { "class": "OrderService", "method": "update",
+                        "read":  ["id","status"],        // → op R
+                        "write": ["status","totalPrice"], // → op C/U
+                        "annotations": ["@Transactional"] } ]
+}</pre>
+
+<div class="warn-box">
+  <h4>⚠ Fixture shape の注意 — 非準拠 fixture</h4>
+  <p>一部の古い fixture（例: <code>studio_test_post_orders.json</code>）は異なる形式:
+     <code>{project_id, total, contexts: {"&lt;route&gt;": {call_edges, call_classes, step_actions, route}}}</code>
+     — <b><code>entities</code> も <code>method_access</code> もない</b>。
+     この場合、oracle はコールチェーンからフィールドを<em>推測</em>するため、レビュアーはより注意深く確認が必要。</p>
+  <p style="margin:8px 0 0"><b>偽の <code>entities</code> ブロックを手作りして誤魔化さないこと</b> —
+     <b>正しい <code>route_context_json</code> から fixture を再生成する</b> こと。</p>
+</div>
+
+<!-- ─────────────────────────── DECISIONS ─────────────────────────── -->
+<h2 id="decisions"><span class="num">D</span> 主要設計判断</h2>
+
+<div class="decision-grid">
+  <div class="decision-card">
+    <h4>プロトコルは core に、実装は storage に</h4>
+    <p>アプリコードは <code>ISuiteStore</code>、<code>IPromptStore</code> などのプロトコルに依存 — Postgres ↔ memory/sqlite の差し替えは <code>dev_server.py</code> の 1 箇所だけ変更すれば良い。</p>
+  </div>
+  <div class="decision-card">
+    <h4>Suite は DB 専用</h4>
+    <p>Suite/Case/Run は Postgres のみ — ファイル vs DB の曖昧さを排除。Oracle <em>fixture</em> はプロモートまでファイルのまま。</p>
+  </div>
+  <div class="decision-card">
+    <h4>Active ポインタ ≠ ステータス</h4>
+    <p>プロモート → <code>suites.active_prompt_version_id</code> を更新。ステータス（draft/staging/archived）は独立したライフサイクル。staging のバージョンがライブになりえる。</p>
+  </div>
+  <div class="decision-card">
+    <h4>Run が active プロンプトを解決</h4>
+    <p><code>POST /run</code> でプロンプトを明示しなくても <code>get_active(suite).config</code> を <code>_system_prompt_from_config</code> で自動解決。プロモート → 次回 Run から新バージョンを使用。</p>
+  </div>
+  <div class="decision-card">
+    <h4>ケースごとの採点</h4>
+    <p>ケースの <code>scoring</code> JSONB が <code>build_scorers()</code> を駆動 (<code>EvalRunner.scorer_for</code> 経由)。ケースに個別 spec がなければ Suite レベルのスコアラーにフォールバック。</p>
+  </div>
+  <div class="decision-card">
+    <h4>大文字小文字を無視した CRUD 比較</h4>
+    <p><code>normalize_flat_ops</code> が camelCase/snake_case と op の順序を統一 — 本質的な op の差異だけがセルを失敗させる。スコアラーと target の両方で一貫して適用。</p>
+  </div>
+  <div class="decision-card">
+    <h4>Fixture はファイル、Case は DB 行</h4>
+    <p>未承認の Fixture → 編集/削除/バージョン管理が容易な JSON ファイル。プロモート後 → DB の <code>test_cases</code> 行として通常の eval に参加。2 フェーズ、2 つのストレージ。</p>
+  </div>
+  <div class="decision-card">
+    <h4>Oracle プロンプトと本番プロンプトを分離</h4>
+    <p>Oracle プロンプト（グラウンドトゥルース生成用）は <code>eval_consumer/.../prompts/</code> の YAML。本番プロンプト（eval 対象）は <code>prompt_versions</code> DB。目的が異なるため保存場所も分ける。</p>
+  </div>
+</div>
+
+<!-- ─────────────────────────── SOURCE MAP ─────────────────────────── -->
+<h2 id="source-map"><span class="num">S</span> ソースマップ — どこに何があるか</h2>
+
+<table class="src-table">
+  <thead><tr><th>関心事</th><th>ファイル / パッケージ</th></tr></thead>
+  <tbody>
+    <tr><td>プロトコル定義</td><td><code>packages/ryuu-eval-core/src/ryuu_eval_core/protocols.py</code></td></tr>
+    <tr><td>EvalRunner</td><td><code>packages/ryuu-eval-core/src/ryuu_eval_core/runner.py</code></td></tr>
+    <tr><td>Prompt store (IPromptStore, PromptVersion)</td><td><code>packages/ryuu-prompts/src/ryuu_prompts/store.py</code></td></tr>
+    <tr><td>Postgres stores (suite, test_case, eval_run, prompt)</td><td><code>packages/infrastructure/storage/ryuu-storage-postgres/src/ryuu_storage_postgres/</code></td></tr>
+    <tr><td>スコアラーファクトリ (build_scorers, metadata_scorer_resolver)</td><td><code>packages/ryuu-eval-scorers/src/ryuu_eval_scorers/factory.py</code></td></tr>
+    <tr><td>Oracle コア (OracleWorkflow, ReviewSchema, OracleFixture)</td><td><code>packages/ryuu-eval-oracle/src/ryuu_eval_oracle/</code></td></tr>
+    <tr><td>CRUD oracle ストラテジー</td><td><code>eval_consumer/crud_matrix_oracle/</code>（CrudMatrixOracleStrategy, normalizer.py）</td></tr>
+    <tr><td>CRUD target &amp; scorer</td><td><code>eval_consumer/crud_matrix_llm/{target,scorer}.py</code></td></tr>
+    <tr><td>Suite ワイヤリング / runner_factory / _SUITE_BEHAVIOR</td><td><code>eval_suites.py</code></td></tr>
+    <tr><td>HTTP ルーター (build_eval_router)</td><td><code>packages/ryuu-eval/src/ryuu_eval/http/router.py</code></td></tr>
+    <tr><td>コンポジションルート</td><td><code>dev_server.py</code></td></tr>
+    <tr><td>デモシード</td><td><code>scripts/seed_eval.py</code></td></tr>
+  </tbody>
+</table>
+
+<footer>
+  内部レポート · 5W2H フレームワーク · 図は Mermaid でレンダリング。
+  完全な技術詳細（クラス図、シーケンス図、HTTP API）: <code>docs/eval-oracle-suite-case-architecture.md</code>。
+  更新: 2026-06-02。
+</footer>
+
+</div>
+</body>
+</html>

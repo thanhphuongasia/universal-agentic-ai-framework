@@ -1,10 +1,10 @@
 {
   "fixture_id": "mock_get_users_by_id",
   "suite_id": "crud_matrix_llm",
-  "prompt_version": "crud_matrix_oracle.v1",
+  "prompt_version": "",
   "oracle_model": "gpt-4o-mini",
   "reviewed_by": "",
-  "reviewed_at": "2026-05-27",
+  "reviewed_at": "",
   "review_note": "",
   "input_data": {
     "route": {
@@ -20,7 +20,10 @@
             "name": "id",
             "db_column": "id",
             "type": "Long",
-            "annotations": ["@Id", "@GeneratedValue"]
+            "annotations": [
+              "@Id",
+              "@GeneratedValue"
+            ]
           },
           {
             "name": "email",
@@ -38,46 +41,72 @@
             "name": "createdAt",
             "db_column": "created_at",
             "type": "Instant",
-            "annotations": ["@CreatedDate"]
+            "annotations": [
+              "@CreatedDate"
+            ]
           }
         ]
       }
     ],
     "call_subgraph": {
       "test::UserController::getUserById::()": [
-        { "to_class": "UserService", "to_method": "findById" },
-        { "to_class": "UserRepository", "to_method": "findById" }
+        {
+          "to_class": "UserService",
+          "to_method": "findById"
+        },
+        {
+          "to_class": "UserRepository",
+          "to_method": "findById"
+        }
       ]
     }
   },
   "expected": {
-    "User": {
-      "id": {
-        "op": "R",
-        "confidence": "high",
-        "oracle_why": "GET method + findById primary key lookup → read id."
-      },
-      "email": {
-        "op": "R",
-        "confidence": "high",
-        "oracle_why": "GET method returns full User entity → all columns read."
-      },
-      "name": {
-        "op": "R",
-        "confidence": "high",
-        "oracle_why": "GET method returns full User entity → all columns read."
-      },
-      "created_at": {
-        "op": "R",
-        "confidence": "medium",
-        "oracle_why": "@CreatedDate audit column, returned in GET response."
+    "cells": {
+      "User": {
+        "id": {
+          "op": "R",
+          "confidence": "high",
+          "oracle_why": "GET method + findById primary key lookup → read id."
+        },
+        "email": {
+          "op": "R",
+          "confidence": "high",
+          "oracle_why": "GET method returns full User entity → all columns read."
+        },
+        "name": {
+          "op": "R",
+          "confidence": "high",
+          "oracle_why": "GET method returns full User entity → all columns read."
+        },
+        "created_at": {
+          "op": "R",
+          "confidence": "medium",
+          "oracle_why": "@CreatedDate audit column, returned in GET response."
+        }
       }
+    },
+    "valid_fields": {
+      "User": [
+        "id",
+        "email",
+        "name",
+        "created_at"
+      ]
     }
   },
   "meta": {
     "valid_fields": {
-      "User": ["id", "email", "name", "created_at"]
-    },
-    "framework": "java_spring_boot"
-  }
+      "User": [
+        "id",
+        "email",
+        "name",
+        "created_at"
+      ]
+    }
+  },
+  "production_prompt": "",
+  "oracle_prompt": "jjjjlll\n\nlll",
+  "oracle_prompt_version": "manual-2026-05-28T02:35:47.468Z",
+  "meta_prompt_version": ""
 }

@@ -17,6 +17,8 @@ from typing import Any
 
 from ryuu_eval_core.models import CaseResult, EvalCase
 
+from eval_consumer.crud_matrix_oracle.normalizer import normalize_flat_ops
+
 
 class CrudMatrixTarget:
     """Wraps a base EvalTarget. Both expected + actual become flat op maps."""
@@ -59,19 +61,19 @@ class CrudMatrixTarget:
                 "label": f"CRUD cells w/ rationale ({len(detailed)})",
             })
 
-        # Comparison summary step
-        all_keys = set(normalized_expected) | set(normalized_actual)
-        matched = sum(
-            1 for k in all_keys
-            if normalized_expected.get(k) == normalized_actual.get(k)
-        )
-        missing = [k for k in normalized_expected if k not in normalized_actual]
-        extra = [k for k in normalized_actual if k not in normalized_expected]
+        # Comparison summary step — normalize both sides the SAME way the
+        # CRUDOpsMatch scorer does, so the trace count agrees with the score
+        # (casing/separator/op-order differences collapse to one canonical key).
+        exp_cmp = normalize_flat_ops(normalized_expected)
+        act_cmp = normalize_flat_ops(normalized_actual)
+        all_keys = set(exp_cmp) | set(act_cmp)
+        matched = sum(1 for k in all_keys if exp_cmp.get(k) == act_cmp.get(k))
+        missing = [k for k in exp_cmp if k not in act_cmp]
+        extra = [k for k in act_cmp if k not in exp_cmp]
         mismatched = [
-            f"{k}: expected={normalized_expected.get(k)!r} actual={normalized_actual.get(k)!r}"
+            f"{k}: expected={exp_cmp.get(k)!r} actual={act_cmp.get(k)!r}"
             for k in all_keys
-            if k in normalized_expected and k in normalized_actual
-            and normalized_expected[k] != normalized_actual[k]
+            if k in exp_cmp and k in act_cmp and exp_cmp[k] != act_cmp[k]
         ]
         summary = {
             "matched": matched,
